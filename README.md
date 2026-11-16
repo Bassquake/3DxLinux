@@ -108,6 +108,37 @@ uninstalls everything except `/etc/tdxd.conf`.
 4. If colours look wrong (red/blue swapped) or the image is upside down, note
    it. These are the inferred parts listed in `docs/PROTOCOL.md`.
 
+The SpacePilot Pro LCD has only three brightness levels; requests snap to
+30 %, 60 % or 90 %.
+
+### Testing from Windows with WSL2
+
+A Windows PC can run the Linux build against a real device by passing it into
+WSL2 with [usbipd-win](https://github.com/dorssel/usbipd-win). That is how
+[docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md) was done. While the device is
+attached, Windows and 3DxWare cannot use it.
+
+1. **Share the device.** In an admin PowerShell, run `usbipd list` and note the
+   device's bus ID. Then run `usbipd bind --busid <id> --force`.
+   - `--force` is needed while the 3Dconnexion / Logitech drivers own the device.
+   - **Unplug and replug the device** so the forced bind takes effect.
+2. **Load the modules.** In WSL, as root, keep a shell open so the VM stays
+   running, then load the modules:
+
+   ```bash
+   modprobe vhci_hcd usbhid hid_generic uinput evdev
+   ```
+
+3. **Attach.** In PowerShell:
+
+   ```bash
+   usbipd attach --wsl --busid <id>
+   ```
+
+4. **Test in WSL.** Run `tdxd -v -v` and `tdx-lcd fill bars` as above.
+5. **Give it back.** Run `usbipd detach --busid <id>`, then
+   `usbipd unbind --busid <id>` as admin. Windows reloads its drivers.
+
 ## LCD
 
 `tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240), SpaceMouse
@@ -157,7 +188,8 @@ tdx-lcd bmp sp4LCD.bmp                    # Giotto: legacy 0x13 path (24 bpp BMP
 | Parsers, frame packers and LCD headers | Unit-tested |
 | Deflate encoder | Round-trip checked against Python zlib in `make test` |
 | x86_64 and arm64 builds | Compile without warnings |
-| Behaviour on a physical SpacePilot Pro | **Not yet verified on hardware** |
+| SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, and the daemon's key page with SHIFT paging |
+| SpaceMouse Enterprise and Giotto | Not verified on hardware (no device available) |
 
 `docs/PROTOCOL.md` lists the open items.
 

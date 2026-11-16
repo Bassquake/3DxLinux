@@ -149,8 +149,30 @@ every LCD up to 100 times, 100 ms apart, until it succeeds. It then sleeps
 
 - **Inferred:** the brightness range is 0..100. The Windows default is 80 for the
   "Cartman" C250 prototype. The SpacePilot Pro's own default is read from the device.
+- **Observed on hardware** (2026-11-16, `docs/HARDWARE_TESTS.md`): the SpacePilot
+  Pro has **three** backlight levels. Writes snap to raw 30, 60 or 90, which read
+  back as 29, 59 or 89:
+
+  | Value set | Raw level |
+  |---|---|
+  | 0–30 | 30 |
+  | 40–60 | 60 |
+  | 75–100 | 90 |
+
+  The panel's starting value was 89. The exact thresholds in 31–39 and 61–74
+  were not measured.
 - **Unknown:** the meaning of the other 8 data bytes. They are uninitialised stack on
-  Windows, and `tdxd` sends zeros.
+  Windows, and `tdxd` sends zeros, which the device accepted.
+
+**Hardware status** (SpacePilot Pro, 2026-11-16):
+
+- The frame format (header, RGB565, column-major) produced a correct image,
+  with colours and orientation right.
+- The ping answers.
+- Brightness works within the three levels above.
+- The bulk OUT endpoint is `0x02` (512-byte packets).
+- Interface 0 also has an interrupt IN endpoint `0x81` (2 bytes). It is not
+  used by `tdxd`; it is probably the LCD soft-button channel of the G19 family.
 
 ## 6. LEDs (observed: `HIDDev.dll`)
 
@@ -165,6 +187,13 @@ with `WriteFile` on the HID handle:
 Giotto (C63C, `-0x39c4`) branches to `FUN_180033cd0` instead. See 6.1.
 
 `tdxd` sends `{0x04, led}` when `led = yes|no` is set (all devices except Giotto).
+
+**Observed on hardware** (SpacePilot Pro, 2026-11-16):
+
+- The HID report descriptor declares report `0x04` as a 1-byte output on the
+  LED usage page.
+- Writing `{0x04, 0}` and `{0x04, 1}` to hidraw visibly switches a light on the
+  device off and on.
 
 ### 6.1 Giotto RGB LEDs (observed: `HIDDev.dll`)
 
@@ -636,6 +665,17 @@ directly, without the A/B/C/D buffer protocol.
 
 ## 7. Open items
 
+**Confirmed on a real SpacePilot Pro** (2026-11-16, see `docs/HARDWARE_TESTS.md`):
+
+- the USB topology (section 2);
+- HID reports 1, 2, 3 and 4 (sections 3, 4 and 6), and the button masks from
+  `Base.xml`;
+- the LCD frame format, ping and brightness (section 5).
+
+The SpacePilot Pro's HID descriptor also declares vendor feature reports
+`0x05`–`0x0b`, `0x13` and `0x14`. They are not used by `tdxd`.
+- **Unknown:** the purpose of those feature reports.
+
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
   decompiled `HIDDev.dll`, but no device was available to test them.
 - **Unknown:** whether the Enterprise `{0x11, n}` LCD intensity report works on
@@ -657,7 +697,9 @@ directly, without the A/B/C/D buffer protocol.
 - **Unknown:** a Giotto LCD brightness command. None was found in `HIDDev.dll`.
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
   accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on
-  attach as a precaution and continues if the device does not answer.
+  attach as a precaution and continues if the device does not answer. On real
+  hardware the panel answers the ping, but frames were always preceded by one,
+  so whether it is needed is untested.
 - **Unknown:** the meaning of the 9 bytes the ping returns. They are ignored on
   Windows and in `tdxd`.
 - **Unknown:** LCD soft-button reads (`LCDExtDeviceManagerReadSoftButtonsEx`).
