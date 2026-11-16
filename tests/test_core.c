@@ -5,7 +5,9 @@
 
 #include "config.h"
 #include "devices.h"
+#include "deflate.h"
 #include "lcd.h"
+#include "lcd_ent.h"
 #include "process.h"
 #include "report.h"
 
@@ -220,8 +222,102 @@ static void test_lcd_intensity(void)
 	CHECK(tdx_lcd_intensity_report(spp, 60, r) == 0); /* SPP uses the USB vendor request */
 }
 
-int main(void)
+static const char *vec_dir;
+
+static void dump_vector(const char *name, const uint8_t *raw, size_t n)
 {
+	static uint8_t comp[TDX_DEFLATE_BOUND(200000)];
+	long c = tdx_deflate_fixed(raw, n, comp, sizeof comp);
+	CHECK(c > 0 && (size_t)c <= TDX_DEFLATE_BOUND(n));
+	if (!vec_dir || c <= 0)
+		return;
+	char p[512];
+	snprintf(p, sizeof p, "%s/%s.raw", vec_dir, name);
+	FILE *f = fopen(p, "wb");
+	if (f) { fwrite(raw, 1, n, f); fclose(f); }
+	snprintf(p, sizeof p, "%s/%s.def", vec_dir, name);
+	f = fopen(p, "wb");
+	if (f) { fwrite(comp, 1, (size_t)c, f); fclose(f); }
+}
+
+static void test_enterprise_lcd(void)
+{
+	const struct tdx_device_def *ent = tdx_device_lookup(0x256F, 0xC633);
+	CHECK(ent && ent->lcd == TDX_LCD_ENT640);
+	CHECK(TDX_ENT_RAW == 0x2ee00);
+
+	static uint32_t px[TDX_ENT_PIXELS];
+	static uint16_t a[TDX_ENT_PIXELS], b[TDX_ENT_PIXELS];
+	px[0] = 0xFF0000; px[1] = 0x00FF00; px[2] = 0x0000FF; px[3] = 0x000000;
+	px[TDX_ENT_PIXELS - 1] = 0xFFFFFF;
+	tdx_ent_pack(px, a, 0);
+	CHECK(a[0] == 0xF800 && a[1] == 0x07E0 && a[2] == 0x001F);
+	CHECK(a[3] == 0x0821 && a[4] == 0x0821);   /* black never sent as 0 */
+	CHECK(a[TDX_ENT_PIXELS - 1] == 0xFFFF);
+	tdx_ent_pack(px, b, 1);                      /* swap_rb */
+	CHECK(b[0] == 0x001F && b[2] == 0xF800);
+
+	memcpy(b, a, sizeof b);
+	b[10] = 0x1234;
+	CHECK(tdx_ent_delta(b, a) == 1 && b[10] == 0x1234 && b[0] == 0 && b[11] == 0);
+
+	uint8_t pkt[TDX_ENT_PKT];
+	tdx_ent_header(pkt, TDX_ENT_OP_FULL, 0x01020304);
+	const uint8_t full[16] = {0x11, 0x0F, 0x04, 0x03, 0x02, 0x01, 0, 0,
+				  0, 0, 0x00, 0x3F, 0x01, 0xEF, 0x00, 0x0F};
+	CHECK(!memcmp(pkt, full, 16) && pkt[16] == 0 && pkt[511] == 0);
+	tdx_ent_header(pkt, TDX_ENT_OP_DELTA, 5);
+	const uint8_t delta[16] = {0x18, 0x0F, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x0F};
+	CHECK(!memcmp(pkt, delta, 16));
+	tdx_ent_header(pkt, TDX_ENT_OP_FIRST, 5);
+	CHECK(pkt[0] == 0x15 && pkt[11] == 0x3F && pkt[13] == 0xEF);
+
+	/* full encode: header length must equal payload size */
+	static uint8_t comp[TDX_DEFLATE_BOUND(TDX_ENT_RAW)];
+	long n = tdx_ent_encode(a, TDX_ENT_OP_FULL, pkt, comp, sizeof comp);
+	CHECK(n > 0 && n < 4000); /* mostly black -> highly compressible */
+	CHECK(n > 0 && (uint32_t)(pkt[2] | pkt[3] << 8 | pkt[4] << 16 | (uint32_t)pkt[5] << 24) == (uint32_t)n);
+}
+
+static void test_deflate_vectors(void)
+{
+	static uint8_t buf[TDX_ENT_RAW];
+	dump_vector("empty", buf, 0);
+	const uint8_t one[1] = {0x42};
+	dump_vector("one_byte", one, 1);
+	const char *txt = "abcabcabcabcabcabcabc the quick brown fox abcabcabc jumps abcabc";
+	dump_vector("text", (const uint8_t *)txt, strlen(txt));
+	memset(buf, 0, sizeof buf);
+	dump_vector("zeros_192000", buf, sizeof buf);
+	uint32_t x = 12345;
+	for (size_t i = 0; i < sizeof buf; i++) {
+		x = x * 1103515245u + 12345u;
+		buf[i] = (uint8_t)(x >> 16);
+	}
+	dump_vector("random_192000", buf, sizeof buf); /* worst case: all literals */
+	for (size_t i = 0; i < sizeof buf; i++)
+		buf[i] = (uint8_t)((i / 2) % 640 < 320 ? (i & 1 ? 0xF8 : 0x00) : (i % 7) * 31);
+	dump_vector("stripes_192000", buf, sizeof buf);
+	/* a rendered Enterprise page: gradient + bars */
+	static uint32_t px[TDX_ENT_PIXELS];
+	static uint16_t p565[TDX_ENT_PIXELS];
+	for (int y = 0; y < TDX_ENT_H; y++)
+		for (int xx = 0; xx < TDX_ENT_W; xx++)
+			px[y * TDX_ENT_W + xx] = ((uint32_t)(xx * 255 / 639) << 16) | ((uint32_t)(y * 255 / 149) << 8) |
+						 (uint32_t)((xx / 80) & 1 ? 0xC0 : 0x20);
+	tdx_ent_pack(px, p565, 0);
+	for (size_t i = 0; i < TDX_ENT_PIXELS; i++) {
+		buf[2 * i] = (uint8_t)p565[i];
+		buf[2 * i + 1] = (uint8_t)(p565[i] >> 8);
+	}
+	dump_vector("ent_page_192000", buf, sizeof buf);
+}
+
+int main(int argc, char **argv)
+{
+	vec_dir = argc > 1 ? argv[1] : NULL;
+	test_enterprise_lcd();
+	test_deflate_vectors();
 	test_lcd_intensity();
 	test_device_table();
 	test_axes();

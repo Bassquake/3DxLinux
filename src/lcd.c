@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "lcd.h"
+#include "usbfs.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -71,7 +72,7 @@ static int read_dec_file(const char *path, unsigned *val)
 }
 
 /* Find /dev/bus/usb/BBB/DDD for vid:pid via sysfs. */
-static int find_usb_node(uint16_t vid, uint16_t pid, char *out, size_t outlen)
+int tdx_usb_find_node(uint16_t vid, uint16_t pid, char *out, size_t outlen)
 {
 	DIR *d = opendir("/sys/bus/usb/devices");
 	if (!d)
@@ -104,7 +105,7 @@ static int find_usb_node(uint16_t vid, uint16_t pid, char *out, size_t outlen)
 }
 
 /* Walk raw descriptors (usbfs read) to find the first bulk OUT endpoint of @iface. */
-static int find_bulk_out(int fd, int iface, unsigned *ep)
+int tdx_usb_find_bulk_out(int fd, int iface, unsigned *ep)
 {
 	uint8_t buf[4096];
 	ssize_t n = pread(fd, buf, sizeof buf, 0);
@@ -128,40 +129,72 @@ static int find_bulk_out(int fd, int iface, unsigned *ep)
 	return -ENOENT;
 }
 
+int tdx_usb_claim(const char *path, int iface)
+{
+	int fd = open(path, O_RDWR | O_CLOEXEC);
+	if (fd < 0)
+		return -errno;
+	/* Detach any kernel driver bound to the vendor interface (normally none). */
+	struct usbdevfs_ioctl cmd = { .ifno = iface, .ioctl_code = USBDEVFS_DISCONNECT };
+	ioctl(fd, USBDEVFS_IOCTL, &cmd);
+	unsigned int ifno = (unsigned)iface;
+	if (ioctl(fd, USBDEVFS_CLAIMINTERFACE, &ifno) < 0) {
+		int rc = -errno;
+		close(fd);
+		return rc;
+	}
+	return fd;
+}
+
+void tdx_usb_release(int fd, int iface)
+{
+	if (fd < 0)
+		return;
+	unsigned int ifno = (unsigned)iface;
+	ioctl(fd, USBDEVFS_RELEASEINTERFACE, &ifno);
+	close(fd);
+}
+
+int tdx_usb_bulk_out(int fd, unsigned ep, const uint8_t *buf, size_t len, unsigned timeout_ms)
+{
+	for (size_t off = 0; off < len;) {
+		size_t n = len - off;
+		if (n > BULK_CHUNK)
+			n = BULK_CHUNK;
+		struct usbdevfs_bulktransfer bt = {
+			.ep = ep, .len = (unsigned)n, .timeout = timeout_ms,
+			.data = (void *)(buf + off),
+		};
+		int r = ioctl(fd, USBDEVFS_BULK, &bt);
+		if (r < 0)
+			return -errno;
+		if (r == 0)
+			return -EIO;
+		off += (size_t)r;
+	}
+	return 0;
+}
+
 int tdx_lcd_open(struct tdx_lcd *lcd, uint16_t vid, uint16_t pid)
 {
 	lcd->fd = -1;
 	lcd->iface = 0;
-	int rc = find_usb_node(vid, pid, lcd->path, sizeof lcd->path);
+	int rc = tdx_usb_find_node(vid, pid, lcd->path, sizeof lcd->path);
 	if (rc)
 		return rc;
-	lcd->fd = open(lcd->path, O_RDWR | O_CLOEXEC);
-	if (lcd->fd < 0)
-		return -errno;
-	if ((rc = find_bulk_out(lcd->fd, lcd->iface, &lcd->ep_out))) {
+	int fd = tdx_usb_claim(lcd->path, lcd->iface);
+	if (fd < 0)
+		return fd;
+	lcd->fd = fd;
+	if (tdx_usb_find_bulk_out(lcd->fd, lcd->iface, &lcd->ep_out))
 		lcd->ep_out = 0x02; /* G19-family default */
-	}
-	/* Detach any kernel driver bound to the vendor interface (normally none). */
-	struct usbdevfs_ioctl cmd = { .ifno = lcd->iface, .ioctl_code = USBDEVFS_DISCONNECT };
-	ioctl(lcd->fd, USBDEVFS_IOCTL, &cmd);
-	unsigned int ifno = (unsigned)lcd->iface;
-	if (ioctl(lcd->fd, USBDEVFS_CLAIMINTERFACE, &ifno) < 0) {
-		rc = -errno;
-		close(lcd->fd);
-		lcd->fd = -1;
-		return rc;
-	}
 	tdx_lcd_header(lcd->frame);
 	return 0;
 }
 
 void tdx_lcd_close(struct tdx_lcd *lcd)
 {
-	if (lcd->fd < 0)
-		return;
-	unsigned int ifno = (unsigned)lcd->iface;
-	ioctl(lcd->fd, USBDEVFS_RELEASEINTERFACE, &ifno);
-	close(lcd->fd);
+	tdx_usb_release(lcd->fd, lcd->iface);
 	lcd->fd = -1;
 }
 
@@ -170,22 +203,7 @@ int tdx_lcd_show(struct tdx_lcd *lcd, const uint32_t *xrgb)
 	if (lcd->fd < 0)
 		return -EBADF;
 	tdx_lcd_pack(xrgb, lcd->frame + TDX_LCD_HDR);
-	for (size_t off = 0; off < TDX_LCD_FRAME;) {
-		size_t n = TDX_LCD_FRAME - off;
-		if (n > BULK_CHUNK)
-			n = BULK_CHUNK;
-		struct usbdevfs_bulktransfer bt = {
-			.ep = lcd->ep_out, .len = (unsigned)n, .timeout = 1000,
-			.data = lcd->frame + off,
-		};
-		int r = ioctl(lcd->fd, USBDEVFS_BULK, &bt);
-		if (r < 0)
-			return -errno;
-		off += (size_t)r;
-		if (r == 0)
-			return -EIO;
-	}
-	return 0;
+	return tdx_usb_bulk_out(lcd->fd, lcd->ep_out, lcd->frame, TDX_LCD_FRAME, 1000);
 }
 
 static int vendor_ctrl(struct tdx_lcd *lcd, uint8_t type, uint8_t req, uint8_t *data, uint16_t len)

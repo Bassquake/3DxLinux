@@ -34,7 +34,8 @@ struct tdx_config {
 	struct tdx_ledcolor ledcolor[TDX_MAX_LEDCOLOR];
 	int nledcolor;
 	int lcd_brightness;       /* 0..100, -1 = keep */
-	char lcd_label[10][24];   /* function keys 1..10 */
+	char lcd_label[12][24];   /* function keys 1..12 (SpacePilot Pro uses 1..10) */
+	int lcd_swap_rb;          /* Enterprise LCD: input channel order (inferred, see docs) */
 	char lcd_image[256];      /* optional 320x240 PPM shown instead of labels */
 	struct tdx_keymap keymap[TDX_MAX_KEYMAP];
 	int nkeymap;

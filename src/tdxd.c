@@ -24,6 +24,7 @@
 #include "gfx.h"
 #include "hidraw.h"
 #include "lcd.h"
+#include "lcd_ent.h"
 #include "output.h"
 #include "process.h"
 #include "report.h"
@@ -37,7 +38,9 @@ struct dev_ctx {
 	struct tdx_state st;
 	struct tdx_uinput ui;
 	struct tdx_lcd *lcd;
+	struct tdx_entlcd *elcd;
 	int lcd_page;
+	int lcd_dirty;
 	long long last_motion_ms;
 };
 
@@ -59,8 +62,25 @@ static long long now_ms(void)
 
 #define LOG(lvl, ...) do { if (cfg.verbose >= (lvl)) fprintf(stderr, "tdxd: " __VA_ARGS__); } while (0)
 
+static void entlcd_redraw(struct dev_ctx *d)
+{
+	static uint32_t px[TDX_ENT_PIXELS];
+	struct tdx_fb fb = {TDX_ENT_W, TDX_ENT_H, px};
+	if (!cfg.lcd_image[0] || gfx_load_ppm(&fb, cfg.lcd_image) != 0)
+		tdx_render_ent_page(&fb, &cfg, d->node.def->name);
+	d->elcd->swap_rb = cfg.lcd_swap_rb;
+	int rc = tdx_entlcd_show(d->elcd, px, 1);
+	d->lcd_dirty = rc == -EBUSY;
+	if (rc && rc != -EBUSY)
+		LOG(0, "Enterprise LCD update failed: %s\n", strerror(-rc));
+}
+
 static void lcd_redraw(struct dev_ctx *d)
 {
+	if (d->elcd) {
+		entlcd_redraw(d);
+		return;
+	}
 	if (!d->lcd)
 		return;
 	static uint32_t px[TDX_LCD_W * TDX_LCD_H];
@@ -78,9 +98,33 @@ static void lcd_redraw(struct dev_ctx *d)
 		LOG(0, "LCD update failed: %s\n", strerror(-rc));
 }
 
+static void entlcd_attach(struct dev_ctx *d)
+{
+	d->elcd = calloc(1, sizeof *d->elcd);
+	if (!d->elcd)
+		return;
+	int rc = tdx_entlcd_open(d->elcd, d->node.vid, d->node.pid);
+	if (rc) {
+		LOG(0, "Enterprise LCD unavailable (%s): %s\n",
+		    d->elcd->path[0] ? d->elcd->path : "no usb node", strerror(-rc));
+		free(d->elcd);
+		d->elcd = NULL;
+		return;
+	}
+	LOG(1, "Enterprise LCD on %s, bulk ep 0x%02x\n", d->elcd->path, d->elcd->ep_out);
+	lcd_redraw(d); /* first frame: opcode 0x15, then 5 s init window */
+	d->lcd_dirty = 1; /* redraw once the panel has finished initialising */
+}
+
 static void lcd_attach(struct dev_ctx *d)
 {
-	if (!cfg.lcd_enable || d->node.def->lcd != TDX_LCD_QVGA || d->node.bus != 3)
+	if (!cfg.lcd_enable || d->node.bus != 3)
+		return;
+	if (d->node.def->lcd == TDX_LCD_ENT640) {
+		entlcd_attach(d);
+		return;
+	}
+	if (d->node.def->lcd != TDX_LCD_QVGA)
 		return;
 	d->lcd = calloc(1, sizeof *d->lcd);
 	if (!d->lcd)
@@ -144,6 +188,10 @@ static void dev_close(struct dev_ctx *d)
 	if (d->lcd) {
 		tdx_lcd_close(d->lcd);
 		free(d->lcd);
+	}
+	if (d->elcd) {
+		tdx_entlcd_close(d->elcd);
+		free(d->elcd);
 	}
 	*d = devs[--ndev];
 }
@@ -314,7 +362,13 @@ int main(int argc, char **argv)
 			for (int i = 0; i < TDX_SPNAV_MAX_CLIENTS; i++)
 				pfd[np++] = (struct pollfd){.fd = spnav.cfd[i], .events = POLLIN};
 		}
-		int r = poll(pfd, (nfds_t)np, 1000);
+		int any_dirty = 0;
+		for (int i = 0; i < ndev; i++)
+			any_dirty |= devs[i].lcd_dirty;
+		int r = poll(pfd, (nfds_t)np, any_dirty ? 250 : 1000);
+		for (int i = 0; i < ndev; i++) /* Enterprise LCD finished its init window? */
+			if (devs[i].lcd_dirty)
+				lcd_redraw(&devs[i]);
 		if (r <= 0)
 			continue;
 		for (int i = ndev - 1; i >= 0; i--)

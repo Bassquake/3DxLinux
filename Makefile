@@ -36,7 +36,7 @@ BUILD   := build/$(ARCH)
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-CORE := devices_gen report config hidraw lcd gfx output process
+CORE := devices_gen report config hidraw lcd lcd_ent deflate gfx output process
 CORE_OBJ := $(addprefix $(BUILD)/,$(addsuffix .o,$(CORE)))
 
 all: $(BUILD)/tdxd $(BUILD)/tdx-lcd
@@ -57,7 +57,9 @@ $(BUILD)/test_core: tests/test_core.c $(CORE_OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 test: $(BUILD)/test_core
-	$(BUILD)/test_core
+	rm -rf $(BUILD)/vectors && mkdir -p $(BUILD)/vectors
+	$(BUILD)/test_core $(BUILD)/vectors
+	@if command -v python3 >/dev/null; then python3 tests/check_deflate.py $(BUILD)/vectors; 	 else echo "python3 not found: skipping independent deflate check"; fi
 
 # Regenerate the device table from an extracted 3DxWare Base.xml
 devices:

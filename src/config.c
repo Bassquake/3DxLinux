@@ -27,7 +27,7 @@ void tdx_config_defaults(struct tdx_config *c)
 	c->led_button_color = -1;
 	c->led_ring_color = -1;
 	c->lcd_brightness = -1;
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 12; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
 }
 
@@ -158,6 +158,7 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 			}
 		}
 		else if (!strcmp(k, "lcd_brightness")) c->lcd_brightness = atoi(v);
+		else if (!strcmp(k, "lcd_swap_rb")) c->lcd_swap_rb = parse_bool(v);
 		else if (!strcmp(k, "lcd_image")) snprintf(c->lcd_image, sizeof c->lcd_image, "%s", v);
 		else if (!strcmp(k, "verbose")) c->verbose = atoi(v);
 		else if (!strncmp(k, "scale_", 6) && (ai = axis_index(k + 6)) >= 0) c->axis_scale[ai] = atof(v);
@@ -169,7 +170,7 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 			else fprintf(stderr, "%s:%d: bad axis '%s'\n", path, ln, v);
 		} else if (!strncmp(k, "lcd_label_", 10)) {
 			int n = atoi(k + 10);
-			if (n >= 1 && n <= 10)
+			if (n >= 1 && n <= 12)
 				snprintf(c->lcd_label[n - 1], sizeof c->lcd_label[0], "%s", v);
 		} else if (!strncmp(k, "key_", 4)) {
 			if (c->nkeymap >= TDX_MAX_KEYMAP) continue;

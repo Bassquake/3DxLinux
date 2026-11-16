@@ -24,6 +24,9 @@ const struct tdx_keymap *tdx_keymap_for(const struct tdx_config *cfg,
 int tdx_rgb_plan(const struct tdx_config *cfg, const struct tdx_device_def *dev,
 		 uint8_t out[][8], int max);
 
+/* Render the Enterprise 640x150 page: labels for keys 1..12 in a 6x2 grid. */
+void tdx_render_ent_page(struct tdx_fb *fb, const struct tdx_config *cfg, const char *devname);
+
 /* Render the "function keys" page (labels 1..10) into a 320x240 fb. */
 void tdx_render_keys_page(struct tdx_fb *fb, const struct tdx_config *cfg,
 			  const char *devname, int page);

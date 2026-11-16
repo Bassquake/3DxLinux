@@ -241,14 +241,90 @@ For the SpacePilot Pro, `HIDDev.dll` `FUN_180034060` also notifies the Logitech 
 Monitor window (`PostMessage(WM_CLOSE)`) on device changes. This confirms that the
 LCD is owned by the Logitech stack and not by `HIDDev`.
 
+### 6.3 SpaceMouse Enterprise LCD image (observed: `HIDDev.dll` `CWinUSBLCDMgr`)
+
+The Enterprise has a 640×150 colour LCD. It sits on its own USB interface: 0 for
+the LCD, while HID is interface 1 (`MI_01`, the same split as the SpacePilot Pro).
+On Windows that interface is opened through WinUSB. `FUN_180048480` gives the
+packet size used for command packets: `0x200` for C633 and `0x40` for C63C.
+
+**Image source.** `3DxService` renders each LCD page to a little-endian TIFF.
+`FUN_18004c440` (`WinUSBLCD:SendTIFFFileToDevice`) parses the TIFF IFDs and
+concatenates the strips into a `0x46500`-byte buffer, which is 640×150×3. A
+multi-page TIFF becomes an animation, played back with `QueryPerformanceCounter`
+timing.
+
+**Frame encoding** (`FUN_18004bbd0`, `WinUSBLCD:SendImage`):
+
+1. Each 3-byte pixel `b0 b1 b2` becomes RGB565:
+   `(b2 & 0xF8) << 8 | (b1 & 0xFC) << 3 | b0 >> 3`. The output is row-major,
+   640 per row, `0x2EE00` = 192 000 bytes in total.
+2. Any resulting `0x0000` is replaced by `0x0821`, so that 0 can mean
+   "unchanged".
+3. For animation frames after the first, every pixel equal to the previous frame
+   is set to 0. This is a "mask" (delta) frame. The full frame is kept as the
+   next reference.
+4. The 192 000 bytes are compressed with miniz `tdefl`. `FUN_180046980` is
+   `tdefl_init`, with flags `0x46080`:
+
+   | Flag | Meaning |
+   |---|---|
+   | `0x40000` | Force static-Huffman blocks |
+   | `0x4000` | Greedy parsing |
+   | `0x2000` | Compute Adler-32 |
+   | `0x80` | 128 probes |
+
+   `WRITE_ZLIB_HEADER` (0x1000) is **not** set; it is tested at the
+   `& 0x1000` site in the compressor. The result is therefore a **raw deflate**
+   stream. The output buffer is `0x33980` bytes.
+5. One header packet is sent, zero-padded to the packet size (512 bytes), followed by
+   the compressed bytes. Both go to the same bulk OUT pipe.
+
+```
+off 0     opcode   0x11 full frame ("LCD_Send_Header_comp")
+                   0x18 delta frame ("LCD_Send_Header_comp_mask")
+                   0x15 first frame after open ("LCD_Send_Header_comp_slide")
+off 1     0x0F
+off 2..5  compressed length, u32 LE
+off 6..13 00 00 00 00  00 3F 01 EF      (0x18: all zero)
+off 14..15 00 0F
+```
+
+This is the same layout as the SpacePilot Pro/G19 header in section 5, with a
+"compressed" opcode in place of `0x10`. In both, the rectangle fields hold the
+constant 319×239.
+
+6. After the first frame following open (`0x15`), Windows logs "waiting for LCD
+   to init" and sleeps 5 s.
+
+**What `tdxd` does** (`src/lcd_ent.c`, `src/deflate.c`):
+
+- It sends the same header and a raw-deflate stream. The stream is a single
+  fixed-Huffman block with greedy hash-chain LZ77, which is the block type
+  Windows forces. Worst case is 202 389 bytes for random data, within the
+  Windows buffer.
+- Instead of blocking for 5 s, `tdxd` marks the panel busy and redraws from its
+  main loop once the 5 s are up.
+- Page updates are sent as delta frames (`0x18`).
+- `tdx-lcd` sends a single `0x15` frame and exits.
+
+**Inferred channel order.** The Windows code puts byte 2 in the top 5 bits.
+Whether that byte is red depends on how 3DxService writes the TIFF. Windows
+bitmaps are BGR in memory, which would make it standard RGB565. `tdxd` assumes
+standard RGB565 (red in the top bits); `lcd_swap_rb = yes` flips it.
+
 ## 7. Open items
 
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
   decompiled `HIDDev.dll`, but no device was available to test them.
 - **Unknown:** whether the Enterprise `{0x11, n}` LCD intensity report works on
   real hardware. No device was available to test it.
-- **Not implemented:** the Enterprise's 640×150 WinUSB LCD image transfer
-  (`CWinUSBLCDMgr` in `HIDDev.dll`).
+- **Unknown:** the colour channel order of the Enterprise LCD (see 6.3). `tdxd`
+  assumes standard RGB565 and offers `lcd_swap_rb = yes` if red and blue appear swapped.
+- **Unknown:** whether the Enterprise LCD transfer works on real hardware. Its
+  deflate payload was checked against Python's zlib, but not against the device.
+- **Not implemented:** the Giotto 1280×416 LCD path (`FUN_18004aee0`, opcodes
+  0x20–0x24, double-buffered, 24 bpp, compressed with the same deflate).
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
   accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on
   attach as a precaution and continues if the device does not answer.

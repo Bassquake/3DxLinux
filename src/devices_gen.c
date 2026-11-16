@@ -446,7 +446,7 @@ const struct tdx_device_def tdx_devices[] = {
   {0x256F, 0xC638, "ID_ProductID_C638", "SpaceMouse Pro Wireless", TDX_CLASS_3DMOUSE, TDX_LCD_NONE, 0, btn_productc638, 19},
   {0x256F, 0xC62C, "ID_ProductID_C62C", "LIPARI", TDX_CLASS_3DMOUSE, TDX_LCD_NONE, 0, btn_productc62c, 21},
   {0x046D, 0xC629, "ID_ProductID_C629", "SpacePilot PRO", TDX_CLASS_3DMOUSE, TDX_LCD_QVGA, 1, btn_productc629, 31},
-  {0x256F, 0xC633, "ID_ProductID_C633", "SpaceMouse Enterprise", TDX_CLASS_3DMOUSE, TDX_LCD_NONE, 1, btn_productc633, 51},
+  {0x256F, 0xC633, "ID_ProductID_C633", "SpaceMouse Enterprise", TDX_CLASS_3DMOUSE, TDX_LCD_ENT640, 1, btn_productc633, 51},
   {0x256F, 0xC63C, "ID_ProductID_C63C", "Giotto", TDX_CLASS_3DMOUSE, TDX_LCD_NONE, 1, btn_productc63c, 48},
   {0x256F, 0xC650, "ID_ProductID_C650", "CadMouse", TDX_CLASS_2DMOUSE, TDX_LCD_NONE, 1, btn_productc650, 7},
   {0x256F, 0xC651, "ID_ProductID_C651", "CadMouse Wireless", TDX_CLASS_2DMOUSE, TDX_LCD_NONE, 1, btn_productc651, 7},

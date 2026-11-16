@@ -31,7 +31,8 @@ CLASS_MAP = {
 # (bound to Logitech's LGPBTDD.sys on interface 0).
 HID_IFACE = {0xC629: 1, 0xC633: 1, 0xC63C: 1, 0xC650: 1, 0xC651: 1,
              0xC654: 1, 0xC655: 1, 0xC656: 1, 0xC657: 1, 0xC658: 1}
-LCD_QVGA = {(0x046D, 0xC629)}
+LCD_KIND = {(0x046D, 0xC629): "TDX_LCD_QVGA",    # LGPBTDD.inf (Logitech G19-class)
+            (0x256F, 0xC633): "TDX_LCD_ENT640"}  # HIDDev.dll CWinUSBLCDMgr
 
 # Devices older than this 3DxWare release (absent from Base.xml).  Their IDs
 # are publicly documented; buttons are exposed generically (bit n -> n+1).
@@ -108,7 +109,7 @@ def main(path):
 
     print("const struct tdx_device_def tdx_devices[] = {")
     for vid, pid, did, name, cls, sym, n in entries:
-        lcd = "TDX_LCD_QVGA" if (vid, pid) in LCD_QVGA else "TDX_LCD_NONE"
+        lcd = LCD_KIND.get((vid, pid), "TDX_LCD_NONE")
         print(f"  {{0x{vid:04X}, 0x{pid:04X}, {cstr(did)}, {cstr(name)}, {cls}, {lcd}, "
               f"{HID_IFACE.get(pid, 0)}, {sym}, {n}}},")
     print("  /* legacy devices not present in this 3DxWare release */")

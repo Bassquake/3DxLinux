@@ -15,7 +15,8 @@ enum tdx_class {
 
 enum tdx_lcd_kind {
 	TDX_LCD_NONE = 0,
-	TDX_LCD_QVGA, /* 320x240 RGB565 via vendor USB interface (SpacePilot Pro) */
+	TDX_LCD_QVGA,   /* 320x240 RGB565 raw frames, USB iface 0 (SpacePilot Pro) */
+	TDX_LCD_ENT640, /* 640x150 RGB565 deflate frames, USB iface 0 (SpaceMouse Enterprise) */
 };
 
 enum tdx_button_kind {

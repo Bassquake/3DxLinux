@@ -128,3 +128,22 @@ void tdx_render_keys_page(struct tdx_fb *fb, const struct tdx_config *cfg,
 		gfx_text(fb, 52, y + 6, cfg->lcd_label[k], 3, fg);
 	}
 }
+
+void tdx_render_ent_page(struct tdx_fb *fb, const struct tdx_config *cfg, const char *devname)
+{
+	const uint32_t bg = 0x101418, bar = 0x1F6FB2, fg = 0xE6E6E6, num = 0xFFC040, cell = 0x2A3038;
+	gfx_fill(fb, 0, 0, fb->w, fb->h, bg);
+	gfx_fill(fb, 0, 0, fb->w, 22, bar);
+	gfx_text(fb, 6, 4, devname ? devname : "3DCONNEXION", 2, 0xFFFFFF);
+	const int cols = 6, cw = fb->w / cols, top = 26, rh = (fb->h - top) / 2;
+	for (int k = 0; k < 12; k++) {
+		int x = (k % cols) * cw, y = top + (k / cols) * rh;
+		char n[12];
+		snprintf(n, sizeof n, "%d", k + 1);
+		gfx_fill(fb, x + 3, y + 2, cw - 6, rh - 4, cell);
+		gfx_text(fb, x + 8, y + 8, n, 2, num);
+		char lab[9]; /* 8 chars at scale 2 fit a 106 px cell */
+		snprintf(lab, sizeof lab, "%s", cfg->lcd_label[k]);
+		gfx_text(fb, x + 8, y + 30, lab, 2, fg);
+	}
+}

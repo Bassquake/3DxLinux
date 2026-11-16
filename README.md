@@ -19,7 +19,8 @@ components speak, using standard Linux interfaces:
 | `HIDDev.dll` LED on/off | HID output report `{0x04, on}` |
 | `HIDDev.dll` RGB LED colours (Giotto) | HID feature report `{0x1A, 0x25, led, R, G, B, 0, 0}` |
 | `HIDDev.dll` LCD intensity (Enterprise) | HID feature report `{0x11, percent}` |
-| `3DxLCDSPPRO.exe` "Function Keys" applet | built-in key-label page (SHIFT shows keys 6–10) or any PPM image |
+| `HIDDev.dll` `CWinUSBLCDMgr` (Enterprise 640×150 LCD) | `lcd_ent.c` + `deflate.c`: 512-byte header packet and raw-deflate RGB565 frames over usbfs |
+| `3DxLCDSPPRO.exe` "Function Keys" applet | built-in key-label pages: SpacePilot Pro keys 1–5 (SHIFT shows 6–10), Enterprise keys 1–12; or any PPM image |
 
 ## Supported devices
 
@@ -76,6 +77,9 @@ Edit `/etc/tdxd.conf` and apply the changes with `systemctl reload tdxd`.
 
 ## LCD
 
+`tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240) or SpaceMouse
+Enterprise (640×150). Use `-d VID:PID` to pick one.
+
 ```bash
 tdx-lcd preview page.ppm /etc/tdxd.conf   # render the key page offline
 ```
@@ -100,8 +104,9 @@ tdx-lcd ping                               # exit 0 if the panel answers vendor 
 
 | Feature | Evidence |
 |---|---|
-| Report formats, button masks, LCD framing, brightness (both LCD types), ping, LED and RGB LED requests | Recovered from the shipped binaries (Ghidra decompilation) |
-| Parsers and frame packer | Unit-tested |
+| Report formats, button masks, both LCD frame formats, brightness, ping, LED and RGB LED requests | Recovered from the shipped binaries (Ghidra decompilation) |
+| Parsers, frame packers and LCD headers | Unit-tested |
+| Deflate encoder | Round-trip checked against Python zlib in `make test` |
 | x86_64 and arm64 builds | Compile without warnings |
 | Behaviour on a physical SpacePilot Pro | **Not yet verified on hardware** |
 
