@@ -92,6 +92,7 @@ install: all
 #   make release VERSION=0.1.0
 DIST    := build/dist/tdxd-$(VERSION)-linux-$(ARCH)
 STRIP   ?= $(if $(CROSS_COMPILE),$(CROSS_COMPILE)strip,strip)
+STAGE   := $(or $(TMPDIR),/tmp)/tdxd-dist-$(ARCH)
 
 dist:
 	rm -rf $(BUILD)   # rebuild everything so the embedded version is current
@@ -104,10 +105,14 @@ dist:
 	   packaging/install.sh README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
 	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION
-	# normal modes / root ownership regardless of the build filesystem (e.g. WSL /mnt
-	# reports 0777 for everything, which root's tar would restore on extraction)
-	tar -C build/dist --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w' \
-	    -czf $(DIST).tar.gz $(notdir $(DIST))
+	# Archive from a staging copy on a Linux filesystem so file modes are real:
+	# 0644 for data, 0755 for programs/scripts, root ownership. (Building on WSL's
+	# /mnt drives reports 0777 for everything, and root's tar restores archived modes.)
+	rm -rf $(STAGE) && mkdir -p $(STAGE) && cp -r $(DIST) $(STAGE)/
+	find $(STAGE) -type d -exec chmod 755 {} + && find $(STAGE) -type f -exec chmod 644 {} +
+	chmod 755 $(STAGE)/$(notdir $(DIST))/bin/* $(STAGE)/$(notdir $(DIST))/install.sh
+	tar -C $(STAGE) --owner=0 --group=0 --numeric-owner -czf $(DIST).tar.gz $(notdir $(DIST))
+	rm -rf $(STAGE)
 	@echo "wrote $(DIST).tar.gz"
 
 release:
