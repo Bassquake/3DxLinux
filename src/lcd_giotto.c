@@ -2,6 +2,8 @@
 #include "lcd_giotto.h"
 
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "deflate.h"
@@ -355,6 +357,163 @@ int tdx_giolcd_sync_back(struct tdx_giolcd *l)
 	uint8_t pkt[TDX_GIO_PKT];
 	tdx_gio_cmd_copy(pkt, (uint8_t)l->st.b, (uint8_t)l->st.a);
 	return send_cmd(l, pkt);
+}
+
+/* ---- legacy sp4LCD.bmp path (0x13) ---- */
+
+static uint32_t rd_le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+static uint16_t rd_le16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
+
+int tdx_bmp_load(const char *path, struct tdx_bmp *bmp)
+{
+	memset(bmp, 0, sizeof *bmp);
+	FILE *f = fopen(path, "rb");
+	if (!f)
+		return -errno;
+	uint8_t h[54];
+	int rc = -EINVAL;
+	if (fread(h, 1, sizeof h, f) != sizeof h || h[0] != 'B' || h[1] != 'M')
+		goto out;
+	uint32_t off = rd_le32(h + 10), hsize = rd_le32(h + 14);
+	int32_t w = (int32_t)rd_le32(h + 18), ht = (int32_t)rd_le32(h + 22);
+	uint16_t planes = rd_le16(h + 26), bpp = rd_le16(h + 28);
+	uint32_t comp = rd_le32(h + 30);
+	/* uncompressed (BI_RGB) or BI_BITFIELDS 32 bpp, as a DIB section would hold them */
+	if (hsize < 40 || w <= 0 || ht == 0 || w > 8192 || ht > 8192 || ht < -8192 ||
+	    !(comp == 0 || (comp == 3 && bpp == 32)))
+		goto out;
+	bmp->width = w;
+	bmp->top_down = ht < 0;
+	bmp->height = ht < 0 ? -ht : ht;
+	bmp->bpp = bpp;
+	bmp->planes = planes;
+	bmp->stride = (int)(((uint32_t)w * bpp + 31) / 32 * 4);
+	size_t size = (size_t)bmp->stride * (size_t)bmp->height;
+	bmp->bits = calloc(1, size ? size : 1);
+	if (!bmp->bits) {
+		rc = -ENOMEM;
+		goto out;
+	}
+	if (fseek(f, (long)off, SEEK_SET) || fread(bmp->bits, 1, size, f) != size) {
+		tdx_bmp_free(bmp);
+		goto out;
+	}
+	rc = 0;
+out:
+	fclose(f);
+	return rc;
+}
+
+void tdx_bmp_free(struct tdx_bmp *bmp)
+{
+	free(bmp->bits);
+	bmp->bits = NULL;
+}
+
+void tdx_gio_bmp_control(const char *path, int *x, int *y, int *w, int *h)
+{
+	/* FUN_1800438d0: fwscanf(f, L"(%d, %d), (%d, %d)", &x, &y, &w, &h) */
+	FILE *f = path ? fopen(path, "r") : NULL;
+	if (!f)
+		return;
+	if (fscanf(f, "(%d, %d), (%d, %d)", x, y, w, h) < 0) {
+		/* nothing matched: defaults stay */
+	}
+	fclose(f);
+}
+
+long tdx_gio_bmp_convert(const struct tdx_bmp *bmp, int x, int y, int w, int h, uint8_t *out,
+			 size_t cap)
+{
+	if (bmp->planes * bmp->bpp <= 8 || w <= 0 || h <= 0)
+		return -1;
+	size_t n = (size_t)(bmp->bpp >> 3) * (size_t)h * (size_t)w;
+	if (n > cap)
+		return -1;
+	memset(out, 0, n);
+	int row_end = y + h < bmp->height ? y + h : bmp->height;
+	for (int row = y; row < row_end; row++) {
+		if (row < 0 || row >= TDX_GIO_H) /* FUN_18004a620: row >= descriptor height */
+			continue;
+		/* GetObject's bmBits, read as bottom-up: row r at (bmHeight - 1 - r) */
+		const uint8_t *src = bmp->bits + (size_t)(bmp->height - 1 - row) * (size_t)bmp->stride;
+		int col_end = x + w < TDX_GIO_W ? x + w : TDX_GIO_W;
+		for (int col = x; col < col_end; col++) {
+			long dst = ((long)(w - 1 - (col - x)) * h + (row - y)) * 3;
+			if (dst < 0 || dst + 2 >= (long)n)
+				break;
+			long s = 3L * col; /* always 3 bytes per source pixel, as on Windows */
+			if (s < 0 || s + 2 >= bmp->stride)
+				break;      /* Windows would read past the row; tdxd stops instead */
+			out[dst] = src[s];
+			out[dst + 1] = src[s + 1];
+			out[dst + 2] = src[s + 2];
+		}
+	}
+	return (long)n;
+}
+
+void tdx_gio_cmd_bmp_header(uint8_t pkt[TDX_GIO_PKT], uint32_t len, uint16_t y, uint16_t mx,
+			    uint16_t h, uint16_t w)
+{
+	memset(pkt, 0, TDX_GIO_PKT);
+	pkt[0] = 0x13;
+	pkt[1] = 0x0F;
+	pkt[2] = (uint8_t)len;
+	pkt[3] = (uint8_t)(len >> 8);
+	pkt[4] = (uint8_t)(len >> 16);
+	pkt[5] = (uint8_t)(len >> 24);
+	const uint16_t f[4] = {y, mx, h, w}; /* byte 6 = 0 */
+	for (int i = 0; i < 4; i++) {
+		pkt[7 + 2 * i] = (uint8_t)f[i];
+		pkt[8 + 2 * i] = (uint8_t)(f[i] >> 8);
+	}
+	pkt[15] = 0x0F;
+}
+
+int tdx_giolcd_send_bmp(struct tdx_giolcd *l, const char *bmp_path, const char *control)
+{
+	if (l->fd < 0)
+		return -EBADF;
+	int x = 0, y = 0, w = TDX_GIO_W, h = TDX_GIO_H;
+	tdx_gio_bmp_control(control, &x, &y, &w, &h);
+	if (w <= 0 || h <= 0 || w > 8192 || h > 8192)
+		return -EINVAL;
+	struct tdx_bmp bmp;
+	int rc = tdx_bmp_load(bmp_path, &bmp);
+	if (rc)
+		return rc;
+	size_t cap = (size_t)4 * (size_t)w * (size_t)h;
+	uint8_t *raw = malloc(cap);
+	uint8_t *comp = malloc(TDX_DEFLATE_BOUND(cap));
+	long n = -1, c = -1;
+	if (raw && comp)
+		n = tdx_gio_bmp_convert(&bmp, x, y, w, h, raw, cap);
+	if (n > 0)
+		c = tdx_deflate_fixed(raw, (size_t)n, comp, TDX_DEFLATE_BOUND(cap));
+	/* FUN_18004a8a0: output buffer max(n + n/0x7c00*5 + 0x85, n*110/100 + 0x80) */
+	uint32_t lim = (uint32_t)n + (uint32_t)n / 0x7c00 * 5 + 0x85;
+	uint32_t lim2 = (uint32_t)((uint64_t)n * 0x6e / 100) + 0x80;
+	if (lim2 > lim)
+		lim = lim2;
+	if (!raw || !comp)
+		rc = -ENOMEM;
+	else if (n <= 0)
+		rc = -EINVAL;
+	else if (c < 0 || (uint32_t)c > lim)
+		rc = -EFBIG;
+	else {
+		uint8_t pkt[TDX_GIO_PKT];
+		tdx_gio_cmd_bmp_header(pkt, (uint32_t)c, (uint16_t)y, (uint16_t)(TDX_GIO_W - w - x),
+				       (uint16_t)h, (uint16_t)w);
+		rc = send_cmd(l, pkt);
+		if (!rc)
+			rc = tdx_usb_bulk_out(l->fd, l->ep_out, comp, (size_t)c, 5000);
+	}
+	free(raw);
+	free(comp);
+	tdx_bmp_free(&bmp);
+	return rc;
 }
 
 int tdx_gio_plan_move(struct tdx_gio_state *s, int x, int y, struct tdx_gio_step *steps, int max)

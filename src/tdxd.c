@@ -18,6 +18,7 @@
 #include <strings.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <linux/hidraw.h>
 
@@ -213,6 +214,70 @@ static void entlcd_attach(struct dev_ctx *d)
 	d->lcd_dirty = 1; /* redraw once the panel has finished initialising */
 }
 
+/*
+ * Giotto legacy BMP path: HIDDev.dll's LCD thread watches a directory and, when
+ * sp4LCD.bmp is (re)written, sends it with opcode 0x13 and deletes it
+ * (FUN_180049c00 -> FUN_18004a8a0, DeleteFileW). Opt-in via lcd_bmp_dir.
+ */
+static int bmp_ifd = -1;
+
+static void bmp_send_pending(void)
+{
+	if (!cfg.lcd_bmp_dir[0])
+		return;
+	char bmp[512], ctl[512];
+	snprintf(bmp, sizeof bmp, "%s/sp4LCD.bmp", cfg.lcd_bmp_dir);
+	snprintf(ctl, sizeof ctl, "%s/sp4LCDControl.txt", cfg.lcd_bmp_dir);
+	if (access(bmp, F_OK))
+		return;
+	int sent = 0;
+	for (int i = 0; i < ndev; i++) {
+		if (!devs[i].glcd)
+			continue;
+		int rc = tdx_giolcd_send_bmp(devs[i].glcd, bmp, ctl);
+		LOG(rc ? 0 : 1, "Giotto LCD: sp4LCD.bmp %s%s\n", rc ? "failed: " : "sent",
+		    rc ? strerror(-rc) : "");
+		sent = 1;
+	}
+	if (sent)
+		unlink(bmp); /* Windows deletes the file after sending it */
+}
+
+static void bmp_watch_setup(void)
+{
+	if (bmp_ifd >= 0)
+		close(bmp_ifd);
+	bmp_ifd = -1;
+	if (!cfg.lcd_bmp_dir[0])
+		return;
+	bmp_ifd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (bmp_ifd < 0 || inotify_add_watch(bmp_ifd, cfg.lcd_bmp_dir, IN_CLOSE_WRITE | IN_MOVED_TO) < 0) {
+		LOG(0, "cannot watch %s: %s\n", cfg.lcd_bmp_dir, strerror(errno));
+		if (bmp_ifd >= 0)
+			close(bmp_ifd);
+		bmp_ifd = -1;
+	}
+}
+
+static void bmp_watch_read(void)
+{
+	char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
+	int hit = 0;
+	for (;;) {
+		ssize_t n = read(bmp_ifd, buf, sizeof buf);
+		if (n <= 0)
+			break;
+		for (char *p = buf; p < buf + n;) {
+			const struct inotify_event *ev = (const struct inotify_event *)p;
+			if (ev->len && !strcmp(ev->name, "sp4LCD.bmp"))
+				hit = 1;
+			p += sizeof *ev + ev->len;
+		}
+	}
+	if (hit)
+		bmp_send_pending();
+}
+
 static void lcd_attach(struct dev_ctx *d)
 {
 	if (!cfg.lcd_enable || d->node.bus != 3)
@@ -236,6 +301,7 @@ static void lcd_attach(struct dev_ctx *d)
 		LOG(1, "Giotto LCD on %s, interface %d, bulk ep 0x%02x\n", d->glcd->path,
 		    d->glcd->iface, d->glcd->ep_out);
 		lcd_redraw(d);
+		bmp_send_pending(); /* like Windows' first CompareTimes: send a file already there */
 		return;
 	}
 	if (d->node.def->lcd != TDX_LCD_QVGA)
@@ -454,6 +520,7 @@ int main(int argc, char **argv)
 		if (rc)
 			LOG(0, "spnav socket %s: %s (disabled)\n", cfg.spnav_socket, strerror(-rc));
 	}
+	bmp_watch_setup();
 
 	long long last_scan = 0;
 	while (!g_quit) {
@@ -471,16 +538,23 @@ int main(int argc, char **argv)
 				lcd_intensity_apply(&devs[i]);
 				lcd_redraw(&devs[i]);
 			}
+			bmp_watch_setup();
+			bmp_send_pending();
 		}
 		if (now_ms() - last_scan > 2000) {
 			rescan();
 			last_scan = now_ms();
 		}
 
-		struct pollfd pfd[MAX_DEV + 1 + TDX_SPNAV_MAX_CLIENTS];
+		struct pollfd pfd[MAX_DEV + 2 + TDX_SPNAV_MAX_CLIENTS];
 		int np = 0;
 		for (int i = 0; i < ndev; i++)
 			pfd[np++] = (struct pollfd){.fd = devs[i].fd, .events = POLLIN};
+		int bmp_idx = -1;
+		if (bmp_ifd >= 0) {
+			bmp_idx = np;
+			pfd[np++] = (struct pollfd){.fd = bmp_ifd, .events = POLLIN};
+		}
 		int sp_base = np;
 		if (spnav.lfd >= 0) {
 			pfd[np++] = (struct pollfd){.fd = spnav.lfd, .events = POLLIN};
@@ -501,6 +575,8 @@ int main(int argc, char **argv)
 				lcd_redraw(&devs[i]);
 		if (r <= 0)
 			continue;
+		if (bmp_idx >= 0 && (pfd[bmp_idx].revents & POLLIN))
+			bmp_watch_read();
 		for (int i = ndev - 1; i >= 0; i--)
 			if (pfd[i].revents & (POLLIN | POLLHUP | POLLERR))
 				dev_read(&devs[i]);

@@ -370,9 +370,7 @@ swap A <-> B
 The slide animation (`FUN_180049fd0`) is described in 6.5.
 
 **Legacy path.** `FUN_18004a8a0` (`SendBMPFileToDevice_RGB888`) watches the file
-`sp4LCD.bmp`. It sends a G19-style header with opcode `0x13`:
-`13 0F len32 00 y16 mx16 h16 w16 0F`, followed by the payload. `tdxd` does not
-use this path.
+`sp4LCD.bmp` and sends it with a G19-style `0x13` header (see 6.8).
 
 **What `tdxd` does** (`src/lcd_giotto.c`):
 
@@ -565,6 +563,77 @@ syncing. `tdx_giolcd_sync_back()` sends `22 {B, A}` to restore it.
 - **CLI:** `tdx-lcd rect X Y W H IMAGE.ppm` rewrites any rectangle from a
   full-size image.
 
+### 6.8 Giotto legacy BMP path (observed: `HIDDev.dll` `FUN_18004a8a0`, `FUN_180049c00`)
+
+**Trigger.**
+
+- `WinUSBLCDMgtThread` (`FUN_180048a80`) waits on `FindFirstChangeNotification`
+  for the directory `%LOCALAPPDATA%\3Dconnexion\3DxWare\Cfg`. That path comes
+  from `SHGetFolderPathW(0x801C)` followed by `PathAppend`.
+- On each change, `FUN_180049c00` compares the file's write time with the last
+  one it saw. For a Giotto (manager mode 2) it calls
+  `SendBMPFileToDevice_RGB888` on `sp4LCD.bmp`, then **deletes the file**.
+- The Enterprise (mode 1) uses the same mechanism for its TIFF file (6.3).
+
+**Rectangle.** The default is the full panel: x = 0, y = 0, w = 1280, h = 416.
+If `sp4LCDControl.txt` exists in the same directory, it is read with
+`fwscanf(L"(%d, %d), (%d, %d)", &x, &y, &w, &h)`.
+
+- Four pointers are passed; Ghidra shows only two, but the call site's
+  disassembly passes `r8`, `r9` and two stack arguments.
+- Fields that do not match keep their defaults.
+
+**Conversion** (`FUN_18004a620`):
+
+1. The BMP is loaded with `LoadImageW(LR_LOADFROMFILE | LR_CREATEDIBSECTION)`
+   and inspected with `GetObjectW`. It must have `planes × bpp > 8`.
+2. The output buffer has `(bpp/8) × w × h` bytes, zero-filled.
+3. Rows `y .. min(y+h, bmHeight)` are read as bottom-up DIB memory: row `r`
+   starts at `(bmHeight − 1 − r) × bmWidthBytes`.
+4. Columns `x .. min(x+w, 1280)` are copied 3 bytes each into the rectangle-local
+   rotated layout used by `0x21` (6.7).
+
+Two quirks follow from step 4:
+
+- The source step is always 3 bytes, so only 24 bpp BMPs convert correctly.
+- For 32 bpp, the compressed buffer still holds `4 × w × h` bytes, a zero tail
+  included.
+
+A top-down BMP (negative height) stays top-down in a DIB section, so it is read
+upside down.
+
+**Transfer.**
+
+1. The buffer is compressed with the same raw deflate. The output limit is
+   `max(n + n/0x7c00×5 + 0x85, n×110/100 + 0x80)`.
+2. A 64-byte packet carries the header:
+
+   ```
+   13 0F len32 00 y16 mx16 h16 w16 0F      (mx = 1280 - w - x)
+   ```
+
+   This is the G19 / SpacePilot Pro header (section 5) with the rectangle in
+   rotated coordinates.
+3. The payload follows on the same pipe.
+
+No buffer number and no `0x24` are involved. The legacy path writes the panel
+directly, without the A/B/C/D buffer protocol.
+
+**What `tdxd` does:**
+
+- **Library:** `tdx_bmp_load`, `tdx_gio_bmp_control`, `tdx_gio_bmp_convert`
+  and `tdx_giolcd_send_bmp` reproduce this, including both quirks.
+- **One safety change:** where Windows would read past a short BMP row,
+  `tdxd` stops copying that row instead.
+- **Tests:** for a 24 bpp bottom-up BMP, the converter's output is
+  byte-identical to the `0x21` and `0x20` packers.
+- **CLI:** `tdx-lcd bmp FILE.bmp [CONTROL]` sends a file through this path.
+- **Daemon:** with `lcd_bmp_dir = DIR`, `tdxd` emulates the watcher with
+  inotify (`IN_CLOSE_WRITE` / `IN_MOVED_TO`). When `DIR/sp4LCD.bmp` appears it
+  sends the file to every attached Giotto, then deletes it. A file that is
+  already there when a Giotto attaches is sent too. With no Giotto attached the
+  file is left alone.
+
 ## 7. Open items
 
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
@@ -577,7 +646,9 @@ syncing. `tdx_giolcd_sync_back()` sends `22 {B, A}` to restore it.
   deflate payload was checked against Python's zlib, but not against the device.
 - **Unknown:** the Giotto LCD's source orientation and channel order (see 6.4), and
   whether its transfer works on real hardware. No device was available.
-- **Not implemented:** the legacy Giotto `sp4LCD.bmp` path (opcode `0x13`).
+- **Unknown:** how the Giotto firmware combines the legacy `0x13` direct write
+  (6.8) with the buffered `0x20`–`0x24` protocol, for example which buffer it
+  lands in.
 - **Inferred:** the `0x23` field roles (6.5). The slide calls fix neither which x
   field is source nor which y field is source; `tdxd` uses the conventional
   slide direction. Not confirmed on a real Giotto.

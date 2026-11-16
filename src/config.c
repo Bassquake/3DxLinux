@@ -175,6 +175,8 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 			int src = axis_index(v);
 			if (src >= 0) c->axis_map[ai] = src;
 			else fprintf(stderr, "%s:%d: bad axis '%s'\n", path, ln, v);
+		} else if (!strcmp(k, "lcd_bmp_dir")) {
+			snprintf(c->lcd_bmp_dir, sizeof c->lcd_bmp_dir, "%s", v);
 		} else if (!strcmp(k, "lcd_slide_button")) {
 			snprintf(c->lcd_slide_button, sizeof c->lcd_slide_button, "%s", v);
 		} else if (!strcmp(k, "lcd_slide_step")) {

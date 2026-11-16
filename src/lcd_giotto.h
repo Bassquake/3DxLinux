@@ -129,6 +129,38 @@ int tdx_gio_plan_rect(struct tdx_gio_state *s, int x, int y, int w, int h, uint3
 /* Windows' output-buffer size for a w*h rectangle (FUN_18004aee0). */
 uint32_t tdx_gio_comp_max(int w, int h);
 
+/*
+ * Legacy BMP path (FUN_18004a8a0 "SendBMPFileToDevice_RGB888", 0x13):
+ *   HIDDev's LCD thread watches %LOCALAPPDATA%\3Dconnexion\3DxWare\Cfg\ and,
+ *   when sp4LCD.bmp changes, sends it and deletes it. Optional
+ *   sp4LCDControl.txt "(x, y), (w, h)" selects the rectangle (default full panel).
+ *   - BMP loaded as a DIB section; requires planes*bpp > 8
+ *   - rows y..min(y+h, bmHeight) read bottom-up: row r at ((bmHeight-1-r)*stride)
+ *   - pixel bytes copied 3 per pixel (the source step is always 3 bytes, so only
+ *     24 bpp BMPs convert correctly), rect-local rotated like 0x21
+ *   - deflated length n = (bpp/8)*w*h (32 bpp leaves a zero tail)
+ *   - header (64-byte packet): 13 0F len32 00 y16 mx16 h16 w16 0F
+ *     (the G19 / SpacePilot Pro layout, rotated coordinates), then the payload;
+ *     no buffer number and no 0x24.
+ */
+struct tdx_bmp {
+	int width, height;      /* height > 0; rows stored as in the file */
+	int bpp, planes;
+	int stride;             /* DIB row size (4-byte aligned) */
+	int top_down;           /* file had negative biHeight */
+	uint8_t *bits;          /* stride * height bytes, file row order */
+};
+int tdx_bmp_load(const char *path, struct tdx_bmp *bmp);
+void tdx_bmp_free(struct tdx_bmp *bmp);
+/* Read sp4LCDControl.txt; fields not matched keep their defaults. */
+void tdx_gio_bmp_control(const char *path, int *x, int *y, int *w, int *h);
+/* Convert like FUN_18004a620 into @out (zeroed, size (bpp/8)*w*h). Returns that size,
+ * or -1 if the bitmap is not true colour (planes*bpp <= 8). */
+long tdx_gio_bmp_convert(const struct tdx_bmp *bmp, int x, int y, int w, int h, uint8_t *out,
+			 size_t cap);
+void tdx_gio_cmd_bmp_header(uint8_t pkt[TDX_GIO_PKT], uint32_t len, uint16_t y, uint16_t mx,
+			    uint16_t h, uint16_t w);
+
 /* Plan one vertical-move step to (@x, @y), exactly as Windows (no 0x24).
  * Returns the number of CMD steps (0..2), or -1 if @y < 0. For y > 416 the
  * restore is skipped and the position is not recorded, as on Windows. */
@@ -145,6 +177,8 @@ int tdx_giolcd_show_rect(struct tdx_giolcd *l, const uint32_t *xrgb, int x, int 
 /* Copy the front buffer into the back buffer (0x22 {B, A}); needed after a
  * slide, which swaps buffers without syncing them, before a rectangle write. */
 int tdx_giolcd_sync_back(struct tdx_giolcd *l);
+/* Send a BMP through the legacy 0x13 path. @control may be NULL. */
+int tdx_giolcd_send_bmp(struct tdx_giolcd *l, const char *bmp_path, const char *control);
 /* Register 1..4 slide pages (1280x416 0x00RRGGBB each; caller keeps them alive). */
 int tdx_giolcd_set_pages(struct tdx_giolcd *l, const uint32_t *const *pages, int n);
 /* Show slide position @x (0 .. (npages-1)*1280). Call tdx_giolcd_show() once

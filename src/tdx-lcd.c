@@ -20,6 +20,8 @@
  *                                 (-w: Windows-exact, never shows the result)
  *   tdx-lcd rect X Y W H IMAGE.ppm  Giotto: rewrite only that rectangle of the
  *                                 panel from a full-size image (opcode 0x21)
+ *   tdx-lcd bmp FILE.bmp [CONTROL]  Giotto: legacy sp4LCD.bmp path (opcode 0x13);
+ *                                 CONTROL holds "(x, y), (w, h)" (24 bpp BMPs)
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -62,6 +64,7 @@ static int usage(void)
 	      "               slide [-s PX] PAGE1.ppm PAGE2.ppm [PAGE3.ppm PAGE4.ppm]   (Giotto)\n"
 	      "               move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm                (Giotto)\n"
 	      "               rect X Y W H IMAGE.ppm   update only that rectangle         (Giotto)\n"
+	      "               bmp FILE.bmp [sp4LCDControl.txt]   legacy 0x13 path     (Giotto)\n"
 	      "  panels: 046d:c629 SpacePilot Pro (320x240), 256f:c633 SpaceMouse Enterprise (640x150),\n"
 	      "          256f:c63c Giotto (1280x416)\n",
 	      stderr);
@@ -265,6 +268,34 @@ int main(int argc, char **argv)
 			rc = tdx_giolcd_slide(&gl, x < end ? x : end);
 			usleep(TDX_GIO_SLIDE_STEP_MS * 1000);
 		}
+		tdx_giolcd_close(&gl);
+		if (rc) {
+			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			return 1;
+		}
+		return 0;
+	}
+
+	if (!strcmp(cmd, "bmp")) {
+		if (kind != TDX_LCD_GIO1280) {
+			fputs("tdx-lcd: bmp is the Giotto legacy LCD path\n", stderr);
+			return 1;
+		}
+		if (argc - ai < 1 || argc - ai > 2)
+			return usage();
+		struct tdx_bmp probe;
+		if ((rc = tdx_bmp_load(argv[ai], &probe))) {
+			fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai], strerror(-rc));
+			return 1;
+		}
+		if (probe.bpp != 24)
+			fprintf(stderr, "tdx-lcd: warning: %d bpp BMP; Windows' converter only handles "
+				"24 bpp correctly and tdx-lcd reproduces that\n", probe.bpp);
+		tdx_bmp_free(&probe);
+		static struct tdx_giolcd gl;
+		if ((rc = tdx_giolcd_open(&gl, (uint16_t)vid, (uint16_t)pid)))
+			return open_error(vid, pid, rc);
+		rc = tdx_giolcd_send_bmp(&gl, argv[ai], argc - ai == 2 ? argv[ai + 1] : NULL);
 		tdx_giolcd_close(&gl);
 		if (rc) {
 			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));

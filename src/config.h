@@ -39,6 +39,7 @@ struct tdx_config {
 					     * Giotto 12 per slide page (up to 4 pages) */
 	int lcd_label_max;        /* highest lcd_label_N set in the file */
 	char lcd_slide_button[32];/* V3DK id that slides the Giotto LCD to the next page */
+	char lcd_bmp_dir[256];    /* Giotto legacy path: watch DIR/sp4LCD.bmp (0x13) */
 	int lcd_slide_step;       /* slide speed, pixels per 25 ms step */
 	int lcd_swap_rb;          /* Enterprise LCD: input channel order (inferred, see docs) */
 	char lcd_image[256];      /* optional 320x240 PPM shown instead of labels */

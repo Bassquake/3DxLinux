@@ -668,6 +668,102 @@ static void test_giotto_rect(void)
 	      screen_px(gshown, 400, 30) == img2[30 * TDX_GIO_W + 400]);     /* title bar kept */
 }
 
+static void put_le32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
+
+/* write a bottom-up BMP of @img (w x h, 0x00RRGGBB) with @bpp 24 or 32 */
+static int write_bmp(const char *path, const uint32_t *img, int w, int h, int bpp)
+{
+	int stride = (w * bpp + 31) / 32 * 4;
+	uint8_t hdr[54] = {'B', 'M'};
+	put_le32(hdr + 2, (uint32_t)(54 + stride * h));
+	put_le32(hdr + 10, 54);
+	put_le32(hdr + 14, 40);
+	put_le32(hdr + 18, (uint32_t)w);
+	put_le32(hdr + 22, (uint32_t)h);
+	hdr[26] = 1;
+	hdr[28] = (uint8_t)bpp;
+	FILE *f = fopen(path, "wb");
+	if (!f)
+		return -1;
+	fwrite(hdr, 1, sizeof hdr, f);
+	uint8_t *row = calloc(1, (size_t)stride);
+	for (int y = h - 1; y >= 0; y--) { /* bottom-up */
+		for (int x = 0; x < w; x++) {
+			uint32_t p = img[(size_t)y * w + x];
+			uint8_t *o = row + x * (bpp / 8);
+			o[0] = (uint8_t)p; o[1] = (uint8_t)(p >> 8); o[2] = (uint8_t)(p >> 16);
+		}
+		fwrite(row, 1, (size_t)stride, f);
+	}
+	free(row);
+	fclose(f);
+	return 0;
+}
+
+static void test_giotto_bmp(void)
+{
+	/* header bytes (FUN_18004a8a0) */
+	uint8_t p[TDX_GIO_PKT];
+	tdx_gio_cmd_bmp_header(p, 0x00ABCDEF, 60, 1000, 341, 200);
+	const uint8_t exp[16] = {0x13, 0x0F, 0xEF, 0xCD, 0xAB, 0x00, 0x00, 60, 0,
+				 0xE8, 0x03, 0x55, 0x01, 0xC8, 0x00, 0x0F};
+	CHECK(!memcmp(p, exp, 16) && p[16] == 0 && p[63] == 0);
+
+	/* control file "(x, y), (w, h)"; unmatched fields keep defaults */
+	const char *cp = "test_ctrl.txt";
+	FILE *f = fopen(cp, "w");
+	fputs("(10, 20), (300, 40)\n", f);
+	fclose(f);
+	int x = 0, y = 0, w = 1280, h = 416;
+	tdx_gio_bmp_control(cp, &x, &y, &w, &h);
+	CHECK(x == 10 && y == 20 && w == 300 && h == 40);
+	f = fopen(cp, "w");
+	fputs("(5, 6)\n", f);
+	fclose(f);
+	x = 0, y = 0, w = 1280, h = 416;
+	tdx_gio_bmp_control(cp, &x, &y, &w, &h);
+	CHECK(x == 5 && y == 6 && w == 1280 && h == 416);
+	remove(cp);
+	tdx_gio_bmp_control("does_not_exist.txt", &x, &y, &w, &h);
+	CHECK(x == 5);
+
+	/* 24 bpp bottom-up BMP: the 0x13 converter must equal the 0x21 rect packer */
+	static uint32_t img[TDX_GIO_PIXELS];
+	uint32_t r = 99;
+	for (size_t i = 0; i < TDX_GIO_PIXELS; i++) {
+		r = r * 1103515245u + 12345u;
+		img[i] = (r >> 8) & 0xFFFFFF;
+	}
+	const char *bp = "test_sp4LCD.bmp";
+	CHECK(write_bmp(bp, img, TDX_GIO_W, TDX_GIO_H, 24) == 0);
+	struct tdx_bmp bmp;
+	CHECK(tdx_bmp_load(bp, &bmp) == 0 && bmp.width == 1280 && bmp.height == 416 && bmp.bpp == 24);
+	static uint8_t a[TDX_GIO_W * TDX_GIO_H * 4], b[TDX_GIO_RAW];
+	long n = tdx_gio_bmp_convert(&bmp, 0, 0, TDX_GIO_W, TDX_GIO_H, a, sizeof a);
+	tdx_gio_pack_rect(img, 0, 0, TDX_GIO_W, TDX_GIO_H, b, 0);
+	CHECK(n == TDX_GIO_RAW && !memcmp(a, b, TDX_GIO_RAW));
+	tdx_gio_pack(img, b, 0); /* and the full-frame 0x20 packer */
+	CHECK(!memcmp(a, b, TDX_GIO_RAW));
+	n = tdx_gio_bmp_convert(&bmp, 100, 200, 300, 50, a, sizeof a);
+	tdx_gio_pack_rect(img, 100, 200, 300, 50, b, 0);
+	CHECK(n == 300 * 50 * 3 && !memcmp(a, b, (size_t)n));
+	dump_vector("giotto_bmp_rect", a, (size_t)n);
+	tdx_bmp_free(&bmp);
+
+	/* 32 bpp: payload is 4*w*h with a zero tail (and the 3-byte source step) */
+	CHECK(write_bmp(bp, img, TDX_GIO_W, TDX_GIO_H, 32) == 0);
+	CHECK(tdx_bmp_load(bp, &bmp) == 0 && bmp.bpp == 32);
+	n = tdx_gio_bmp_convert(&bmp, 0, 0, 64, 8, a, sizeof a);
+	int tail0 = 1;
+	for (long i = 64 * 8 * 3; i < n; i++)
+		tail0 &= a[i] == 0;
+	CHECK(n == 64 * 8 * 4 && tail0);
+	CHECK(a[((63 * 8) + 0) * 3] == bmp.bits[(size_t)415 * bmp.stride]); /* (0,0): first source byte */
+	tdx_bmp_free(&bmp);
+	remove(bp);
+	CHECK(tdx_bmp_load("does_not_exist.bmp", &bmp) < 0);
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
@@ -677,6 +773,7 @@ int main(int argc, char **argv)
 	test_giotto_slide_model();
 	test_giotto_move();
 	test_giotto_rect();
+	test_giotto_bmp();
 	test_deflate_vectors();
 	test_lcd_intensity();
 	test_device_table();
