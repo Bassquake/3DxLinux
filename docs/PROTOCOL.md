@@ -450,8 +450,11 @@ u16 fields source y, source mx, destination y, destination mx, h, w.
   slide band, so a slide moves the whole grid.
 - With `lcd_label_13`..`lcd_label_48` set, the daemon builds 2–4 pages.
   `lcd_slide_button = V3DK_…` slides to the next page at `lcd_slide_step`
-  pixels per 25 ms, then settles with a full static frame so the page dots in
-  the title bar update.
+  pixels per 25 ms. When the slide ends, the daemon:
+  1. syncs the back buffer (`22 {B, A}`), because the slide swaps buffers
+     without syncing them;
+  2. rewrites only the 1280×60 title bar with a `0x21` rectangle write (6.7),
+     so the page dots update.
 - `tdx-lcd slide P1.ppm P2.ppm [P3 P4]` animates arbitrary pages.
 
 Operation type 2 only logs; any other type logs "Unsupported image operation
@@ -515,6 +518,53 @@ background. `tdxd` reproduces this as-is.
 - **Daemon:** `tdxd` has no event that triggers this operation; it is
   available through the library and `tdx-lcd`.
 
+### 6.7 Giotto rectangle write (observed: `HIDDev.dll` `FUN_18004aee0`, `FUN_180048630`)
+
+`FUN_18004aee0` writes any rectangle `(x, y, w, h)` that is not the full
+1280×416 panel through the `0x21` path:
+
+1. **Pixels.** `FUN_18004a760` copies the rectangle in its own rotated,
+   rectangle-local order:
+   `out[((w-1-i) * h + j) * 3 + k] = pixel(x+i, y+j)[k]`, with bytes B,G,R.
+   The data is then raw-deflated. The output buffer is
+   `max(n + n/0x7c00*5 + 0x85, w*h*330/100 + 0x80)` with `n = w*h*3`. For the
+   full panel this equals the 0x20 buffer, `0x1ad080`.
+2. **Commands**, with `mx = 1280 - w - x` (mirrored column):
+
+   ```
+   21 00 {A} 01 len32 00 00 00 00 y16 mx16 h16 w16 00 00 55 AA   + compressed payload
+   swap A <-> B
+   24 {B}                                              show
+   23 {src B, dst A, sy y, smx mx, dy y, dmx mx, h, w} bring the rectangle into the new back buffer
+   22 {B, C}                                           refresh C
+   ```
+
+   The conditions come straight from the code:
+   - The swap and `24` happen only when the target buffer is A and the image's
+     usage is 0 (static).
+   - The `23` sync runs when the target is then the front buffer B.
+   - The `22 {B, C}` copy runs only for usage 0.
+   
+   A write to C or D (slide pages) is therefore just `21`/`20` plus the payload.
+
+**Back-buffer sync.** Only the rectangle is synced into the back buffer, so the
+rest of A must already match B. That holds after static frames, which copy
+`22 {B, A}`. It does not hold after a slide (6.5), whose steps swap without
+syncing. `tdx_giolcd_sync_back()` sends `22 {B, A}` to restore it.
+
+**What `tdxd` does** (`tdx_gio_plan_rect` / `tdx_giolcd_show_rect`):
+
+- It follows this sequence. A full-panel rectangle falls back to the `0x20`
+  path, as on Windows.
+- It refuses payloads larger than the Windows buffer.
+- **Device model:** the model in `tests/test_core.c` decodes the real packed
+  `0x21` payload into a simulated buffer. It checks that the rectangle appears at
+  the right on-screen position, that nothing outside it changes, and that the
+  back buffer and C end up in sync, including after a slide.
+- **Daemon:** `tdxd` uses it to refresh the title bar after a slide.
+- **CLI:** `tdx-lcd rect X Y W H IMAGE.ppm` rewrites any rectangle from a
+  full-size image.
+
 ## 7. Open items
 
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
@@ -527,8 +577,7 @@ background. `tdxd` reproduces this as-is.
   deflate payload was checked against Python's zlib, but not against the device.
 - **Unknown:** the Giotto LCD's source orientation and channel order (see 6.4), and
   whether its transfer works on real hardware. No device was available.
-- **Not implemented:** Giotto rectangle writes (`0x21`) and the legacy
-  `sp4LCD.bmp` path (opcode `0x13`).
+- **Not implemented:** the legacy Giotto `sp4LCD.bmp` path (opcode `0x13`).
 - **Inferred:** the `0x23` field roles (6.5). The slide calls fix neither which x
   field is source nor which y field is source; `tdxd` uses the conventional
   slide direction. Not confirmed on a real Giotto.

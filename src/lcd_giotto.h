@@ -110,6 +110,25 @@ void tdx_gio_cmd_copy_rect(uint8_t pkt[TDX_GIO_PKT], uint8_t src, uint8_t dst, u
 int tdx_gio_plan_slide(struct tdx_gio_state *s, int x, int npages,
 		       struct tdx_gio_step *steps, int max);
 
+/*
+ * Rectangle write (FUN_18004aee0 when the rectangle is not 1280x416):
+ *   pixels of the rectangle in rect-local rotated order
+ *     out[((w-1-i)*h + j)*3 + k] = pixel (x+i, y+j), k = B,G,R
+ *   raw deflate, then
+ *     0x21 {0x21, 0, A, 1, len32, 0,0,0,0, y16, mx16, h16, w16}  mx = 1280-w-x
+ *     payload, swap A<->B, 0x24 {B}, 0x23 {src B, dst A, rect, rect}, 0x22 {B, C}
+ */
+void tdx_gio_pack_rect(const uint32_t *xrgb, int x, int y, int w, int h, uint8_t *out,
+		       int swap_rb);
+void tdx_gio_cmd_write_rect(uint8_t pkt[TDX_GIO_PKT], uint8_t buf, uint32_t len, uint16_t y,
+			    uint16_t mx, uint16_t h, uint16_t w);
+/* Command packets for one rectangle write; pkts[0] precedes the payload.
+ * Returns 4, or -1 for an empty / out-of-panel rectangle. */
+int tdx_gio_plan_rect(struct tdx_gio_state *s, int x, int y, int w, int h, uint32_t comp_len,
+		      uint8_t pkts[4][TDX_GIO_PKT]);
+/* Windows' output-buffer size for a w*h rectangle (FUN_18004aee0). */
+uint32_t tdx_gio_comp_max(int w, int h);
+
 /* Plan one vertical-move step to (@x, @y), exactly as Windows (no 0x24).
  * Returns the number of CMD steps (0..2), or -1 if @y < 0. For y > 416 the
  * restore is skipped and the position is not recorded, as on Windows. */
@@ -120,6 +139,12 @@ void tdx_giolcd_close(struct tdx_giolcd *l);
 /* Show a 1280x416 0x00RRGGBB image (top-down rows). -EFBIG if it does not
  * compress into Windows' output buffer size. */
 int tdx_giolcd_show(struct tdx_giolcd *l, const uint32_t *xrgb);
+/* Update only rectangle (x, y, w, h) of the panel from the full 1280x416 image
+ * @xrgb (0x21 path). A full-panel rectangle uses tdx_giolcd_show(). */
+int tdx_giolcd_show_rect(struct tdx_giolcd *l, const uint32_t *xrgb, int x, int y, int w, int h);
+/* Copy the front buffer into the back buffer (0x22 {B, A}); needed after a
+ * slide, which swaps buffers without syncing them, before a rectangle write. */
+int tdx_giolcd_sync_back(struct tdx_giolcd *l);
 /* Register 1..4 slide pages (1280x416 0x00RRGGBB each; caller keeps them alive). */
 int tdx_giolcd_set_pages(struct tdx_giolcd *l, const uint32_t *const *pages, int n);
 /* Show slide position @x (0 .. (npages-1)*1280). Call tdx_giolcd_show() once

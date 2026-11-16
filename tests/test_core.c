@@ -569,6 +569,105 @@ static void test_giotto_move(void)
 	CHECK(!bad);
 }
 
+/* model: execute a 0x21 rectangle write using the real packed payload bytes */
+static void gdev_write_rect(const uint8_t *pkt, const uint8_t *packed)
+{
+	int buf = pkt[2], y = u16at(pkt + 12), mx = u16at(pkt + 14), h = u16at(pkt + 16),
+	    w = u16at(pkt + 18);
+	for (int c = 0; c < w; c++)
+		for (int r = 0; r < h; r++) {
+			const uint8_t *o = packed + ((size_t)c * h + r) * 3; /* B,G,R */
+			gdev[buf][(size_t)(mx + c) * TDX_GIO_H + y + r] =
+				(uint32_t)o[2] << 16 | (uint32_t)o[1] << 8 | o[0];
+		}
+}
+
+static void test_giotto_rect(void)
+{
+	/* header bytes (FUN_180048630) */
+	uint8_t p[TDX_GIO_PKT];
+	tdx_gio_cmd_write_rect(p, 1, 0x1234, 60, 1000, 341, 200);
+	const uint8_t exp[24] = {0x21, 0, 1, 1, 0x34, 0x12, 0, 0, 0, 0, 0, 0,
+				 60, 0, 0xE8, 0x03, 0x55, 0x01, 0xC8, 0x00, 0, 0, 0x55, 0xAA};
+	CHECK(!memcmp(p, exp, 24) && p[63] == 0);
+	CHECK(tdx_gio_comp_max(1280, 416) == 0x1ad080); /* matches the full-frame buffer */
+
+	/* rect-local rotation */
+	static uint32_t img[TDX_GIO_PIXELS], img2[TDX_GIO_PIXELS];
+	static uint8_t packed[TDX_GIO_RAW];
+	uint32_t r = 7;
+	for (size_t i = 0; i < TDX_GIO_PIXELS; i++) {
+		r = r * 1103515245u + 12345u;
+		img[i] = (r >> 8) & 0xFFFFFF;
+		r = r * 1103515245u + 12345u;
+		img2[i] = (r >> 8) & 0xFFFFFF;
+	}
+	tdx_gio_pack_rect(img2, 100, 20, 30, 10, packed, 0);
+	uint32_t px0 = img2[20 * TDX_GIO_W + 100];  /* (100,20) -> local col 29, row 0 */
+	CHECK(packed[(29 * 10 + 0) * 3] == (uint8_t)px0 && packed[(29 * 10 + 0) * 3 + 2] == (uint8_t)(px0 >> 16));
+	uint32_t px1 = img2[29 * TDX_GIO_W + 129];  /* (129,29) -> local col 0, row 9 */
+	CHECK(packed[(0 * 10 + 9) * 3 + 1] == (uint8_t)(px1 >> 8));
+
+	/* planner */
+	struct tdx_gio_state s = {.a = 1, .b = 0, .c = 3, .d = 2, .page_in_c = 2, .page_in_d = 0};
+	uint8_t pk[4][TDX_GIO_PKT];
+	CHECK(tdx_gio_plan_rect(&s, 0, 0, 0, 10, 5, pk) == -1);
+	CHECK(tdx_gio_plan_rect(&s, 1200, 0, 100, 10, 5, pk) == -1);
+	CHECK(tdx_gio_plan_rect(&s, 100, 20, 30, 10, 5, pk) == 4);
+	CHECK(pk[0][0] == 0x21 && pk[0][2] == 1 && u16at(pk[0] + 14) == 1280 - 30 - 100);
+	CHECK(pk[1][0] == 0x24 && pk[1][1] == 1);
+	CHECK(pk[2][0] == 0x23 && pk[2][1] == 1 && pk[2][2] == 0 && u16at(pk[2] + 8) == 20 &&
+	      u16at(pk[2] + 10) == 1150 && u16at(pk[2] + 12) == 20 && u16at(pk[2] + 14) == 1150 &&
+	      u16at(pk[2] + 16) == 10 && u16at(pk[2] + 18) == 30);
+	CHECK(pk[3][0] == 0x22 && pk[3][1] == 1 && pk[3][2] == 3);
+	CHECK(s.a == 0 && s.b == 1 && s.page_in_c == -1 && s.page_in_d == 0);
+
+	/* device model: static frame, a slide step (desyncs A/B), sync, title-bar rect */
+	int a = 1, b = 0;
+	tdx_gio_plan_frame(&a, &b, 3, 1, pk);
+	gdev_upload(pk[0][2], img);
+	for (int i = 1; i < 4; i++)
+		gdev_exec(pk[i]);
+	struct tdx_gio_state m = {.a = a, .b = b, .c = 3, .d = 2, .page_in_c = -1, .page_in_d = -1};
+	struct tdx_gio_step st[8];
+	int n = tdx_gio_plan_slide(&m, 0, 1, st, 8); /* single page: full copy from C */
+	for (int i = 0; i < n; i++) {
+		if (st[i].kind == TDX_GIO_STEP_UPLOAD)
+			gdev_upload(st[i].buf, img);
+		else
+			gdev_exec(st[i].pkt);
+	}
+	uint8_t sync[TDX_GIO_PKT];
+	tdx_gio_cmd_copy(sync, (uint8_t)m.b, (uint8_t)m.a); /* tdx_giolcd_sync_back */
+	gdev_exec(sync);
+	const int rx = 0, ry = 0, rw = TDX_GIO_W, rh = TDX_GIO_SLIDE_Y; /* title bar */
+	tdx_gio_pack_rect(img2, rx, ry, rw, rh, packed, 0);
+	CHECK(tdx_gio_plan_rect(&m, rx, ry, rw, rh, 1, pk) == 4);
+	gdev_write_rect(pk[0], packed);
+	for (int i = 1; i < 4; i++)
+		gdev_exec(pk[i]);
+	int bad = 0;
+	for (int y = 0; y < TDX_GIO_H && !bad; y += 3)
+		for (int x = 0; x < TDX_GIO_W && !bad; x += 5) {
+			const uint32_t *src = (y >= ry && y < ry + rh) ? img2 : img;
+			bad = screen_px(gshown, x, y) != src[y * TDX_GIO_W + x] ||
+			      screen_px(m.a, x, y) != src[y * TDX_GIO_W + x] ||  /* back in sync */
+			      screen_px(m.c, x, y) != src[y * TDX_GIO_W + x];    /* C refreshed */
+		}
+	CHECK(!bad && gshown == m.b);
+
+	/* an off-centre rectangle lands where it should */
+	tdx_gio_pack_rect(img, 100, 200, 300, 50, packed, 0);
+	CHECK(tdx_gio_plan_rect(&m, 100, 200, 300, 50, 1, pk) == 4);
+	gdev_write_rect(pk[0], packed);
+	for (int i = 1; i < 4; i++)
+		gdev_exec(pk[i]);
+	CHECK(screen_px(gshown, 100, 200) == img[200 * TDX_GIO_W + 100] &&
+	      screen_px(gshown, 399, 249) == img[249 * TDX_GIO_W + 399] &&
+	      screen_px(gshown, 99, 200) == img[200 * TDX_GIO_W + 99] &&     /* unchanged anyway */
+	      screen_px(gshown, 400, 30) == img2[30 * TDX_GIO_W + 400]);     /* title bar kept */
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
@@ -577,6 +676,7 @@ int main(int argc, char **argv)
 	test_giotto_slide();
 	test_giotto_slide_model();
 	test_giotto_move();
+	test_giotto_rect();
 	test_deflate_vectors();
 	test_lcd_intensity();
 	test_device_table();

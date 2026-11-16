@@ -144,10 +144,16 @@ static void gio_slide_tick(struct dev_ctx *d)
 		return;
 	}
 	if (x == d->slide_target) {
-		/* finished: settle on a full frame so the title bar (page dots) updates */
+		/* finished: the slide swapped buffers without syncing them, so copy the
+		 * front into the back, then rewrite only the title bar (page dots) with a
+		 * 0x21 rectangle write instead of a full frame */
 		d->lcd_page = x / TDX_GIO_W;
 		d->slide_target = -1;
-		if ((rc = tdx_giolcd_show(d->glcd, d->gio_pages[d->lcd_page])))
+		rc = tdx_giolcd_sync_back(d->glcd);
+		if (!rc)
+			rc = tdx_giolcd_show_rect(d->glcd, d->gio_pages[d->lcd_page], 0, 0, TDX_GIO_W,
+						  TDX_GIO_SLIDE_Y);
+		if (rc)
 			LOG(0, "Giotto LCD update failed: %s\n", strerror(-rc));
 	}
 }

@@ -261,6 +261,102 @@ void tdx_gio_plan_frame(int *buf_a, int *buf_b, int buf_c, uint32_t comp_len,
 	tdx_gio_cmd_copy(pkts[3], (uint8_t)*buf_b, (uint8_t)buf_c);  /* 0x22 {front, spare} */
 }
 
+void tdx_gio_pack_rect(const uint32_t *xrgb, int x, int y, int w, int h, uint8_t *out,
+		       int swap_rb)
+{
+	/* FUN_18004a760, rotate=1: out[((w-1-i)*h + (row-y))*3 + k] */
+	for (int j = 0; j < h; j++) {
+		const uint32_t *row = xrgb + (size_t)(y + j) * TDX_GIO_W + x;
+		for (int i = 0; i < w; i++) {
+			uint32_t p = row[i];
+			uint8_t r = (uint8_t)(p >> 16), g = (uint8_t)(p >> 8), b = (uint8_t)p;
+			uint8_t *o = out + ((size_t)(w - 1 - i) * h + j) * 3;
+			o[0] = swap_rb ? r : b;
+			o[1] = g;
+			o[2] = swap_rb ? b : r;
+		}
+	}
+}
+
+void tdx_gio_cmd_write_rect(uint8_t pkt[TDX_GIO_PKT], uint8_t buf, uint32_t len, uint16_t y,
+			    uint16_t mx, uint16_t h, uint16_t w)
+{
+	cmd_init(pkt, TDX_GIO_OP_WRITE_RECT); /* FUN_180048630 */
+	pkt[2] = buf;
+	pkt[3] = 1;
+	pkt[4] = (uint8_t)len;
+	pkt[5] = (uint8_t)(len >> 8);
+	pkt[6] = (uint8_t)(len >> 16);
+	pkt[7] = (uint8_t)(len >> 24);
+	const uint16_t f[4] = {y, mx, h, w}; /* bytes 8..11 stay zero */
+	for (int i = 0; i < 4; i++) {
+		pkt[12 + 2 * i] = (uint8_t)f[i];
+		pkt[13 + 2 * i] = (uint8_t)(f[i] >> 8);
+	}
+}
+
+uint32_t tdx_gio_comp_max(int w, int h)
+{
+	uint32_t raw = (uint32_t)w * (uint32_t)h * 3;
+	uint32_t a = raw / 0x7c00 * 5 + raw + 0x85;
+	uint32_t b = (uint32_t)w * (uint32_t)h * 0x14a / 100 + 0x80;
+	return a > b ? a : b;
+}
+
+int tdx_gio_plan_rect(struct tdx_gio_state *s, int x, int y, int w, int h, uint32_t comp_len,
+		      uint8_t pkts[4][TDX_GIO_PKT])
+{
+	if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > TDX_GIO_W || y + h > TDX_GIO_H)
+		return -1;
+	uint16_t mx = (uint16_t)(TDX_GIO_W - w - x);
+	tdx_gio_cmd_write_rect(pkts[0], (uint8_t)s->a, comp_len, (uint16_t)y, mx, (uint16_t)h,
+			       (uint16_t)w);
+	int t = s->b; /* flip A <-> B */
+	s->b = s->a;
+	s->a = t;
+	tdx_gio_cmd_show(pkts[1], (uint8_t)s->b);
+	/* bring just that rectangle into the new back buffer, then refresh C */
+	tdx_gio_cmd_copy_rect(pkts[2], (uint8_t)s->b, (uint8_t)s->a, (uint16_t)y, mx, (uint16_t)y,
+			      mx, (uint16_t)h, (uint16_t)w);
+	tdx_gio_cmd_copy(pkts[3], (uint8_t)s->b, (uint8_t)s->c);
+	s->page_in_c = -1;
+	return 4;
+}
+
+int tdx_giolcd_show_rect(struct tdx_giolcd *l, const uint32_t *xrgb, int x, int y, int w, int h)
+{
+	if (l->fd < 0)
+		return -EBADF;
+	if (x == 0 && y == 0 && w == TDX_GIO_W && h == TDX_GIO_H)
+		return tdx_giolcd_show(l, xrgb); /* Windows uses 0x20 for the full panel */
+	if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > TDX_GIO_W || y + h > TDX_GIO_H)
+		return -EINVAL;
+	tdx_gio_pack_rect(xrgb, x, y, w, h, l->raw, l->swap_rb);
+	size_t raw = (size_t)w * (size_t)h * 3;
+	long n = tdx_deflate_fixed(l->raw, raw, l->comp, sizeof l->comp);
+	if (n < 0 || (uint32_t)n > tdx_gio_comp_max(w, h))
+		return -EFBIG;
+	uint8_t pkts[4][TDX_GIO_PKT];
+	tdx_gio_plan_rect(&l->st, x, y, w, h, (uint32_t)n, pkts);
+	int rc;
+	if ((rc = send_cmd(l, pkts[0])) ||
+	    (rc = tdx_usb_bulk_out(l->fd, l->ep_out, l->comp, (size_t)n, 5000)))
+		return rc;
+	for (int i = 1; i < 4; i++)
+		if ((rc = send_cmd(l, pkts[i])))
+			return rc;
+	return 0;
+}
+
+int tdx_giolcd_sync_back(struct tdx_giolcd *l)
+{
+	if (l->fd < 0)
+		return -EBADF;
+	uint8_t pkt[TDX_GIO_PKT];
+	tdx_gio_cmd_copy(pkt, (uint8_t)l->st.b, (uint8_t)l->st.a);
+	return send_cmd(l, pkt);
+}
+
 int tdx_gio_plan_move(struct tdx_gio_state *s, int x, int y, struct tdx_gio_step *steps, int max)
 {
 	/* FUN_180049fd0, operation type 0 */

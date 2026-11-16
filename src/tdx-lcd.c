@@ -18,6 +18,8 @@
  *   tdx-lcd move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm   Giotto: move the image
  *                                 down off the panel, uncovering the background
  *                                 (-w: Windows-exact, never shows the result)
+ *   tdx-lcd rect X Y W H IMAGE.ppm  Giotto: rewrite only that rectangle of the
+ *                                 panel from a full-size image (opcode 0x21)
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -59,6 +61,7 @@ static int usage(void)
 	      "               brightness [0-100] | ping | dump OUT.bin | preview OUT.ppm [CONF] |\n"
 	      "               slide [-s PX] PAGE1.ppm PAGE2.ppm [PAGE3.ppm PAGE4.ppm]   (Giotto)\n"
 	      "               move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm                (Giotto)\n"
+	      "               rect X Y W H IMAGE.ppm   update only that rectangle         (Giotto)\n"
 	      "  panels: 046d:c629 SpacePilot Pro (320x240), 256f:c633 SpaceMouse Enterprise (640x150),\n"
 	      "          256f:c63c Giotto (1280x416)\n",
 	      stderr);
@@ -262,6 +265,38 @@ int main(int argc, char **argv)
 			rc = tdx_giolcd_slide(&gl, x < end ? x : end);
 			usleep(TDX_GIO_SLIDE_STEP_MS * 1000);
 		}
+		tdx_giolcd_close(&gl);
+		if (rc) {
+			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			return 1;
+		}
+		return 0;
+	}
+
+	if (!strcmp(cmd, "rect")) {
+		if (kind != TDX_LCD_GIO1280) {
+			fputs("tdx-lcd: rect is a Giotto LCD operation\n", stderr);
+			return 1;
+		}
+		if (argc - ai != 5)
+			return usage();
+		int rx = atoi(argv[ai]), ry = atoi(argv[ai + 1]);
+		int rw = atoi(argv[ai + 2]), rh = atoi(argv[ai + 3]);
+		if (rw <= 0 || rh <= 0 || rx < 0 || ry < 0 || rx + rw > TDX_GIO_W || ry + rh > TDX_GIO_H) {
+			fprintf(stderr, "tdx-lcd: rectangle must lie within %dx%d\n", TDX_GIO_W, TDX_GIO_H);
+			return 1;
+		}
+		if ((rc = gfx_load_ppm(&fb, argv[ai + 4]))) {
+			fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai + 4], strerror(-rc));
+			return 1;
+		}
+		static struct tdx_giolcd gl;
+		if ((rc = tdx_giolcd_open(&gl, (uint16_t)vid, (uint16_t)pid)))
+			return open_error(vid, pid, rc);
+		/* after open the device state is unknown: only the rectangle is written */
+		rc = tdx_giolcd_sync_back(&gl);
+		if (!rc)
+			rc = tdx_giolcd_show_rect(&gl, px, rx, ry, rw, rh);
 		tdx_giolcd_close(&gl);
 		if (rc) {
 			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
