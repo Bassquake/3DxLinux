@@ -480,17 +480,23 @@ static void dev_read(struct dev_ctx *d)
 
 static void usage(void)
 {
-	puts("usage: tdxd [-c config] [-v]... [-l]\n"
+	puts("usage: tdxd [-c config] [-v]... [-l] [-V]\n"
 	     "  -c FILE  configuration file (default " DEFAULT_CONF ")\n"
 	     "  -v       more logging (repeatable)\n"
-	     "  -l       list supported devices and exit");
+	     "  -l       list supported devices and exit\n"
+	     "  -V       print version and exit");
 }
+
+#ifndef TDX_VERSION
+#define TDX_VERSION "unknown"
+#endif
 
 int main(int argc, char **argv)
 {
 	int opt, verbose = 0;
-	while ((opt = getopt(argc, argv, "c:vlh")) != -1) {
+	while ((opt = getopt(argc, argv, "c:vlhV")) != -1) {
 		switch (opt) {
+		case 'V': puts("tdxd " TDX_VERSION); return 0;
 		case 'c': conf_path = optarg; break;
 		case 'v': verbose++; break;
 		case 'l':

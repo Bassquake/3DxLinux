@@ -25,8 +25,13 @@ CC      ?= cc
 ifneq ($(CROSS_COMPILE),)
   CC := $(CROSS_COMPILE)gcc
 endif
+# Version reported by `tdxd -V` / `tdx-lcd -V` and used in package names.
+# Release builds: make release VERSION=0.1.0
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+
 CFLAGS  ?= -O2 -g
 CFLAGS  += -std=c11 -Wall -Wextra -Wno-unused-parameter -D_DEFAULT_SOURCE -Isrc
+CFLAGS  += -DTDX_VERSION='"$(VERSION)"'
 LDFLAGS ?=
 ifeq ($(STATIC),1)
   LDFLAGS += -static
@@ -74,14 +79,16 @@ install: all
 	test -e $(DESTDIR)/etc/tdxd.conf || install -Dm644 packaging/tdxd.conf $(DESTDIR)/etc/tdxd.conf
 
 # Prebuilt package for testing on another machine:
-#   make dist                 -> build/dist/tdxd-<git>-linux-<arch>.tar.gz (static)
+#   make dist                 -> build/dist/tdxd-<version>-linux-<arch>.tar.gz (static)
 #   make dist ARCH=arm64
-VERSION := $(shell git describe --always --dirty 2>/dev/null || echo unknown)
+# Release assets for both architectures plus SHA256SUMS:
+#   make release VERSION=0.1.0
 DIST    := build/dist/tdxd-$(VERSION)-linux-$(ARCH)
 STRIP   ?= $(if $(CROSS_COMPILE),$(CROSS_COMPILE)strip,strip)
 
 dist:
-	$(MAKE) STATIC=1 ARCH=$(ARCH) all
+	rm -rf $(BUILD)   # rebuild everything so the embedded version is current
+	$(MAKE) STATIC=1 ARCH=$(ARCH) VERSION=$(VERSION) all
 	rm -rf $(DIST) && mkdir -p $(DIST)/bin
 	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(DIST)/bin/
 	$(STRIP) $(DIST)/bin/*
@@ -92,7 +99,14 @@ dist:
 	tar -C build/dist -czf $(DIST).tar.gz $(notdir $(DIST))
 	@echo "wrote $(DIST).tar.gz"
 
+release:
+	$(MAKE) dist ARCH=x86_64 VERSION=$(VERSION)
+	$(MAKE) dist ARCH=arm64 VERSION=$(VERSION)
+	cd build/dist && sha256sum tdxd-$(VERSION)-linux-x86_64.tar.gz \
+	   tdxd-$(VERSION)-linux-arm64.tar.gz > tdxd-$(VERSION)-SHA256SUMS
+	@cat build/dist/tdxd-$(VERSION)-SHA256SUMS
+
 clean:
 	rm -rf build
 
-.PHONY: all test install clean devices dist
+.PHONY: all test install clean devices dist release

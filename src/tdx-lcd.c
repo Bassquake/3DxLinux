@@ -65,6 +65,7 @@ static int usage(void)
 	      "               move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm                (Giotto)\n"
 	      "               rect X Y W H IMAGE.ppm   update only that rectangle         (Giotto)\n"
 	      "               bmp FILE.bmp [sp4LCDControl.txt]   legacy 0x13 path     (Giotto)\n"
+	      "  -V: print version\n"
 	      "  panels: 046d:c629 SpacePilot Pro (320x240), 256f:c633 SpaceMouse Enterprise (640x150),\n"
 	      "          256f:c63c Giotto (1280x416)\n",
 	      stderr);
@@ -127,10 +128,18 @@ static int open_error(unsigned vid, unsigned pid, int rc)
 	return 1;
 }
 
+#ifndef TDX_VERSION
+#define TDX_VERSION "unknown"
+#endif
+
 int main(int argc, char **argv)
 {
 	unsigned vid = 0, pid = 0;
 	int ai = 1;
+	if (argc == 2 && (!strcmp(argv[1], "-V") || !strcmp(argv[1], "--version"))) {
+		puts("tdx-lcd " TDX_VERSION);
+		return 0;
+	}
 	if (argc > 2 && !strcmp(argv[1], "-d")) {
 		if (sscanf(argv[2], "%x:%x", &vid, &pid) != 2)
 			return usage();
