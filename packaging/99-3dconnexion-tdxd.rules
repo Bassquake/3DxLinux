@@ -1,0 +1,12 @@
+# tdxd: access to 3Dconnexion devices for the logged-in user and the tdxd service.
+# hidraw nodes (motion + buttons) for Logitech-era (046d) and 3Dconnexion (256f) devices
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c6[0-2][0-9a-f]", MODE="0660", GROUP="input", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="256f", MODE="0660", GROUP="input", TAG+="uaccess"
+# Bluetooth 3Dconnexion devices (no ATTRS{idVendor} on the parent chain)
+KERNEL=="hidraw*", KERNELS=="0005:256F:*", MODE="0660", GROUP="input", TAG+="uaccess"
+
+# SpacePilot Pro LCD: vendor interface 0 accessed through usbfs
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="046d", ATTR{idProduct}=="c629", MODE="0660", GROUP="input", TAG+="uaccess"
+
+# uinput for the virtual output device
+KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"

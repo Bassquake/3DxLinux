@@ -1,0 +1,15 @@
+[Unit]
+Description=3Dconnexion device driver (tdxd)
+Documentation=file:///usr/local/share/doc/tdxd/README.md
+After=systemd-udevd.service
+Conflicts=spacenavd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tdxd -c /etc/tdxd.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RuntimeDirectory=tdxd
+
+[Install]
+WantedBy=multi-user.target
