@@ -119,8 +119,41 @@ event, even though `tdxd` sent them.
 order. This matches what Blender expects for the SpacePilot Pro: FIT = 1,
 TOP = 2, RIGHT = 4, FRONT = 5, ROLL_CW = 8, ISO1 = 10.
 
+### Calibrate and per-application profiles
+
+Same day, same device and WSL setup, with the development build after commit
+`d288772` plus the `realpath` fix described below.
+
+**Configuration:**
+
+- the shipped `tdxd.conf` with `calibrate_button = V3DK_MENU`;
+- `profile_dir` holding the example `blender.conf` profile, which matches
+  `blender, blender-*` and sets labels 1–3 to Edit, Undo and Redo.
+
+| Test | Result |
+|---|---|
+| Firmware version | **Pass:** `tdxctl status` reported `SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11`, read from sysfs `bcdDevice` = `0x0411`. That is ≥ 0x200, so 3DxWare's re-zero gate allows the command. |
+| `tdxctl calibrate` | **Pass:** `ok SpacePilot PRO: re-zeroed`. The device accepted feature report `{0x07, 0x00}`: `HIDIOCSFEATURE` succeeded and the device did not reject the request. |
+| Rest readings | No change was visible. The device sent no axis reports during 3 s at rest, both before and after the calibration. This cap was already centred, so the calibration had no drift to remove. |
+| `calibrate_button = V3DK_MENU` | **Pass:** each MENU press logged `re-zeroed` (pressed twice). |
+| Profile switch via `tdxctl focus blender` | **Pass:** the active profile became `blender (via focus)`, and the LCD switched to keys 1–3 labelled Edit, Undo and Redo (as you saw). Key 1 presses were handled under that profile. |
+| Profile switch back (`tdxctl focus gimp`) | **Pass:** the default profile was restored. |
+| Input during the test | **Pass:** in a 20 s window there were 28 translation, 28 rotation and 8 button reports on hidraw, and `tdxd` logged every button event. |
+
+**Bug found and fixed in this test.** On its first start with the real device,
+`tdxd` aborted with `*** buffer overflow detected ***`.
+
+- **Cause:** the new `bcdDevice` lookup called `realpath()` with a 512-byte
+  buffer. glibc's fortified `realpath` requires `PATH_MAX`.
+- **Why it wasn't caught earlier:** the device-less test never reached that code.
+- **Fix:** the buffer is now `PATH_MAX`, and the daemon then ran normally.
+- **Scope:** the v0.1.0 release does not contain this code.
+
 ### Not covered by this test
 
+- Whether `tdxctl calibrate` corrects a drifting cap. This device had no rest
+  drift to correct.
+- `tdx-focus` on a real X11 or sway desktop. Focus was set with `tdxctl focus`.
 - Linux applications other than Blender (FreeCAD, etc.).
 - Applications using the uinput device rather than the spacenavd socket.
 - Pulling the cap upward (the +Z direction).

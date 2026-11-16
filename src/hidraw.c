@@ -2,6 +2,7 @@
 #include "hidraw.h"
 
 #include <dirent.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,7 +47,8 @@ static int parse_uevent(const char *path, struct tdx_hid_node *n)
 /* Walk up from the hidraw's HID device to the USB device and read bcdDevice. */
 static uint16_t read_version(const char *hidraw_name)
 {
-	char p[600], real[512];
+	/* realpath() needs a PATH_MAX buffer (glibc's fortified build aborts otherwise) */
+	static char p[PATH_MAX + 16], real[PATH_MAX];
 	snprintf(p, sizeof p, "/sys/class/hidraw/%s/device", hidraw_name);
 	if (!realpath(p, real))
 		return 0;
