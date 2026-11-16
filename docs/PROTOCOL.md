@@ -428,11 +428,19 @@ swap A <-> B ; 24 {B}
 **0x23 layout.** Bytes `[1]` = source, `[2]` = destination, then from byte 8 the
 u16 fields source y, source mx, destination y, destination mx, h, w.
 
-- **Inferred:** the field roles. The two calls are only consistent with this
-  reading. "mx" is the mirrored column, `1280 - w - x`, matching the rotated
-  pixel layout. A device model in `tests/test_core.c` executes the planned
-  packets and confirms the on-screen result at offsets 1, 320, 1279, 1280,
-  1900 and the last page.
+- **Inferred:** the field roles. "mx" is the mirrored column, `1280 - w - x`,
+  matching the rotated pixel layout.
+  - The slide calls do not settle which x field is the source and which is the
+    destination. Swapping them also gives a coherent slide, in the opposite
+    direction, with the next page entering from the left.
+  - `tdxd` uses the conventional direction: as `x` increases the content moves
+    left and the next page enters from the right.
+  - Both slide calls use equal source and destination y (60), so they cannot
+    distinguish the y fields either. The vertical move (6.6) uses different
+    values; with this reading it moves its image down.
+  - A device model in `tests/test_core.c` executes the planned packets under
+    this reading. It confirms the on-screen result at offsets 1, 320, 1279,
+    1280, 1900 and the last page.
 
 **What `tdxd` does** (`tdx_gio_plan_slide` / `tdx_giolcd_slide`):
 
@@ -446,9 +454,66 @@ u16 fields source y, source mx, destination y, destination mx, h, w.
   the title bar update.
 - `tdx-lcd slide P1.ppm P2.ppm [P3 P4]` animates arbitrary pages.
 
-**Not implemented.** Operation type 0 is a vertical variant using `param+0xc` as
-y, constants `0x164`/`0x1a0`, and `0x23` copies from D and C without a show.
-Operation type 2 only logs.
+Operation type 2 only logs; any other type logs "Unsupported image operation
+type".
+
+### 6.6 Giotto vertical move (observed: `HIDDev.dll` `FUN_180049fd0`, type 0)
+
+Operation type 0 logs "LCDImageOp: move _Moving to x: %d, y: %d". It moves the
+"moving" image vertically over a background.
+
+**Images.**
+
+- The moving image is the usage-2 image in slot (0,1). `SetLCDImage` only caches
+  it ("Not waking thread to send to FW until swiping begins").
+- `FUN_18004b2e0` writes slot (0,1) into buffer D and slot (2,1) into buffer C,
+  with `0x20` and no flip.
+
+**Each call to (x, y):**
+
+1. Negative `y` is ignored; the gate is `-y + 0x1a0 < 0x1a1`.
+2. If `y < 356` (`0x164`), the moving image's rows from 60 are drawn at row
+   `y + 60`, clipped to the panel:
+
+   ```
+   23 {src D, dst A, sy 60, smx 0, dy y+60, dmx 0, h 356-y, w 1280}
+   ```
+
+3. If `y` grew since the previous call (`prev` at `+0x2f108`, initially 0), the
+   newly uncovered rows are restored from the background:
+
+   ```
+   23 {src C, dst A, sy prev, smx 0, dy prev, dmx 0, h y-prev, w 1280}
+   ```
+
+   If either value exceeds 416 (`0x1a0`), Windows returns here without recording
+   the new position.
+4. The position is stored at `+0x2f104/+0x2f108`.
+
+**No show.** Windows sends no `0x24` in this operation, so the result stays in
+back buffer A until something else presents it.
+
+**Restored rows.** The restored band `[prev, y)` is not offset by 60, while the
+image is drawn from `y + 60`. During the move, the 60 rows in `[y, y+60)` keep
+whatever buffer A held before. After a move to 416 the whole buffer is
+background. `tdxd` reproduces this as-is.
+
+**What `tdxd` does** (`tdx_gio_plan_move` / `tdx_giolcd_move`):
+
+- **Windows-exact steps:** the planner emits exactly the steps above, including
+  the edge cases, which are covered by tests.
+- **Present (`tdxd` addition):** since Windows never shows the result,
+  `tdx_giolcd_move(…, present = 1)` adds `24 {A}` after each step.
+  `tdx_giolcd_move_finish()` then makes A the front buffer and copies it to the
+  new back buffer (`22 {B, A}`).
+- **Device model:** the model in `tests/test_core.c` checks that, when
+  presented, rows above `y` show the background and rows from `y + 60` show the
+  moving image shifted down by `y`.
+- **CLI:** `tdx-lcd move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm` shows MOVING,
+  then pushes it down off the panel, uncovering BACKGROUND. `-w` sends only the
+  Windows commands, with no present.
+- **Daemon:** `tdxd` has no event that triggers this operation; it is
+  available through the library and `tdx-lcd`.
 
 ## 7. Open items
 
@@ -462,11 +527,13 @@ Operation type 2 only logs.
   deflate payload was checked against Python's zlib, but not against the device.
 - **Unknown:** the Giotto LCD's source orientation and channel order (see 6.4), and
   whether its transfer works on real hardware. No device was available.
-- **Not implemented:** the Giotto vertical image operation (type 0 in
-  `FUN_180049fd0`), rectangle writes (`0x21`) and the legacy `sp4LCD.bmp` path
-  (opcode `0x13`).
-- **Inferred:** the `0x23` field roles (6.5). They are consistent with both Windows
-  call sites and the device model, but not confirmed on a real Giotto.
+- **Not implemented:** Giotto rectangle writes (`0x21`) and the legacy
+  `sp4LCD.bmp` path (opcode `0x13`).
+- **Inferred:** the `0x23` field roles (6.5). The slide calls fix neither which x
+  field is source nor which y field is source; `tdxd` uses the conventional
+  slide direction. Not confirmed on a real Giotto.
+- **Unknown:** how Windows makes the result of a vertical move (6.6) visible,
+  since it sends no `0x24` for it. `tdxd` presents buffer A itself.
 - **Unknown:** a Giotto LCD brightness command. None was found in `HIDDev.dll`.
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
   accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on

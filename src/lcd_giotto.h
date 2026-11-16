@@ -57,9 +57,21 @@ enum {
 #define TDX_GIO_SLIDE_H 0x155 /* 341 */
 #define TDX_GIO_SLIDE_STEP_MS 25
 
+/*
+ * Vertical move (FUN_180049fd0, LCDImageOp type 0, "move _Moving to x, y"):
+ *   the "moving" image (usage 2, slot (0,1)) sits in buffer D, the background
+ *   (slot (2,1)) in C. For y in [0, 416] with previous y = prev (initially 0):
+ *     if y < 356:   0x23 {src D, dst A, sy 60,   smx 0, dy y+60, dmx 0, h 356-y,  w 1280}
+ *     if y > prev:  0x23 {src C, dst A, sy prev, smx 0, dy prev, dmx 0, h y-prev, w 1280}
+ *   then prev = y. Windows sends no 0x24 here; tdxd can optionally present A.
+ */
+#define TDX_GIO_MOVE_LIMIT 0x164 /* 356 */
+#define TDX_GIO_MOVE_MAX_Y 0x1A0 /* 416 */
+
 struct tdx_gio_state {
 	int a, b, c, d;              /* device frame buffers: back, front, spare, page */
 	int page_in_c, page_in_d;    /* which slide page each holds, -1 = unknown */
+	int move_x, move_y;          /* last vertical-move position (+0x2f104/+0x2f108) */
 };
 
 enum { TDX_GIO_STEP_UPLOAD = 1, TDX_GIO_STEP_CMD = 2 };
@@ -98,6 +110,11 @@ void tdx_gio_cmd_copy_rect(uint8_t pkt[TDX_GIO_PKT], uint8_t src, uint8_t dst, u
 int tdx_gio_plan_slide(struct tdx_gio_state *s, int x, int npages,
 		       struct tdx_gio_step *steps, int max);
 
+/* Plan one vertical-move step to (@x, @y), exactly as Windows (no 0x24).
+ * Returns the number of CMD steps (0..2), or -1 if @y < 0. For y > 416 the
+ * restore is skipped and the position is not recorded, as on Windows. */
+int tdx_gio_plan_move(struct tdx_gio_state *s, int x, int y, struct tdx_gio_step *steps, int max);
+
 int tdx_giolcd_open(struct tdx_giolcd *l, uint16_t vid, uint16_t pid);
 void tdx_giolcd_close(struct tdx_giolcd *l);
 /* Show a 1280x416 0x00RRGGBB image (top-down rows). -EFBIG if it does not
@@ -108,5 +125,12 @@ int tdx_giolcd_set_pages(struct tdx_giolcd *l, const uint32_t *const *pages, int
 /* Show slide position @x (0 .. (npages-1)*1280). Call tdx_giolcd_show() once
  * beforehand so the rows outside the slide band are populated. */
 int tdx_giolcd_slide(struct tdx_giolcd *l, int x);
+/* Upload the vertical-move images: @moving -> D, @background -> C; resets y to 0. */
+int tdx_giolcd_set_moving(struct tdx_giolcd *l, const uint32_t *moving, const uint32_t *background);
+/* Move the moving image to @y (0..416). With @present, also show buffer A
+ * (0x24 {A}; a tdxd addition - Windows does not show it here). */
+int tdx_giolcd_move(struct tdx_giolcd *l, int y, int present);
+/* End a presented move: make the shown buffer the front (B) and sync the back. */
+int tdx_giolcd_move_finish(struct tdx_giolcd *l);
 
 #endif

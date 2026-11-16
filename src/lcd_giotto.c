@@ -260,3 +260,74 @@ void tdx_gio_plan_frame(int *buf_a, int *buf_b, int buf_c, uint32_t comp_len,
 	tdx_gio_cmd_copy(pkts[2], (uint8_t)*buf_b, (uint8_t)*buf_a); /* 0x22 {front, back} */
 	tdx_gio_cmd_copy(pkts[3], (uint8_t)*buf_b, (uint8_t)buf_c);  /* 0x22 {front, spare} */
 }
+
+int tdx_gio_plan_move(struct tdx_gio_state *s, int x, int y, struct tdx_gio_step *steps, int max)
+{
+	/* FUN_180049fd0, operation type 0 */
+	if (y < 0) /* "-y + 0x1a0 < 0x1a1": only negative y is rejected */
+		return -1;
+	int n = 0, k;
+	int vis = TDX_GIO_MOVE_LIMIT - y;
+	if (vis > 0) { /* moving image (D rows 60..) drawn at y + 60, clipped to the panel */
+		if ((k = add_cmd(steps, &n, max)) < 0) return -1;
+		tdx_gio_cmd_copy_rect(steps[k].pkt, (uint8_t)s->d, (uint8_t)s->a, TDX_GIO_SLIDE_Y, 0,
+				      (uint16_t)(y + TDX_GIO_SLIDE_Y), 0, (uint16_t)vis, TDX_GIO_W);
+	}
+	int prev = s->move_y;
+	if (prev < y) { /* rows uncovered since last step <- C */
+		if (prev > TDX_GIO_MOVE_MAX_Y || y > TDX_GIO_MOVE_MAX_Y)
+			return n; /* Windows bails out here without recording the position */
+		if ((k = add_cmd(steps, &n, max)) < 0) return -1;
+		tdx_gio_cmd_copy_rect(steps[k].pkt, (uint8_t)s->c, (uint8_t)s->a, (uint16_t)prev, 0,
+				      (uint16_t)prev, 0, (uint16_t)(y - prev), TDX_GIO_W);
+	}
+	s->move_x = x;
+	s->move_y = y;
+	return n;
+}
+
+int tdx_giolcd_set_moving(struct tdx_giolcd *l, const uint32_t *moving, const uint32_t *background)
+{
+	if (l->fd < 0)
+		return -EBADF;
+	/* FUN_18004b2e0 usage 1/2: moving image (slot 0,1) -> D, slot (2,1) -> C, no flip */
+	int rc = upload(l, l->st.d, moving);
+	if (!rc)
+		rc = upload(l, l->st.c, background);
+	l->st.page_in_c = l->st.page_in_d = -1; /* the slide page cache is overwritten */
+	l->st.move_x = l->st.move_y = 0;
+	return rc;
+}
+
+int tdx_giolcd_move(struct tdx_giolcd *l, int y, int present)
+{
+	if (l->fd < 0)
+		return -EBADF;
+	struct tdx_gio_step steps[3];
+	int n = tdx_gio_plan_move(&l->st, l->st.move_x, y, steps, 2);
+	if (n < 0)
+		return -EINVAL;
+	if (present) { /* tdxd addition: Windows leaves A unshown in this operation */
+		steps[n].kind = TDX_GIO_STEP_CMD;
+		tdx_gio_cmd_show(steps[n++].pkt, (uint8_t)l->st.a);
+	}
+	for (int i = 0; i < n; i++) {
+		int rc = send_cmd(l, steps[i].pkt);
+		if (rc)
+			return rc;
+	}
+	return 0;
+}
+
+int tdx_giolcd_move_finish(struct tdx_giolcd *l)
+{
+	if (l->fd < 0)
+		return -EBADF;
+	/* A has been shown: make it the front buffer and copy it into the new back */
+	int t = l->st.b;
+	l->st.b = l->st.a;
+	l->st.a = t;
+	uint8_t pkt[TDX_GIO_PKT];
+	tdx_gio_cmd_copy(pkt, (uint8_t)l->st.b, (uint8_t)l->st.a);
+	return send_cmd(l, pkt);
+}

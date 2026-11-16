@@ -505,6 +505,70 @@ static void test_giotto_slide_model(void)
 	}
 }
 
+static void test_giotto_move(void)
+{
+	struct tdx_gio_state s = {.a = 0, .b = 1, .c = 3, .d = 2, .page_in_c = -1, .page_in_d = -1};
+	struct tdx_gio_step st[4];
+	int n;
+
+	/* y = 0: moving image at row 60, nothing uncovered */
+	n = tdx_gio_plan_move(&s, 0, 0, st, 4);
+	CHECK(n == 1 && st[0].pkt[0] == 0x23 && st[0].pkt[1] == 2 && st[0].pkt[2] == 0);
+	CHECK(u16at(st[0].pkt + 8) == 60 && u16at(st[0].pkt + 12) == 60 &&
+	      u16at(st[0].pkt + 16) == 356 && u16at(st[0].pkt + 18) == 1280);
+
+	/* y = 100: moving image at 160 (h 256), rows 0..99 restored from C */
+	n = tdx_gio_plan_move(&s, 0, 100, st, 4);
+	CHECK(n == 2 && u16at(st[0].pkt + 12) == 160 && u16at(st[0].pkt + 16) == 256);
+	CHECK(st[1].pkt[1] == 3 && st[1].pkt[2] == 0 && u16at(st[1].pkt + 8) == 0 &&
+	      u16at(st[1].pkt + 12) == 0 && u16at(st[1].pkt + 16) == 100);
+
+	/* y = 400: moving image gone (356 - y <= 0), rows 100..399 restored */
+	n = tdx_gio_plan_move(&s, 0, 400, st, 4);
+	CHECK(n == 1 && st[0].pkt[1] == 3 && u16at(st[0].pkt + 8) == 100 && u16at(st[0].pkt + 16) == 300);
+
+	/* y > 416: Windows skips the restore and keeps the old position */
+	n = tdx_gio_plan_move(&s, 0, 500, st, 4);
+	CHECK(n == 0 && s.move_y == 400);
+	/* moving back up: no restore copy, position recorded */
+	n = tdx_gio_plan_move(&s, 0, 50, st, 4);
+	CHECK(n == 1 && st[0].pkt[1] == 2 && s.move_y == 50);
+	CHECK(tdx_gio_plan_move(&s, 0, -1, st, 4) == -1);
+
+	/* device model: present A after each step, check what is on screen */
+	static uint32_t sheet[TDX_GIO_PIXELS], bg[TDX_GIO_PIXELS];
+	for (int y = 0; y < TDX_GIO_H; y++)
+		for (int x = 0; x < TDX_GIO_W; x++) {
+			sheet[y * TDX_GIO_W + x] = (uint32_t)(1u << 22 | x << 9 | y);
+			bg[y * TDX_GIO_W + x] = (uint32_t)(2u << 22 | x << 9 | y);
+		}
+	int a = 1, b = 0;
+	uint8_t pk[4][TDX_GIO_PKT];
+	tdx_gio_plan_frame(&a, &b, 3, 1, pk); /* static sheet first */
+	gdev_upload(pk[0][2], sheet);
+	for (int i = 1; i < 4; i++)
+		gdev_exec(pk[i]);
+	struct tdx_gio_state m = {.a = a, .b = b, .c = 3, .d = 2};
+	gdev_upload(m.d, sheet);
+	gdev_upload(m.c, bg);
+	int bad = 0;
+	for (int y = 40; y <= 416 && !bad; y += 40) {
+		n = tdx_gio_plan_move(&m, 0, y, st, 4);
+		for (int i = 0; i < n; i++)
+			gdev_exec(st[i].pkt);
+		gshown = m.a; /* present (tdxd addition) */
+		for (int r = 0; r < TDX_GIO_H && !bad; r += 5)
+			for (int x = 0; x < TDX_GIO_W && !bad; x += 11) {
+				uint32_t got = screen_px(gshown, x, r);
+				if (r < y)
+					bad = got != bg[r * TDX_GIO_W + x];
+				else if (r >= y + 60)
+					bad = got != sheet[(r - y) * TDX_GIO_W + x];
+			}
+	}
+	CHECK(!bad);
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
@@ -512,6 +576,7 @@ int main(int argc, char **argv)
 	test_giotto_lcd();
 	test_giotto_slide();
 	test_giotto_slide_model();
+	test_giotto_move();
 	test_deflate_vectors();
 	test_lcd_intensity();
 	test_device_table();

@@ -15,6 +15,9 @@
  *   tdx-lcd preview OUT.ppm [CONF] render tdxd's key page to a PPM, no device
  *   tdx-lcd slide [-s PX] P1.ppm P2.ppm [P3 P4]   Giotto: slide through 2-4 pages,
  *                                 PX pixels per 25 ms step (default 64)
+ *   tdx-lcd move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm   Giotto: move the image
+ *                                 down off the panel, uncovering the background
+ *                                 (-w: Windows-exact, never shows the result)
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -55,6 +58,7 @@ static int usage(void)
 	fputs("usage: tdx-lcd [-d VID:PID] image FILE.ppm | text LINE... | fill RRGGBB|bars |\n"
 	      "               brightness [0-100] | ping | dump OUT.bin | preview OUT.ppm [CONF] |\n"
 	      "               slide [-s PX] PAGE1.ppm PAGE2.ppm [PAGE3.ppm PAGE4.ppm]   (Giotto)\n"
+	      "               move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm                (Giotto)\n"
 	      "  panels: 046d:c629 SpacePilot Pro (320x240), 256f:c633 SpaceMouse Enterprise (640x150),\n"
 	      "          256f:c63c Giotto (1280x416)\n",
 	      stderr);
@@ -258,6 +262,54 @@ int main(int argc, char **argv)
 			rc = tdx_giolcd_slide(&gl, x < end ? x : end);
 			usleep(TDX_GIO_SLIDE_STEP_MS * 1000);
 		}
+		tdx_giolcd_close(&gl);
+		if (rc) {
+			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			return 1;
+		}
+		return 0;
+	}
+
+	if (!strcmp(cmd, "move")) {
+		if (kind != TDX_LCD_GIO1280) {
+			fputs("tdx-lcd: move is a Giotto LCD operation\n", stderr);
+			return 1;
+		}
+		int step = 16, present = 1;
+		for (;;) {
+			if (ai + 1 < argc && !strcmp(argv[ai], "-s")) {
+				step = atoi(argv[ai + 1]);
+				ai += 2;
+			} else if (ai < argc && !strcmp(argv[ai], "-w")) {
+				present = 0;
+				ai++;
+			} else
+				break;
+		}
+		if (argc - ai != 2 || step <= 0)
+			return usage();
+		static uint32_t *img[2];
+		for (int i = 0; i < 2; i++) {
+			img[i] = calloc(TDX_GIO_PIXELS, sizeof(uint32_t));
+			struct tdx_fb pf = {TDX_GIO_W, TDX_GIO_H, img[i]};
+			if (!img[i] || (rc = gfx_load_ppm(&pf, argv[ai + i]))) {
+				fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai + i], strerror(rc ? -rc : ENOMEM));
+				return 1;
+			}
+		}
+		static struct tdx_giolcd gl;
+		if ((rc = tdx_giolcd_open(&gl, (uint16_t)vid, (uint16_t)pid)))
+			return open_error(vid, pid, rc);
+		/* moving image shown statically, then pushed down to y = 416 */
+		rc = tdx_giolcd_show(&gl, img[0]);
+		if (!rc)
+			rc = tdx_giolcd_set_moving(&gl, img[0], img[1]);
+		for (int y = step; !rc && y < TDX_GIO_MOVE_MAX_Y + step; y += step) {
+			rc = tdx_giolcd_move(&gl, y < TDX_GIO_MOVE_MAX_Y ? y : TDX_GIO_MOVE_MAX_Y, present);
+			usleep(TDX_GIO_SLIDE_STEP_MS * 1000);
+		}
+		if (!rc && present)
+			rc = tdx_giolcd_move_finish(&gl);
 		tdx_giolcd_close(&gl);
 		if (rc) {
 			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
