@@ -90,11 +90,15 @@ tdx-lcd image splash.ppm                   # 320x240 binary PPM
 tdx-lcd brightness 60
 ```
 
+```bash
+tdx-lcd ping                               # exit 0 if the panel answers vendor request 0x01
+```
+
 ## Status
 
 | Feature | Evidence |
 |---|---|
-| Report formats, button masks, LCD framing, brightness and LED requests | Recovered from the shipped binaries (Ghidra decompilation) |
+| Report formats, button masks, LCD framing, brightness, ping and LED requests | Recovered from the shipped binaries (Ghidra decompilation) |
 | Parsers and frame packer | Unit-tested |
 | x86_64 and arm64 builds | Compile without warnings |
 | Behaviour on a physical SpacePilot Pro | **Not yet verified on hardware** |

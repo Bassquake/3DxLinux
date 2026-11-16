@@ -134,7 +134,18 @@ bmRequestType 0x41  bRequest 0x0A  wValue 0  wIndex 0 (interface)  wLength 9
 
 At initialisation the current value is read back with the same request in the
 IN direction (`0xC1`, IOCTL `0x220010`) and decremented by one.
-`bRequest 0x01` (IN, 9 bytes) is polled as a presence/status ping.
+`bRequest 0x01` (`0xC1`, 9 bytes) is a presence/ready ping. On resume,
+`LCDExtDeviceManagerResumeReEnumerate` calls `FUN_180002530`, which sends it to
+every LCD up to 100 times, 100 ms apart, until it succeeds. It then sleeps
+500 ms before re-enumerating.
+
+`tdxd` does the same through `tdx_lcd_wait_ready()`, with at most 20 tries
+(2 s):
+
+- after opening the LCD;
+- again before retrying a failed frame write.
+
+`tdx-lcd ping` sends a single ping.
 
 - **Inferred:** the brightness range is 0..100. The Windows default is 80 for the
   "Cartman" C250 prototype. The SpacePilot Pro's own default is read from the device.
@@ -164,8 +175,10 @@ LCD is owned by the Logitech stack and not by `HIDDev`.
 ## 7. Open items
 
 - **Unknown:** the Giotto LED/colour feature-report format.
-- **Unknown:** whether the SpacePilot Pro firmware needs a "wake" or ping command
-  before it accepts frames. The Logitech stack pings with `bRequest 0x01`.
-  `tdxd` does not, because nothing in the observed write path requires it.
+- **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
+  accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on
+  attach as a precaution and continues if the device does not answer.
+- **Unknown:** the meaning of the 9 bytes the ping returns. They are ignored on
+  Windows and in `tdxd`.
 - **Unknown:** LCD soft-button reads (`LCDExtDeviceManagerReadSoftButtonsEx`).
   The SpacePilot Pro reports its keys through HID instead.

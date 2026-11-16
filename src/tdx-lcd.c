@@ -5,6 +5,7 @@
  *   tdx-lcd text "line1" ...      show up to 8 text lines
  *   tdx-lcd fill RRGGBB           solid colour (test pattern: "bars")
  *   tdx-lcd brightness [0-100]    get / set backlight
+ *   tdx-lcd ping                  vendor request 0x01; exit 0 if the panel answers
  *   tdx-lcd dump FILE.bin         write the raw USB frame (header+pixels), no device
  */
 #define _GNU_SOURCE
@@ -33,7 +34,7 @@ static void bars(void)
 static int usage(void)
 {
 	fputs("usage: tdx-lcd [-d VID:PID] image FILE.ppm | text LINE... | fill RRGGBB|bars |\n"
-	      "               brightness [0-100] | dump OUT.bin | preview OUT.ppm [CONF]\n",
+	      "               brightness [0-100] | ping | dump OUT.bin | preview OUT.ppm [CONF]\n",
 	      stderr);
 	return 2;
 }
@@ -100,7 +101,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (!strcmp(cmd, "brightness")) {
+	if (!strcmp(cmd, "ping")) {
+		rc = tdx_lcd_ping(&lcd);
+		if (!rc)
+			puts("LCD answered");
+	} else if (!strcmp(cmd, "brightness")) {
 		if (ai < argc)
 			rc = tdx_lcd_set_brightness(&lcd, atoi(argv[ai]));
 		else if ((rc = tdx_lcd_get_brightness(&lcd)) >= 0) {
@@ -123,6 +128,8 @@ int main(int argc, char **argv)
 			tdx_lcd_close(&lcd);
 			return usage();
 		}
+		if (!rc && tdx_lcd_wait_ready(&lcd, 20) != 0)
+			fputs("tdx-lcd: no answer to ping, sending frame anyway\n", stderr);
 		if (!rc)
 			rc = tdx_lcd_show(&lcd, px);
 	}

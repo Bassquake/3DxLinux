@@ -7,6 +7,7 @@
  *                 FUN_180001c40  converts 32bpp XRGB -> RGB565, column-major
  *                 FUN_180001980  WriteFileEx(handle, buf, 0x25a00) -> bulk OUT
  *                 SettingsUpdatedByUser: vendor request 0x0A = brightness
+ *                 FUN_180002530 (resume): vendor IN request 0x01 = ping
  *   LGPBTDD.sys   IOCTL 0x220010/0x220014 -> URB_FUNCTION_VENDOR_INTERFACE
  *                 (setup bytes: bRequest, wValue, wIndex, wLength, data...)
  */
@@ -37,6 +38,11 @@ void tdx_lcd_pack(const uint32_t *xrgb, uint8_t *out);
 int tdx_lcd_open(struct tdx_lcd *lcd, uint16_t vid, uint16_t pid);
 void tdx_lcd_close(struct tdx_lcd *lcd);
 int tdx_lcd_show(struct tdx_lcd *lcd, const uint32_t *xrgb);
+/* Vendor IN request 0x01 (9 bytes): presence / ready check. 0 = device answered. */
+int tdx_lcd_ping(struct tdx_lcd *lcd);
+/* Ping until the device answers (max @tries, 100 ms apart), then settle 500 ms,
+ * as EDMBTDD.dll does after resume. 0 on success. */
+int tdx_lcd_wait_ready(struct tdx_lcd *lcd, int tries);
 int tdx_lcd_set_brightness(struct tdx_lcd *lcd, int percent); /* 0..100 */
 int tdx_lcd_get_brightness(struct tdx_lcd *lcd);              /* >=0 or -errno */
 

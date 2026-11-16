@@ -13,8 +13,10 @@
 
 #define VENDOR_OUT 0x41 /* host->device, vendor, interface */
 #define VENDOR_IN  0xC1 /* device->host, vendor, interface */
+#define REQ_PING 0x01
 #define REQ_BRIGHTNESS 0x0A
 #define REQ_LEN 9
+#define READY_SETTLE_MS 500 /* EDMBTDD sleeps 500 ms after the first successful ping */
 #define BULK_CHUNK 16384 /* multiple of 512: identical bus traffic to one write */
 
 void tdx_lcd_header(uint8_t h[TDX_LCD_HDR])
@@ -194,6 +196,33 @@ static int vendor_ctrl(struct tdx_lcd *lcd, uint8_t type, uint8_t req, uint8_t *
 	};
 	int r = ioctl(lcd->fd, USBDEVFS_CONTROL, &ct);
 	return r < 0 ? -errno : r;
+}
+
+int tdx_lcd_ping(struct tdx_lcd *lcd)
+{
+	if (lcd->fd < 0)
+		return -EBADF;
+	uint8_t d[REQ_LEN] = {0};
+	int r = vendor_ctrl(lcd, VENDOR_IN, REQ_PING, d, REQ_LEN);
+	return r < 0 ? r : 0;
+}
+
+int tdx_lcd_wait_ready(struct tdx_lcd *lcd, int tries)
+{
+	/* EDMBTDD.dll FUN_180002530 (called from LCDExtDeviceManagerResumeReEnumerate):
+	 * ping up to 100 times, 100 ms apart, then settle 500 ms. */
+	int rc = -EIO;
+	for (int i = 0; i < tries; i++) {
+		rc = tdx_lcd_ping(lcd);
+		if (rc == 0)
+			break;
+		if (rc == -ENODEV || rc == -EBADF)
+			return rc;
+		usleep(100 * 1000);
+	}
+	if (rc == 0)
+		usleep(READY_SETTLE_MS * 1000);
+	return rc;
 }
 
 int tdx_lcd_set_brightness(struct tdx_lcd *lcd, int percent)

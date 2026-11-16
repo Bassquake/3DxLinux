@@ -66,6 +66,12 @@ static void lcd_redraw(struct dev_ctx *d)
 	if (!cfg.lcd_image[0] || gfx_load_ppm(&fb, cfg.lcd_image) != 0)
 		tdx_render_keys_page(&fb, &cfg, d->node.def->name, d->lcd_page);
 	int rc = tdx_lcd_show(d->lcd, px);
+	if (rc && rc != -ENODEV) {
+		/* e.g. after host suspend: wait for the panel like EDMBTDD does, retry once */
+		LOG(1, "LCD write failed (%s), waiting for device\n", strerror(-rc));
+		if (tdx_lcd_wait_ready(d->lcd, 20) == 0)
+			rc = tdx_lcd_show(d->lcd, px);
+	}
 	if (rc)
 		LOG(0, "LCD update failed: %s\n", strerror(-rc));
 }
@@ -86,6 +92,9 @@ static void lcd_attach(struct dev_ctx *d)
 		return;
 	}
 	LOG(1, "LCD on %s, bulk ep 0x%02x\n", d->lcd->path, d->lcd->ep_out);
+	rc = tdx_lcd_wait_ready(d->lcd, 20);
+	if (rc)
+		LOG(0, "LCD did not answer ping (%s); trying anyway\n", strerror(-rc));
 	if (cfg.lcd_brightness >= 0)
 		tdx_lcd_set_brightness(d->lcd, cfg.lcd_brightness);
 	lcd_redraw(d);
