@@ -76,6 +76,38 @@ sudo systemctl enable --now tdxd
 `spacenavd` at the same time (the service unit declares `Conflicts=`).
 Edit `/etc/tdxd.conf` and apply the changes with `systemctl reload tdxd`.
 
+### Prebuilt package (no compiler on the test machine)
+
+`make dist` builds static, stripped binaries and packs them with the udev rule,
+the service, the config and an install script. Use `make dist ARCH=arm64` for
+arm64.
+
+```bash
+tar xzf tdxd-*-linux-x86_64.tar.gz && cd tdxd-*-linux-x86_64
+```
+
+```bash
+sudo ./install.sh
+```
+
+```bash
+sudo tdxd -v -v
+```
+
+Running the daemon in the foreground shows each detected device, every button
+press (with `-v -v`), and any LCD / LED errors. `sudo ./install.sh --remove`
+uninstalls everything except `/etc/tdxd.conf`.
+
+### First hardware test checklist
+
+1. `tdxd -l` lists the device's VID:PID, and `ls /dev/hidraw*` shows its node.
+2. `sudo tdxd -v -v`, then move the cap and press buttons: events are logged.
+   `evtest` shows the "3Dconnexion … (tdxd)" device.
+3. LCD: stop the daemon, then run `sudo tdx-lcd fill bars`. On a SpacePilot Pro,
+   also run `sudo tdx-lcd ping` and `sudo tdx-lcd brightness 50`.
+4. If colours look wrong (red/blue swapped) or the image is upside down, note
+   it. These are the inferred parts listed in `docs/PROTOCOL.md`.
+
 ## LCD
 
 `tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240), SpaceMouse

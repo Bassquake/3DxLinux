@@ -73,7 +73,26 @@ install: all
 	install -Dm644 packaging/tdxd.service $(DESTDIR)/etc/systemd/system/tdxd.service
 	test -e $(DESTDIR)/etc/tdxd.conf || install -Dm644 packaging/tdxd.conf $(DESTDIR)/etc/tdxd.conf
 
+# Prebuilt package for testing on another machine:
+#   make dist                 -> build/dist/tdxd-<git>-linux-<arch>.tar.gz (static)
+#   make dist ARCH=arm64
+VERSION := $(shell git describe --always --dirty 2>/dev/null || echo unknown)
+DIST    := build/dist/tdxd-$(VERSION)-linux-$(ARCH)
+STRIP   ?= $(if $(CROSS_COMPILE),$(CROSS_COMPILE)strip,strip)
+
+dist:
+	$(MAKE) STATIC=1 ARCH=$(ARCH) all
+	rm -rf $(DIST) && mkdir -p $(DIST)/bin
+	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(DIST)/bin/
+	$(STRIP) $(DIST)/bin/*
+	cp packaging/99-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
+	   packaging/install.sh README.md docs/PROTOCOL.md $(DIST)/
+	chmod +x $(DIST)/install.sh
+	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION
+	tar -C build/dist -czf $(DIST).tar.gz $(notdir $(DIST))
+	@echo "wrote $(DIST).tar.gz"
+
 clean:
 	rm -rf build
 
-.PHONY: all test install clean devices
+.PHONY: all test install clean devices dist

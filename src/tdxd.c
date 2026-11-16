@@ -494,10 +494,14 @@ int main(int argc, char **argv)
 		case 'c': conf_path = optarg; break;
 		case 'v': verbose++; break;
 		case 'l':
-			for (size_t i = 0; i < tdx_device_count; i++)
+			for (size_t i = 0; i < tdx_device_count; i++) {
+				const char *lcd = tdx_devices[i].lcd == TDX_LCD_QVGA     ? "  lcd=320x240"
+						  : tdx_devices[i].lcd == TDX_LCD_ENT640  ? "  lcd=640x150"
+						  : tdx_devices[i].lcd == TDX_LCD_GIO1280 ? "  lcd=1280x416"
+											  : "";
 				printf("%04x:%04x  %-34s buttons=%-3d%s\n", tdx_devices[i].vid,
-				       tdx_devices[i].pid, tdx_devices[i].name, tdx_devices[i].nbuttons,
-				       tdx_devices[i].lcd ? "  lcd=320x240" : "");
+				       tdx_devices[i].pid, tdx_devices[i].name, tdx_devices[i].nbuttons, lcd);
+			}
 			return 0;
 		default: usage(); return opt == 'h' ? 0 : 2;
 		}
