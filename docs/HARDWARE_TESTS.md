@@ -68,10 +68,61 @@ it. Values 31–39 and 61–74 were not tried, so the exact thresholds are unkno
 The value read back did not change one second after setting it, so the panel
 switches levels immediately rather than fading.
 
+### Blender (libspnav client)
+
+Same day, same device and WSL setup, `tdxd` 0.1.0 with the shipped
+`tdxd.conf`. The spacenavd socket was at its default path, `/run/spnav.sock`.
+
+**Blender** is Ubuntu 22.04's package: Blender 3.0.1 (`3.0.1+dfsg-7`), linked
+against `libspnav.so.0` (0.2.3). Its window was shown on the Windows desktop
+through WSLg, and it ran with `--debug-events` to log incoming events. This
+build does not accept `--debug-ndof`.
+
+**Socket path.** libspnav builds its path from the strings `/var/run` and
+`/spnav.sock`. `/var/run` is a symlink to `/run`, so this is `tdxd`'s default
+socket and no configuration was needed.
+
+**Connection.**
+
+- `/proc/net/unix` showed two endpoints on the socket: `tdxd`'s listener and
+  Blender's connection.
+- Blender identified the device itself and printed `ndof: using SpacePilot Pro`.
+  It finds the model by running `lsusb`, which saw the USB/IP-attached device
+  as `046d:c629`.
+
+| Test | Result |
+|---|---|
+| Viewport navigation | **Pass:** orbit, pan and zoom followed the cap in natural directions. No axis remapping in `tdxd.conf` was needed. |
+| Motion events | **Pass:** 79 `NDOF_MOTION` events logged with real values, e.g. `rot (0 −0.4914 0.3657)`, `tx (0 −0.5143 −0.1600)`. |
+| View buttons | **Pass:** every press that `tdxd` logged arrived as a press/release pair, as listed below. |
+| FIT button | **Pass:** after clicking into the viewport, 8 presses in `tdxd` gave 14 `NDOF_BUTTON_FIT` events, and you confirmed the view re-framed. |
+
+Button presses in `tdxd` and the Blender events they produced:
+
+| Button | Presses in `tdxd` | Blender events |
+|---|---|---|
+| `NDOF_BUTTON_TOP` | 3 | 6 |
+| `NDOF_BUTTON_ROLL_CW` | 3 | 6 |
+| `NDOF_BUTTON_FRONT` | 2 | 4 |
+| `NDOF_BUTTON_RIGHT` | 2 | 4 |
+| `NDOF_BUTTON_ISO1` | 2 | 4 |
+
+**FIT and window focus.** In the first run, two FIT presses produced no Blender
+event, even though `tdxd` sent them.
+
+- **Inferred:** this is a focus issue. Blender's log shows a `WINDOW_DEACTIVATE`
+  event, and FIT worked every time once the viewport had been clicked. So
+  Blender apparently ignores NDOF buttons while its window is unfocused. This
+  is Blender behaviour, not a `tdxd` problem.
+
+**Button numbering.** `tdxd` sends spacenavd button numbers in `Base.xml` bit
+order. This matches what Blender expects for the SpacePilot Pro: FIT = 1,
+TOP = 2, RIGHT = 4, FRONT = 5, ROLL_CW = 8, ISO1 = 10.
+
 ### Not covered by this test
 
-- Linux applications reading the spacenavd socket or the uinput device (Blender,
-  FreeCAD). Events were only checked with the capture script inside WSL.
+- Linux applications other than Blender (FreeCAD, etc.).
+- Applications using the uinput device rather than the spacenavd socket.
 - Pulling the cap upward (the +Z direction).
 - Whether the LCD *requires* the ping before frames. The ping was always sent
   first in these tests.

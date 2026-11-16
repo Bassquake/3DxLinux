@@ -188,7 +188,7 @@ tdx-lcd bmp sp4LCD.bmp                    # Giotto: legacy 0x13 path (24 bpp BMP
 | Parsers, frame packers and LCD headers | Unit-tested |
 | Deflate encoder | Round-trip checked against Python zlib in `make test` |
 | x86_64 and arm64 builds | Compile without warnings |
-| SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, and the daemon's key page with SHIFT paging |
+| SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, the daemon's key page with SHIFT paging, and **Blender 3.0.1** navigation and view buttons through libspnav |
 | SpaceMouse Enterprise and Giotto | Not verified on hardware (no device available) |
 
 `docs/PROTOCOL.md` lists the open items.
