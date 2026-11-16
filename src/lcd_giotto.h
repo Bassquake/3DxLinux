@@ -39,10 +39,42 @@ enum {
 	TDX_GIO_OP_SHOW = 0x24,
 };
 
+/*
+ * Slide (FUN_180049fd0, LCDImageOp type 1 "SiImageOpType_Slide"):
+ *   up to 4 pages of 1280x416; position x in [0, pages*1280).
+ *   page p = x / 1280, off = x % 1280. Device buffer D holds page p, C page p+1
+ *   (each written with 0x20 only when it changes). Per step, rows 60..400 of the
+ *   back buffer A are composed with two 0x23 rectangle copies, then A/B swap
+ *   and 0x24 shows it (Windows then sleeps 25 ms):
+ *     0x23 {src D, dst A, sy 60, smx 0,          dy 60, dmx off, h 341, w 1280-off}
+ *     0x23 {src C, dst A, sy 60, smx 1280-off,   dy 60, dmx 0,   h 341, w off}
+ *   On the last page the page is copied from C at full width.
+ *   0x23 layout: [1] src, [2] dst, [8] src y, [10] src mx, [12] dst y,
+ *   [14] dst mx, [16] h, [18] w (u16 LE; mx = mirrored x = 1280 - w - x).
+ */
+#define TDX_GIO_MAX_PAGES 4
+#define TDX_GIO_SLIDE_Y 0x3C  /* 60  */
+#define TDX_GIO_SLIDE_H 0x155 /* 341 */
+#define TDX_GIO_SLIDE_STEP_MS 25
+
+struct tdx_gio_state {
+	int a, b, c, d;              /* device frame buffers: back, front, spare, page */
+	int page_in_c, page_in_d;    /* which slide page each holds, -1 = unknown */
+};
+
+enum { TDX_GIO_STEP_UPLOAD = 1, TDX_GIO_STEP_CMD = 2 };
+struct tdx_gio_step {
+	int kind;
+	int buf, page;               /* UPLOAD: write slide page @page into buffer @buf */
+	uint8_t pkt[TDX_GIO_PKT];    /* CMD */
+};
+
 struct tdx_giolcd {
 	int fd, iface;
 	unsigned ep_out;
-	int buf_a, buf_b, buf_c, buf_d; /* device frame buffers (back, front, spare...) */
+	struct tdx_gio_state st;        /* device buffer roles + slide page cache */
+	const uint32_t *pages[TDX_GIO_MAX_PAGES];
+	int npages;
 	int swap_rb;
 	char path[64];
 	uint8_t raw[TDX_GIO_RAW];
@@ -59,10 +91,22 @@ void tdx_gio_cmd_show(uint8_t pkt[TDX_GIO_PKT], uint8_t buf);
 void tdx_gio_plan_frame(int *buf_a, int *buf_b, int buf_c, uint32_t comp_len,
 			uint8_t pkts[4][TDX_GIO_PKT]);
 
+void tdx_gio_cmd_copy_rect(uint8_t pkt[TDX_GIO_PKT], uint8_t src, uint8_t dst, uint16_t sy,
+			   uint16_t smx, uint16_t dy, uint16_t dmx, uint16_t h, uint16_t w);
+/* Plan one slide step at position @x over @npages pages. Updates @s.
+ * Returns the number of steps written (<= @max), or -1 on bad arguments. */
+int tdx_gio_plan_slide(struct tdx_gio_state *s, int x, int npages,
+		       struct tdx_gio_step *steps, int max);
+
 int tdx_giolcd_open(struct tdx_giolcd *l, uint16_t vid, uint16_t pid);
 void tdx_giolcd_close(struct tdx_giolcd *l);
 /* Show a 1280x416 0x00RRGGBB image (top-down rows). -EFBIG if it does not
  * compress into Windows' output buffer size. */
 int tdx_giolcd_show(struct tdx_giolcd *l, const uint32_t *xrgb);
+/* Register 1..4 slide pages (1280x416 0x00RRGGBB each; caller keeps them alive). */
+int tdx_giolcd_set_pages(struct tdx_giolcd *l, const uint32_t *const *pages, int n);
+/* Show slide position @x (0 .. (npages-1)*1280). Call tdx_giolcd_show() once
+ * beforehand so the rows outside the slide band are populated. */
+int tdx_giolcd_slide(struct tdx_giolcd *l, int x);
 
 #endif

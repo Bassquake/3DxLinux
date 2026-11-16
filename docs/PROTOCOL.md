@@ -348,7 +348,7 @@ is 64 bytes for C63C (`FUN_180048480`). Multi-byte fields are little-endian.
 | `0x20` | `20 00 buf 01 len32` | write a full compressed frame into device buffer `buf`; payload follows |
 | `0x21` | `21 00 buf 01 len32 00×4 y16 mx16 h16 w16` | write a rectangle (`mx = 1280 - w - x`, mirrored by the rotation) |
 | `0x22` | `22 b1 b2` | copy whole buffer `b1` → `b2` |
-| `0x23` | `23 b1 b2 … y16 mx16 y16 mx16 h16 w16` | copy a rectangle |
+| `0x23` | `23 src dst 00×5 sy16 smx16 dy16 dmx16 h16 w16` | copy a rectangle from `src` to `dst` (see 6.5) |
 | `0x24` | `24 buf` | show buffer `buf` |
 
 **Buffers and the static-image sequence:**
@@ -367,9 +367,7 @@ swap A <-> B
 22 {B, C}              and into C
 ```
 
-The other usages (moving / slide animations, `FUN_180049fd0`) combine the
-`0x21` and `0x23` rectangle commands across buffers C and D. They are not
-implemented.
+The slide animation (`FUN_180049fd0`) is described in 6.5.
 
 **Legacy path.** `FUN_18004a8a0` (`SendBMPFileToDevice_RGB888`) watches the file
 `sp4LCD.bmp`. It sends a G19-style header with opcode `0x13`:
@@ -391,6 +389,67 @@ renders, which is not visible in `HIDDev.dll`:
 - **Row order:** the source rows are assumed to be top-down. `HIDDev`'s own BMP
   loader flips bottom-up DIBs to top-down before using this converter.
 
+### 6.5 Giotto slide animation (observed: `HIDDev.dll` `FUN_180049fd0`)
+
+`UdDevSetDisplay` case 0xd ("LCDImageOp") reaches `FUN_180049fd0`, where
+operation type 1 is `SiImageOpType_Slide`.
+
+**Pages.** `SetLCDImage` (`FUN_180049e10`) caches up to four 1280×416 slide
+pages in slots (0..3, 1). Their descriptors sit at `+0x2ee80`, `+0x2ef28`,
+`+0x2efd0` and `+0x2f078`; slot k = page × 3 + 1, each slot 0x38 bytes. "Moving"
+images (usage 2) are cached only; the device is not touched until a slide
+starts.
+
+**Position.** The slide position `x` lies in `[0, 0x1400)`; anything outside is
+logged as "unexpected x value". The page is `x / 1280` and the offset is
+`x % 1280`.
+
+**Device buffers.**
+
+- Buffer D (`+0x2f118`, initially 2) holds page p.
+- Buffer C (`+0x2f114`, initially 3) holds page p+1.
+- Each is written with `0x20` (no flip) only when the cached page has changed.
+  `+0x2f0ec/+0x2f0f0/+0x2f0f4` and `+0x2f0f8/+0x2f0fc/+0x2f100` track the cached
+  slot and its dirty flag.
+
+**Each step.** Two rectangle copies compose the slide band, rows 60..400
+(`y = 0x3C`, `h = 0x155`), into back buffer A. Then A and B swap, `24 {B}`
+shows the result, and Windows sleeps 25 ms:
+
+```
+23 {src D, dst A, sy 60, smx 0,        dy 60, dmx off, h 341, w 1280-off}
+23 {src C, dst A, sy 60, smx 1280-off, dy 60, dmx 0,   h 341, w off}      (if off > 0)
+swap A <-> B ; 24 {B}
+```
+
+**Last page.** For `x` in `[3840, 5120)`, page 3 is copied whole from C:
+`23 {C, A, 60, 0, 60, 0, 341, 1280}`.
+
+**0x23 layout.** Bytes `[1]` = source, `[2]` = destination, then from byte 8 the
+u16 fields source y, source mx, destination y, destination mx, h, w.
+
+- **Inferred:** the field roles. The two calls are only consistent with this
+  reading. "mx" is the mirrored column, `1280 - w - x`, matching the rotated
+  pixel layout. A device model in `tests/test_core.c` executes the planned
+  packets and confirms the on-screen result at offsets 1, 320, 1279, 1280,
+  1900 and the last page.
+
+**What `tdxd` does** (`tdx_gio_plan_slide` / `tdx_giolcd_slide`):
+
+- It follows the same sequence. Pages are uploaded only when they change. C is
+  not uploaded at offset 0, because it isn't read there.
+- The renderer keeps the title bar in rows 0..59 and the key grid inside the
+  slide band, so a slide moves the whole grid.
+- With `lcd_label_13`..`lcd_label_48` set, the daemon builds 2–4 pages.
+  `lcd_slide_button = V3DK_…` slides to the next page at `lcd_slide_step`
+  pixels per 25 ms, then settles with a full static frame so the page dots in
+  the title bar update.
+- `tdx-lcd slide P1.ppm P2.ppm [P3 P4]` animates arbitrary pages.
+
+**Not implemented.** Operation type 0 is a vertical variant using `param+0xc` as
+y, constants `0x164`/`0x1a0`, and `0x23` copies from D and C without a show.
+Operation type 2 only logs.
+
 ## 7. Open items
 
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
@@ -403,8 +462,11 @@ renders, which is not visible in `HIDDev.dll`:
   deflate payload was checked against Python's zlib, but not against the device.
 - **Unknown:** the Giotto LCD's source orientation and channel order (see 6.4), and
   whether its transfer works on real hardware. No device was available.
-- **Not implemented:** the Giotto animated/sliding views (rectangle writes `0x21`
-  and copies `0x23`, buffer D) and the legacy `sp4LCD.bmp` path (opcode `0x13`).
+- **Not implemented:** the Giotto vertical image operation (type 0 in
+  `FUN_180049fd0`), rectangle writes (`0x21`) and the legacy `sp4LCD.bmp` path
+  (opcode `0x13`).
+- **Inferred:** the `0x23` field roles (6.5). They are consistent with both Windows
+  call sites and the device model, but not confirmed on a real Giotto.
 - **Unknown:** a Giotto LCD brightness command. None was found in `HIDDev.dll`.
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
   accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on

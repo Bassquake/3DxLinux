@@ -13,6 +13,8 @@
  *   tdx-lcd ping                  SpacePilot Pro vendor request 0x01
  *   tdx-lcd dump OUT.bin          write the USB transfer for 'bars' to a file, no device
  *   tdx-lcd preview OUT.ppm [CONF] render tdxd's key page to a PPM, no device
+ *   tdx-lcd slide [-s PX] P1.ppm P2.ppm [P3 P4]   Giotto: slide through 2-4 pages,
+ *                                 PX pixels per 25 ms step (default 64)
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -51,7 +53,8 @@ static void bars(void)
 static int usage(void)
 {
 	fputs("usage: tdx-lcd [-d VID:PID] image FILE.ppm | text LINE... | fill RRGGBB|bars |\n"
-	      "               brightness [0-100] | ping | dump OUT.bin | preview OUT.ppm [CONF]\n"
+	      "               brightness [0-100] | ping | dump OUT.bin | preview OUT.ppm [CONF] |\n"
+	      "               slide [-s PX] PAGE1.ppm PAGE2.ppm [PAGE3.ppm PAGE4.ppm]   (Giotto)\n"
 	      "  panels: 046d:c629 SpacePilot Pro (320x240), 256f:c633 SpaceMouse Enterprise (640x150),\n"
 	      "          256f:c63c Giotto (1280x416)\n",
 	      stderr);
@@ -154,7 +157,7 @@ int main(int argc, char **argv)
 		tdx_config_defaults(&cfg);
 		tdx_config_load(&cfg, ai + 1 < argc ? argv[ai + 1] : "/etc/tdxd.conf");
 		if (kind == TDX_LCD_ENT640 || kind == TDX_LCD_GIO1280)
-			tdx_render_ent_page(&fb, &cfg, def->name);
+			tdx_render_ent_page(&fb, &cfg, def->name, 0, kind == TDX_LCD_GIO1280 ? tdx_config_lcd_pages(&cfg) : 1);
 		else
 			tdx_render_keys_page(&fb, &cfg, def->name, 0);
 		return write_ppm(argv[ai]);
@@ -219,6 +222,48 @@ int main(int argc, char **argv)
 	if (!strcmp(cmd, "ping") && kind == TDX_LCD_ENT640) {
 		fputs("tdx-lcd: ping is a SpacePilot Pro request\n", stderr);
 		return 1;
+	}
+
+	if (!strcmp(cmd, "slide")) {
+		if (kind != TDX_LCD_GIO1280) {
+			fputs("tdx-lcd: slide is a Giotto LCD operation\n", stderr);
+			return 1;
+		}
+		int step = 64;
+		if (ai + 1 < argc && !strcmp(argv[ai], "-s")) {
+			step = atoi(argv[ai + 1]);
+			ai += 2;
+		}
+		int np = argc - ai;
+		if (np < 2 || np > TDX_GIO_MAX_PAGES || step <= 0)
+			return usage();
+		static uint32_t *pages[TDX_GIO_MAX_PAGES];
+		for (int i = 0; i < np; i++) {
+			pages[i] = calloc(TDX_GIO_PIXELS, sizeof(uint32_t));
+			struct tdx_fb pf = {TDX_GIO_W, TDX_GIO_H, pages[i]};
+			if (!pages[i] || (rc = gfx_load_ppm(&pf, argv[ai + i]))) {
+				fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai + i], strerror(rc ? -rc : ENOMEM));
+				return 1;
+			}
+		}
+		static struct tdx_giolcd gl;
+		if ((rc = tdx_giolcd_open(&gl, (uint16_t)vid, (uint16_t)pid)))
+			return open_error(vid, pid, rc);
+		/* static first page (fills the rows outside the slide band), then slide */
+		rc = tdx_giolcd_show(&gl, pages[0]);
+		if (!rc)
+			rc = tdx_giolcd_set_pages(&gl, (const uint32_t *const *)pages, np);
+		int end = (np - 1) * TDX_GIO_W;
+		for (int x = step; !rc && x <= end + step - 1; x += step) {
+			rc = tdx_giolcd_slide(&gl, x < end ? x : end);
+			usleep(TDX_GIO_SLIDE_STEP_MS * 1000);
+		}
+		tdx_giolcd_close(&gl);
+		if (rc) {
+			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			return 1;
+		}
+		return 0;
 	}
 
 	/* Render first, so a bad argument doesn't claim the USB interface. */

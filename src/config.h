@@ -11,6 +11,7 @@ struct tdx_keymap {
 };
 
 #define TDX_MAX_LEDCOLOR 64
+#define TDX_MAX_LABELS 48 /* 4 Giotto slide pages x 12 keys */
 
 struct tdx_ledcolor {
 	char v3dk[32];  /* button whose LED this colours, e.g. V3DK_FIT, or "LED_n" */
@@ -34,7 +35,11 @@ struct tdx_config {
 	struct tdx_ledcolor ledcolor[TDX_MAX_LEDCOLOR];
 	int nledcolor;
 	int lcd_brightness;       /* 0..100, -1 = keep */
-	char lcd_label[12][24];   /* function keys 1..12 (SpacePilot Pro uses 1..10) */
+	char lcd_label[TDX_MAX_LABELS][24]; /* key labels; SPP 1..10, Enterprise 1..12,
+					     * Giotto 12 per slide page (up to 4 pages) */
+	int lcd_label_max;        /* highest lcd_label_N set in the file */
+	char lcd_slide_button[32];/* V3DK id that slides the Giotto LCD to the next page */
+	int lcd_slide_step;       /* slide speed, pixels per 25 ms step */
 	int lcd_swap_rb;          /* Enterprise LCD: input channel order (inferred, see docs) */
 	char lcd_image[256];      /* optional 320x240 PPM shown instead of labels */
 	struct tdx_keymap keymap[TDX_MAX_KEYMAP];
@@ -46,5 +51,7 @@ void tdx_config_defaults(struct tdx_config *c);
 /* Returns 0, -errno if unreadable (defaults kept). Unknown keys are warned and ignored. */
 int tdx_config_load(struct tdx_config *c, const char *path);
 int tdx_key_from_name(const char *name);
+/* Number of 12-label pages configured (1..4). */
+int tdx_config_lcd_pages(const struct tdx_config *c);
 
 #endif

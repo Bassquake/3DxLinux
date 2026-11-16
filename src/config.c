@@ -27,8 +27,15 @@ void tdx_config_defaults(struct tdx_config *c)
 	c->led_button_color = -1;
 	c->led_ring_color = -1;
 	c->lcd_brightness = -1;
-	for (int i = 0; i < 12; i++)
+	for (int i = 0; i < TDX_MAX_LABELS; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
+	c->lcd_slide_step = 80; /* px per 25 ms step: a 1280 px slide takes 0.4 s */
+}
+
+int tdx_config_lcd_pages(const struct tdx_config *c)
+{
+	int p = (c->lcd_label_max + 11) / 12;
+	return p < 1 ? 1 : p > TDX_MAX_LABELS / 12 ? TDX_MAX_LABELS / 12 : p;
 }
 
 #define K(n) {#n, n}
@@ -168,10 +175,17 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 			int src = axis_index(v);
 			if (src >= 0) c->axis_map[ai] = src;
 			else fprintf(stderr, "%s:%d: bad axis '%s'\n", path, ln, v);
+		} else if (!strcmp(k, "lcd_slide_button")) {
+			snprintf(c->lcd_slide_button, sizeof c->lcd_slide_button, "%s", v);
+		} else if (!strcmp(k, "lcd_slide_step")) {
+			c->lcd_slide_step = atoi(v) > 0 ? atoi(v) : c->lcd_slide_step;
 		} else if (!strncmp(k, "lcd_label_", 10)) {
 			int n = atoi(k + 10);
-			if (n >= 1 && n <= 12)
+			if (n >= 1 && n <= TDX_MAX_LABELS) {
 				snprintf(c->lcd_label[n - 1], sizeof c->lcd_label[0], "%s", v);
+				if (n > c->lcd_label_max)
+					c->lcd_label_max = n;
+			}
 		} else if (!strncmp(k, "key_", 4)) {
 			if (c->nkeymap >= TDX_MAX_KEYMAP) continue;
 			struct tdx_keymap *m = &c->keymap[c->nkeymap];

@@ -363,7 +363,7 @@ static void test_giotto_lcd(void)
 	struct tdx_config cfg;
 	tdx_config_defaults(&cfg);
 	struct tdx_fb fb = {TDX_GIO_W, TDX_GIO_H, px};
-	tdx_render_ent_page(&fb, &cfg, "Giotto");
+	tdx_render_ent_page(&fb, &cfg, "Giotto", 0, 1);
 	tdx_gio_pack(px, raw, 0);
 	dump_vector("giotto_page_1597440", raw, sizeof raw);
 	static uint8_t comp[TDX_DEFLATE_BOUND(TDX_GIO_RAW)];
@@ -371,11 +371,147 @@ static void test_giotto_lcd(void)
 	CHECK(n > 0 && n < TDX_GIO_COMP_MAX);
 }
 
+static void test_giotto_slide(void)
+{
+	/* 0x23 byte layout from FUN_180048750 */
+	uint8_t p[TDX_GIO_PKT];
+	tdx_gio_cmd_copy_rect(p, 2, 1, 60, 0, 60, 320, 341, 960);
+	const uint8_t exp[24] = {0x23, 2, 1, 0, 0, 0, 0, 0,
+				 60, 0, 0, 0, 60, 0, 0x40, 0x01,
+				 0x55, 0x01, 0xC0, 0x03, 0, 0, 0x55, 0xAA};
+	CHECK(!memcmp(p, exp, 24) && p[63] == 0);
+
+	struct tdx_gio_state s = {.a = 1, .b = 0, .c = 3, .d = 2, .page_in_c = -1, .page_in_d = -1};
+	struct tdx_gio_step st[8];
+	int n;
+
+	/* x = 0: D <- page 0, full-width copy D->A, show A */
+	n = tdx_gio_plan_slide(&s, 0, 3, st, 8);
+	CHECK(n == 3);
+	CHECK(st[0].kind == TDX_GIO_STEP_UPLOAD && st[0].buf == 2 && st[0].page == 0);
+	CHECK(st[1].kind == TDX_GIO_STEP_CMD && st[1].pkt[0] == 0x23 && st[1].pkt[1] == 2 &&
+	      st[1].pkt[2] == 1 && st[1].pkt[18] == 0x00 && st[1].pkt[19] == 0x05); /* w 1280 */
+	CHECK(st[2].pkt[0] == 0x24 && st[2].pkt[1] == 1 && s.a == 0 && s.b == 1);
+
+	/* x = 320: C <- page 1; two copies into the new back buffer (0); show 0 */
+	n = tdx_gio_plan_slide(&s, 320, 3, st, 8);
+	CHECK(n == 4);
+	CHECK(st[0].kind == TDX_GIO_STEP_UPLOAD && st[0].buf == 3 && st[0].page == 1);
+	CHECK(st[1].pkt[1] == 2 && st[1].pkt[2] == 0 && st[1].pkt[14] == 0x40 && st[1].pkt[15] == 1 &&
+	      st[1].pkt[18] == 0xC0 && st[1].pkt[19] == 3);              /* dmx 320, w 960 */
+	CHECK(st[2].pkt[1] == 3 && st[2].pkt[10] == 0xC0 && st[2].pkt[11] == 3 &&
+	      st[2].pkt[14] == 0 && st[2].pkt[18] == 0x40 && st[2].pkt[19] == 1); /* smx 960, w 320 */
+	CHECK(st[3].pkt[0] == 0x24 && st[3].pkt[1] == 0 && s.b == 0 && s.a == 1);
+
+	/* x = 640: pages already on the device -> no uploads */
+	n = tdx_gio_plan_slide(&s, 640, 3, st, 8);
+	CHECK(n == 3 && st[0].kind == TDX_GIO_STEP_CMD && st[1].kind == TDX_GIO_STEP_CMD);
+
+	/* x = 1280: page 1 at offset 0 -> D re-uploaded with page 1, one full copy */
+	n = tdx_gio_plan_slide(&s, 1280, 3, st, 8);
+	CHECK(n == 3 && st[0].kind == TDX_GIO_STEP_UPLOAD && st[0].buf == 2 && st[0].page == 1);
+
+	/* last page (and anything beyond, clamped): whole page from C */
+	n = tdx_gio_plan_slide(&s, 99999, 3, st, 8);
+	CHECK(n == 3 && st[0].kind == TDX_GIO_STEP_UPLOAD && st[0].buf == 3 && st[0].page == 2);
+	CHECK(st[1].pkt[1] == 3 && st[1].pkt[10] == 0 && st[1].pkt[14] == 0 && st[1].pkt[19] == 5);
+	CHECK(tdx_gio_plan_slide(&s, 0, 0, st, 8) == -1 && tdx_gio_plan_slide(&s, 0, 5, st, 8) == -1);
+}
+
+/*
+ * Minimal Giotto device model: 4 frame buffers in the panel's native layout
+ * (pixel index = mirrored_x * 416 + y), executing 0x22 / 0x23 / 0x24 and
+ * uploads (0x20, modelled without compression). Checks that the planner's
+ * mirrored-x rectangles produce the intended on-screen composition.
+ */
+static uint32_t gdev[4][TDX_GIO_PIXELS];
+static int gshown = -1;
+
+static uint32_t screen_px(int buf, int x, int y)
+{
+	return gdev[buf][(size_t)(TDX_GIO_W - 1 - x) * TDX_GIO_H + y];
+}
+
+static void gdev_upload(int buf, const uint32_t *img)
+{
+	for (int y = 0; y < TDX_GIO_H; y++)
+		for (int x = 0; x < TDX_GIO_W; x++)
+			gdev[buf][(size_t)(TDX_GIO_W - 1 - x) * TDX_GIO_H + y] = img[y * TDX_GIO_W + x];
+}
+
+static uint16_t u16at(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
+
+static void gdev_exec(const uint8_t *pkt)
+{
+	if (pkt[0] == 0x22)
+		memcpy(gdev[pkt[2]], gdev[pkt[1]], sizeof gdev[0]);
+	else if (pkt[0] == 0x24)
+		gshown = pkt[1];
+	else if (pkt[0] == 0x23) {
+		int src = pkt[1], dst = pkt[2];
+		int sy = u16at(pkt + 8), smx = u16at(pkt + 10), dy = u16at(pkt + 12), dmx = u16at(pkt + 14);
+		int h = u16at(pkt + 16), w = u16at(pkt + 18);
+		for (int c = 0; c < w; c++)
+			for (int r = 0; r < h; r++)
+				gdev[dst][(size_t)(dmx + c) * TDX_GIO_H + dy + r] =
+					gdev[src][(size_t)(smx + c) * TDX_GIO_H + sy + r];
+	}
+}
+
+static void test_giotto_slide_model(void)
+{
+	static uint32_t pg[3][TDX_GIO_PIXELS];
+	for (int p = 0; p < 3; p++) /* each pixel encodes (page, x, y) */
+		for (int y = 0; y < TDX_GIO_H; y++)
+			for (int x = 0; x < TDX_GIO_W; x++)
+				pg[p][y * TDX_GIO_W + x] = (uint32_t)(p << 22 | x << 9 | y);
+
+	/* static page 1 via the 0x20/0x24/0x22/0x22 sequence (model: upload to A) */
+	int a = 1, b = 0;
+	uint8_t pk[4][TDX_GIO_PKT];
+	tdx_gio_plan_frame(&a, &b, 3, 1, pk);
+	gdev_upload(pk[0][2], pg[0]);
+	for (int i = 1; i < 4; i++)
+		gdev_exec(pk[i]);
+	CHECK(gshown == b && screen_px(gshown, 5, 7) == pg[0][7 * TDX_GIO_W + 5]);
+
+	struct tdx_gio_state s = {.a = a, .b = b, .c = 3, .d = 2, .page_in_c = -1, .page_in_d = -1};
+	struct tdx_gio_step st[8];
+	const int xs[] = {320, 1, 1279, 1280, 1900, 2560};
+	for (size_t t = 0; t < sizeof xs / sizeof xs[0]; t++) {
+		int n = tdx_gio_plan_slide(&s, xs[t], 3, st, 8);
+		for (int i = 0; i < n; i++) {
+			if (st[i].kind == TDX_GIO_STEP_UPLOAD)
+				gdev_upload(st[i].buf, pg[st[i].page]);
+			else
+				gdev_exec(st[i].pkt);
+		}
+		int page = xs[t] / TDX_GIO_W, off = xs[t] % TDX_GIO_W, bad = 0;
+		for (int y = 0; y < TDX_GIO_H && !bad; y += 3)
+			for (int x = 0; x < TDX_GIO_W && !bad; x += 7) {
+				uint32_t want;
+				if (y < TDX_GIO_SLIDE_Y || y >= TDX_GIO_SLIDE_Y + TDX_GIO_SLIDE_H)
+					want = pg[0][y * TDX_GIO_W + x];       /* outside the band: unchanged */
+				else if (page == 2)
+					want = pg[2][y * TDX_GIO_W + x];       /* last page, whole */
+				else if (x < TDX_GIO_W - off)
+					want = pg[page][y * TDX_GIO_W + x + off];
+				else
+					want = pg[page + 1][y * TDX_GIO_W + x - (TDX_GIO_W - off)];
+				bad = screen_px(gshown, x, y) != want;
+			}
+		CHECK(!bad);
+		CHECK(gshown == s.b);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
 	test_enterprise_lcd();
 	test_giotto_lcd();
+	test_giotto_slide();
+	test_giotto_slide_model();
 	test_deflate_vectors();
 	test_lcd_intensity();
 	test_device_table();

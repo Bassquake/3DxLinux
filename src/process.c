@@ -129,24 +129,39 @@ void tdx_render_keys_page(struct tdx_fb *fb, const struct tdx_config *cfg,
 	}
 }
 
-void tdx_render_ent_page(struct tdx_fb *fb, const struct tdx_config *cfg, const char *devname)
+void tdx_render_ent_page(struct tdx_fb *fb, const struct tdx_config *cfg, const char *devname,
+			 int page, int npages)
 {
-	/* 6x2 grid of key labels; scales with the panel (640x150 Enterprise, 1280x416 Giotto) */
+	/* 6x2 grid of key labels; scales with the panel (640x150 Enterprise, 1280x416 Giotto).
+	 * On the 416-px panel the grid occupies exactly the slide band (rows 60..400),
+	 * so a slide moves the whole grid and the title bar stays fixed. */
 	const uint32_t bg = 0x101418, bar = 0x1F6FB2, fg = 0xE6E6E6, num = 0xFFC040, cell = 0x2A3038;
-	const int s = fb->h >= 400 ? 4 : 2;          /* font scale */
-	const int bar_h = 11 * s, pad = 2 * s;
+	const int big = fb->h >= 400;
+	const int s = big ? 4 : 2;                   /* font scale */
+	const int bar_h = big ? 60 : 11 * s, pad = 2 * s;
+	const int top = big ? 60 : bar_h + pad;
+	const int rh = big ? 341 / 2 : (fb->h - top) / 2;
+	if (page < 0 || page * 12 >= TDX_MAX_LABELS)
+		page = 0;
 	gfx_fill(fb, 0, 0, fb->w, fb->h, bg);
 	gfx_fill(fb, 0, 0, fb->w, bar_h, bar);
-	gfx_text(fb, 3 * s, 2 * s, devname ? devname : "3DCONNEXION", s, 0xFFFFFF);
-	const int cols = 6, cw = fb->w / cols, top = bar_h + pad, rh = (fb->h - top) / 2;
+	gfx_text(fb, 3 * s, (bar_h - 7 * s) / 2, devname ? devname : "3DCONNEXION", s, 0xFFFFFF);
+	if (npages > 1) { /* page dots, right-aligned in the title bar */
+		for (int i = 0; i < npages; i++) {
+			int d = 3 * s, x = fb->w - (npages - i) * (d + 2 * s) - s;
+			gfx_fill(fb, x, (bar_h - d) / 2, d, d, i == page ? 0xFFFFFF : 0x6A98C8);
+		}
+	}
+	const int cols = 6, cw = fb->w / cols;
 	const int maxch = (cw - 8 * s) / (6 * s);
 	for (int k = 0; k < 12; k++) {
 		int x = (k % cols) * cw, y = top + (k / cols) * rh;
+		int idx = page * 12 + k;
 		char n[12], lab[24];
-		snprintf(n, sizeof n, "%d", k + 1);
+		snprintf(n, sizeof n, "%d", idx + 1);
 		gfx_fill(fb, x + pad, y + pad / 2, cw - 2 * pad, rh - pad, cell);
 		gfx_text(fb, x + 4 * s, y + 3 * s, n, s, num);
-		snprintf(lab, sizeof lab, "%.*s", maxch > 0 && maxch < 23 ? maxch : 23, cfg->lcd_label[k]);
+		snprintf(lab, sizeof lab, "%.*s", maxch > 0 && maxch < 23 ? maxch : 23, cfg->lcd_label[idx]);
 		gfx_text(fb, x + 4 * s, y + rh / 2 + s, lab, s, fg);
 	}
 }

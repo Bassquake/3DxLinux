@@ -66,10 +66,9 @@ int tdx_giolcd_open(struct tdx_giolcd *l, uint16_t vid, uint16_t pid)
 {
 	l->fd = -1;
 	l->iface = 0;
-	l->buf_a = 1; /* FUN_180048fb0 */
-	l->buf_b = 0;
-	l->buf_c = 3;
-	l->buf_d = 2;
+	l->st = (struct tdx_gio_state){.a = 1, .b = 0, .c = 3, .d = 2, /* FUN_180048fb0 */
+				       .page_in_c = -1, .page_in_d = -1};
+	l->npages = 0;
 	int rc = tdx_usb_find_node(vid, pid, l->path, sizeof l->path);
 	if (rc)
 		return rc;
@@ -84,7 +83,7 @@ int tdx_giolcd_open(struct tdx_giolcd *l, uint16_t vid, uint16_t pid)
 	if (tdx_usb_find_bulk_out(fd, l->iface, &l->ep_out))
 		l->ep_out = 0x01;
 	uint8_t pkt[TDX_GIO_PKT];
-	tdx_gio_cmd_show(pkt, (uint8_t)l->buf_b); /* init: show the front buffer */
+	tdx_gio_cmd_show(pkt, (uint8_t)l->st.b); /* init: show the front buffer */
 	rc = send_cmd(l, pkt);
 	if (rc) {
 		tdx_giolcd_close(l);
@@ -99,18 +98,38 @@ void tdx_giolcd_close(struct tdx_giolcd *l)
 	l->fd = -1;
 }
 
+/* Compress an image into l->comp. Returns length or -EFBIG. */
+static long compress_image(struct tdx_giolcd *l, const uint32_t *xrgb)
+{
+	tdx_gio_pack(xrgb, l->raw, l->swap_rb);
+	long n = tdx_deflate_fixed(l->raw, sizeof l->raw, l->comp, sizeof l->comp);
+	return (n < 0 || n > TDX_GIO_COMP_MAX) ? -EFBIG : n;
+}
+
+/* 0x20 {buf, len} + payload, without any buffer flip (FUN_18004aee0 with buf != A/B). */
+static int upload(struct tdx_giolcd *l, int buf, const uint32_t *xrgb)
+{
+	long n = compress_image(l, xrgb);
+	if (n < 0)
+		return (int)n;
+	uint8_t pkt[TDX_GIO_PKT];
+	tdx_gio_cmd_write(pkt, (uint8_t)buf, (uint32_t)n);
+	int rc = send_cmd(l, pkt);
+	return rc ? rc : tdx_usb_bulk_out(l->fd, l->ep_out, l->comp, (size_t)n, 5000);
+}
+
 int tdx_giolcd_show(struct tdx_giolcd *l, const uint32_t *xrgb)
 {
 	if (l->fd < 0)
 		return -EBADF;
-	tdx_gio_pack(xrgb, l->raw, l->swap_rb);
-	long n = tdx_deflate_fixed(l->raw, sizeof l->raw, l->comp, sizeof l->comp);
-	if (n < 0 || n > TDX_GIO_COMP_MAX)
-		return -EFBIG;
+	long n = compress_image(l, xrgb);
+	if (n < 0)
+		return (int)n;
 
 	uint8_t pkts[4][TDX_GIO_PKT];
 	int rc;
-	tdx_gio_plan_frame(&l->buf_a, &l->buf_b, l->buf_c, (uint32_t)n, pkts);
+	tdx_gio_plan_frame(&l->st.a, &l->st.b, l->st.c, (uint32_t)n, pkts);
+	l->st.page_in_c = -1; /* 0x22 {B, C} overwrites the spare buffer */
 	if ((rc = send_cmd(l, pkts[0])) ||
 	    (rc = tdx_usb_bulk_out(l->fd, l->ep_out, l->comp, (size_t)n, 5000)))
 		return rc;
@@ -118,6 +137,115 @@ int tdx_giolcd_show(struct tdx_giolcd *l, const uint32_t *xrgb)
 		if ((rc = send_cmd(l, pkts[i])))
 			return rc;
 	return 0;
+}
+
+int tdx_giolcd_set_pages(struct tdx_giolcd *l, const uint32_t *const *pages, int n)
+{
+	if (n < 1 || n > TDX_GIO_MAX_PAGES)
+		return -EINVAL;
+	for (int i = 0; i < n; i++)
+		l->pages[i] = pages[i];
+	l->npages = n;
+	l->st.page_in_c = l->st.page_in_d = -1; /* contents changed: re-upload */
+	return 0;
+}
+
+int tdx_giolcd_slide(struct tdx_giolcd *l, int x)
+{
+	if (l->fd < 0)
+		return -EBADF;
+	if (!l->npages)
+		return -EINVAL;
+	struct tdx_gio_step steps[8];
+	int n = tdx_gio_plan_slide(&l->st, x, l->npages, steps, 8);
+	if (n < 0)
+		return -EINVAL;
+	for (int i = 0; i < n; i++) {
+		int rc = steps[i].kind == TDX_GIO_STEP_UPLOAD
+				 ? upload(l, steps[i].buf, l->pages[steps[i].page])
+				 : send_cmd(l, steps[i].pkt);
+		if (rc) {
+			l->st.page_in_c = l->st.page_in_d = -1;
+			return rc;
+		}
+	}
+	return 0;
+}
+
+void tdx_gio_cmd_copy_rect(uint8_t pkt[TDX_GIO_PKT], uint8_t src, uint8_t dst, uint16_t sy,
+			   uint16_t smx, uint16_t dy, uint16_t dmx, uint16_t h, uint16_t w)
+{
+	cmd_init(pkt, TDX_GIO_OP_COPY_RECT); /* FUN_180048750(dev, dst, src, sy, smx, h, w, dy, dmx) */
+	pkt[1] = src;
+	pkt[2] = dst;
+	const uint16_t f[6] = {sy, smx, dy, dmx, h, w};
+	for (int i = 0; i < 6; i++) {
+		pkt[8 + 2 * i] = (uint8_t)f[i];
+		pkt[9 + 2 * i] = (uint8_t)(f[i] >> 8);
+	}
+}
+
+static int add_cmd(struct tdx_gio_step *steps, int *n, int max)
+{
+	if (*n >= max)
+		return -1;
+	steps[*n].kind = TDX_GIO_STEP_CMD;
+	return (*n)++;
+}
+
+int tdx_gio_plan_slide(struct tdx_gio_state *s, int x, int npages, struct tdx_gio_step *steps,
+		       int max)
+{
+	if (npages < 1 || npages > TDX_GIO_MAX_PAGES)
+		return -1;
+	int last = npages - 1;
+	if (x < 0)
+		x = 0;
+	if (x > last * TDX_GIO_W)
+		x = last * TDX_GIO_W;
+	int page = x / TDX_GIO_W, off = x % TDX_GIO_W;
+	int n = 0, k;
+
+	if (page < last) {
+		/* D <- page, C <- page + 1 (uploaded only when they changed) */
+		if (s->page_in_d != page) {
+			if (n >= max) return -1;
+			steps[n++] = (struct tdx_gio_step){.kind = TDX_GIO_STEP_UPLOAD, .buf = s->d, .page = page};
+			s->page_in_d = page;
+		}
+		if (off && s->page_in_c != page + 1) {
+			if (n >= max) return -1;
+			steps[n++] = (struct tdx_gio_step){.kind = TDX_GIO_STEP_UPLOAD, .buf = s->c, .page = page + 1};
+			s->page_in_c = page + 1;
+		}
+		if ((k = add_cmd(steps, &n, max)) < 0) return -1;
+		tdx_gio_cmd_copy_rect(steps[k].pkt, (uint8_t)s->d, (uint8_t)s->a, TDX_GIO_SLIDE_Y, 0,
+				      TDX_GIO_SLIDE_Y, (uint16_t)off, TDX_GIO_SLIDE_H,
+				      (uint16_t)(TDX_GIO_W - off));
+		if (off) {
+			if ((k = add_cmd(steps, &n, max)) < 0) return -1;
+			tdx_gio_cmd_copy_rect(steps[k].pkt, (uint8_t)s->c, (uint8_t)s->a, TDX_GIO_SLIDE_Y,
+					      (uint16_t)(TDX_GIO_W - off), TDX_GIO_SLIDE_Y, 0,
+					      TDX_GIO_SLIDE_H, (uint16_t)off);
+		}
+	} else {
+		/* last page: copied whole from C */
+		if (s->page_in_c != page) {
+			if (n >= max) return -1;
+			steps[n++] = (struct tdx_gio_step){.kind = TDX_GIO_STEP_UPLOAD, .buf = s->c, .page = page};
+			s->page_in_c = page;
+		}
+		if ((k = add_cmd(steps, &n, max)) < 0) return -1;
+		tdx_gio_cmd_copy_rect(steps[k].pkt, (uint8_t)s->c, (uint8_t)s->a, TDX_GIO_SLIDE_Y, 0,
+				      TDX_GIO_SLIDE_Y, 0, TDX_GIO_SLIDE_H, TDX_GIO_W);
+	}
+	/* swap A <-> B and show the composed buffer */
+	int t = s->b;
+	s->b = s->a;
+	s->a = t;
+	if ((k = add_cmd(steps, &n, max)) < 0) return -1;
+	tdx_gio_cmd_show(steps[k].pkt, (uint8_t)s->b);
+	return n;
 }
 
 void tdx_gio_plan_frame(int *buf_a, int *buf_b, int buf_c, uint32_t comp_len,

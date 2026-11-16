@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -41,6 +42,10 @@ struct dev_ctx {
 	struct tdx_lcd *lcd;
 	struct tdx_entlcd *elcd;
 	struct tdx_giolcd *glcd;
+	uint32_t *gio_pages[TDX_GIO_MAX_PAGES]; /* rendered slide pages (Giotto) */
+	int gio_npages;
+	int slide_x, slide_target;              /* slide position / goal in pixels, -1 = idle */
+	long long slide_next_ms;
 	int lcd_page;
 	int lcd_dirty;
 	long long last_motion_ms;
@@ -69,7 +74,7 @@ static void entlcd_redraw(struct dev_ctx *d)
 	static uint32_t px[TDX_ENT_PIXELS];
 	struct tdx_fb fb = {TDX_ENT_W, TDX_ENT_H, px};
 	if (!cfg.lcd_image[0] || gfx_load_ppm(&fb, cfg.lcd_image) != 0)
-		tdx_render_ent_page(&fb, &cfg, d->node.def->name);
+		tdx_render_ent_page(&fb, &cfg, d->node.def->name, 0, 1);
 	d->elcd->swap_rb = cfg.lcd_swap_rb;
 	int rc = tdx_entlcd_show(d->elcd, px, 1);
 	d->lcd_dirty = rc == -EBUSY;
@@ -77,16 +82,84 @@ static void entlcd_redraw(struct dev_ctx *d)
 		LOG(0, "Enterprise LCD update failed: %s\n", strerror(-rc));
 }
 
+/* Render every configured label page; the slide composes from these on the device. */
+static void gio_render_pages(struct dev_ctx *d)
+{
+	int np = cfg.lcd_image[0] ? 1 : tdx_config_lcd_pages(&cfg);
+	for (int p = 0; p < TDX_GIO_MAX_PAGES; p++) {
+		if (p >= np) {
+			free(d->gio_pages[p]);
+			d->gio_pages[p] = NULL;
+			continue;
+		}
+		if (!d->gio_pages[p] && !(d->gio_pages[p] = malloc(TDX_GIO_PIXELS * sizeof(uint32_t)))) {
+			np = p;
+			break;
+		}
+		struct tdx_fb fb = {TDX_GIO_W, TDX_GIO_H, d->gio_pages[p]};
+		if (!cfg.lcd_image[0] || gfx_load_ppm(&fb, cfg.lcd_image) != 0)
+			tdx_render_ent_page(&fb, &cfg, d->node.def->name, p, np);
+	}
+	d->gio_npages = np;
+	if (np)
+		tdx_giolcd_set_pages(d->glcd, (const uint32_t *const *)d->gio_pages, np);
+	if (d->lcd_page >= np)
+		d->lcd_page = 0;
+	d->slide_target = -1;
+}
+
 static void giolcd_redraw(struct dev_ctx *d)
 {
-	static uint32_t px[TDX_GIO_PIXELS];
-	struct tdx_fb fb = {TDX_GIO_W, TDX_GIO_H, px};
-	if (!cfg.lcd_image[0] || gfx_load_ppm(&fb, cfg.lcd_image) != 0)
-		tdx_render_ent_page(&fb, &cfg, d->node.def->name);
 	d->glcd->swap_rb = cfg.lcd_swap_rb;
-	int rc = tdx_giolcd_show(d->glcd, px);
+	gio_render_pages(d);
+	if (!d->gio_npages)
+		return;
+	/* full static frame (title bar included) of the current page */
+	int rc = tdx_giolcd_show(d->glcd, d->gio_pages[d->lcd_page]);
+	d->slide_x = d->lcd_page * TDX_GIO_W;
 	if (rc)
 		LOG(0, "Giotto LCD update failed: %s\n", strerror(-rc));
+}
+
+/* Advance a running slide by one 25 ms step (called from the main loop). */
+static void gio_slide_tick(struct dev_ctx *d)
+{
+	if (!d->glcd || d->slide_target < 0)
+		return;
+	long long t = now_ms();
+	if (t < d->slide_next_ms)
+		return;
+	d->slide_next_ms = t + TDX_GIO_SLIDE_STEP_MS; /* Windows: Sleep(25) per step */
+	int step = cfg.lcd_slide_step > 0 ? cfg.lcd_slide_step : 80;
+	int x = d->slide_x;
+	if (d->slide_target > x)
+		x = x + step > d->slide_target ? d->slide_target : x + step;
+	else
+		x = x - step < d->slide_target ? d->slide_target : x - step;
+	d->slide_x = x;
+	int rc = tdx_giolcd_slide(d->glcd, x);
+	if (rc) {
+		LOG(0, "Giotto LCD slide failed: %s\n", strerror(-rc));
+		d->slide_target = -1;
+		return;
+	}
+	if (x == d->slide_target) {
+		/* finished: settle on a full frame so the title bar (page dots) updates */
+		d->lcd_page = x / TDX_GIO_W;
+		d->slide_target = -1;
+		if ((rc = tdx_giolcd_show(d->glcd, d->gio_pages[d->lcd_page])))
+			LOG(0, "Giotto LCD update failed: %s\n", strerror(-rc));
+	}
+}
+
+/* Start sliding to the next label page (wrapping back to the first). */
+static void gio_slide_next(struct dev_ctx *d)
+{
+	if (!d->glcd || d->gio_npages < 2 || d->slide_target >= 0)
+		return;
+	int next = (d->lcd_page + 1) % d->gio_npages;
+	d->slide_target = next * TDX_GIO_W;
+	LOG(2, "Giotto LCD: slide to page %d\n", next + 1);
 }
 
 static void lcd_redraw(struct dev_ctx *d)
@@ -232,6 +305,8 @@ static void dev_close(struct dev_ctx *d)
 		tdx_giolcd_close(d->glcd);
 		free(d->glcd);
 	}
+	for (int p = 0; p < TDX_GIO_MAX_PAGES; p++)
+		free(d->gio_pages[p]);
 	*d = devs[--ndev];
 }
 
@@ -250,6 +325,7 @@ static void rescan(void)
 		memset(d, 0, sizeof *d);
 		d->node = nodes[i];
 		d->ui.fd = -1;
+		d->slide_target = -1;
 		d->fd = open(d->node.devnode, O_RDWR | O_NONBLOCK | O_CLOEXEC);
 		if (d->fd < 0)
 			d->fd = open(d->node.devnode, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -292,6 +368,10 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 			d->lcd_page = p ? 1 : 0;
 			lcd_redraw(d);
 		}
+		/* Giotto: slide to the next label page */
+		if (p && d->glcd && v3dk && cfg.lcd_slide_button[0] &&
+		    !strcasecmp(v3dk, cfg.lcd_slide_button))
+			gio_slide_next(d);
 	}
 }
 
@@ -401,10 +481,15 @@ int main(int argc, char **argv)
 			for (int i = 0; i < TDX_SPNAV_MAX_CLIENTS; i++)
 				pfd[np++] = (struct pollfd){.fd = spnav.cfd[i], .events = POLLIN};
 		}
-		int any_dirty = 0;
-		for (int i = 0; i < ndev; i++)
+		int any_dirty = 0, any_slide = 0;
+		for (int i = 0; i < ndev; i++) {
 			any_dirty |= devs[i].lcd_dirty;
-		int r = poll(pfd, (nfds_t)np, any_dirty ? 250 : 1000);
+			any_slide |= devs[i].slide_target >= 0 && devs[i].glcd;
+		}
+		int r = poll(pfd, (nfds_t)np,
+			     any_slide ? TDX_GIO_SLIDE_STEP_MS : any_dirty ? 250 : 1000);
+		for (int i = 0; i < ndev; i++)
+			gio_slide_tick(&devs[i]);
 		for (int i = 0; i < ndev; i++) /* Enterprise LCD finished its init window? */
 			if (devs[i].lcd_dirty)
 				lcd_redraw(&devs[i]);
