@@ -66,6 +66,15 @@ void tdx_rgb_report(uint8_t index, uint32_t rgb, uint8_t out[8]);
 /* Does this device use the RGB feature-report LED path? */
 int tdx_has_rgb_leds(const struct tdx_device_def *dev);
 
+/*
+ * SpaceMouse Enterprise (C633) LCD intensity - HID feature report {0x11, percent}.
+ * HIDDev.dll FUN_180032e70 case 8 (UdDevSetDisplay) and FUN_18002b9f0 (sent on open,
+ * then 3 s settle). The value is 3DxService's <LCDIntensity> (Driver_LCDOn -> 100,
+ * Driver_LCDOff -> 0). Returns report length (2) or 0 if not applicable.
+ */
+#define TDX_LCD_INTENSITY_REPORT_ID 0x11
+int tdx_lcd_intensity_report(const struct tdx_device_def *dev, int percent, uint8_t out[2]);
+
 /* Number of logical buttons exposed for a device. */
 int tdx_button_count(const struct tdx_device_def *dev);
 

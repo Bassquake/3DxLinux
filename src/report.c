@@ -29,6 +29,17 @@ void tdx_rgb_report(uint8_t index, uint32_t rgb, uint8_t out[8])
 	out[7] = 0;
 }
 
+int tdx_lcd_intensity_report(const struct tdx_device_def *dev, int percent, uint8_t out[2])
+{
+	if (!dev || dev->pid != 0xC633 || percent < 0)
+		return 0;
+	if (percent > 100)
+		percent = 100;
+	out[0] = TDX_LCD_INTENSITY_REPORT_ID;
+	out[1] = (uint8_t)percent;
+	return 2;
+}
+
 int tdx_button_count(const struct tdx_device_def *dev)
 {
 	if (dev && dev->nbuttons)

@@ -209,8 +209,20 @@ static void test_rgb_leds(void)
 	CHECK(!strcmp(c.ledcolor[0].v3dk, "V3DK_FIT") && c.ledcolor[0].rgb == 0xFF8000);
 }
 
+static void test_lcd_intensity(void)
+{
+	const struct tdx_device_def *ent = tdx_device_lookup(0x256F, 0xC633);
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	uint8_t r[2] = {0};
+	CHECK(tdx_lcd_intensity_report(ent, 60, r) == 2 && r[0] == 0x11 && r[1] == 60);
+	CHECK(tdx_lcd_intensity_report(ent, 250, r) == 2 && r[1] == 100);
+	CHECK(tdx_lcd_intensity_report(ent, -1, r) == 0); /* lcd_brightness unset */
+	CHECK(tdx_lcd_intensity_report(spp, 60, r) == 0); /* SPP uses the USB vendor request */
+}
+
 int main(void)
 {
+	test_lcd_intensity();
 	test_device_table();
 	test_axes();
 	test_buttons();

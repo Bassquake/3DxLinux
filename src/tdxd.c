@@ -102,6 +102,18 @@ static void lcd_attach(struct dev_ctx *d)
 	lcd_redraw(d);
 }
 
+/* Enterprise LCD brightness: feature report {0x11, percent} (HIDDev.dll case 8). */
+static void lcd_intensity_apply(struct dev_ctx *d)
+{
+	uint8_t rep[2];
+	if (!tdx_lcd_intensity_report(d->node.def, cfg.lcd_brightness, rep))
+		return;
+	if (ioctl(d->fd, HIDIOCSFEATURE(2), rep) < 0)
+		LOG(1, "LCD intensity write failed on %s: %s\n", d->node.devnode, strerror(errno));
+	else
+		LOG(2, "LCD intensity %d%% on %s\n", rep[1], d->node.devnode);
+}
+
 static void led_apply(struct dev_ctx *d)
 {
 	if (tdx_has_rgb_leds(d->node.def)) {
@@ -167,6 +179,7 @@ static void rescan(void)
 				LOG(0, "uinput disabled: %s\n", strerror(-rc));
 		}
 		led_apply(d);
+		lcd_intensity_apply(d);
 		lcd_attach(d);
 	}
 }
@@ -282,6 +295,7 @@ int main(int argc, char **argv)
 				if (devs[i].lcd && cfg.lcd_brightness >= 0)
 					tdx_lcd_set_brightness(devs[i].lcd, cfg.lcd_brightness);
 				led_apply(&devs[i]);
+				lcd_intensity_apply(&devs[i]);
 				lcd_redraw(&devs[i]);
 			}
 		}

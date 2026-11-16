@@ -18,6 +18,7 @@ components speak, using standard Linux interfaces:
 | Logitech `LCDMon` / `EDMBTDD.dll` / `LGPBTDD.sys` | `lcd.c` over usbfs: bulk frames and vendor brightness request |
 | `HIDDev.dll` LED on/off | HID output report `{0x04, on}` |
 | `HIDDev.dll` RGB LED colours (Giotto) | HID feature report `{0x1A, 0x25, led, R, G, B, 0, 0}` |
+| `HIDDev.dll` LCD intensity (Enterprise) | HID feature report `{0x11, percent}` |
 | `3DxLCDSPPRO.exe` "Function Keys" applet | built-in key-label page (SHIFT shows keys 6–10) or any PPM image |
 
 ## Supported devices
@@ -99,7 +100,7 @@ tdx-lcd ping                               # exit 0 if the panel answers vendor 
 
 | Feature | Evidence |
 |---|---|
-| Report formats, button masks, LCD framing, brightness, ping, LED and RGB LED requests | Recovered from the shipped binaries (Ghidra decompilation) |
+| Report formats, button masks, LCD framing, brightness (both LCD types), ping, LED and RGB LED requests | Recovered from the shipped binaries (Ghidra decompilation) |
 | Parsers and frame packer | Unit-tested |
 | x86_64 and arm64 builds | Compile without warnings |
 | Behaviour on a physical SpacePilot Pro | **Not yet verified on hardware** |

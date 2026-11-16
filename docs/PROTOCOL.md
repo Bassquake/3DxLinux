@@ -209,9 +209,33 @@ How `FUN_180033cd0` applies the table:
 - **Inferred:** the meanings of the broadcast indices `0x24`/`0x25`/`0x26` come
   from how each is used, not from firmware.
 
-The Enterprise (C633) has a related 2-byte report, `{0x11, n}`. It is sent on
-open with a stored value, followed by a 3 s sleep.
-- **Unknown:** what that report does. `tdxd` does not send it.
+### 6.2 SpaceMouse Enterprise LCD intensity (observed: `HIDDev.dll`, `3DxService.exe`)
+
+The Enterprise (C633) sets its LCD brightness with a 2-byte HID **feature report**:
+
+```
+{ 0x11, intensity }      intensity: 0..100 (percent)
+```
+
+Evidence:
+
+- `HIDDev.dll` `FUN_180032e70` (dispatcher for the exported `UdDevSetDisplay`),
+  case 8, stores the value at `+0xebc` and queues `{0x11, value}`. The queue is
+  sent with `HidD_SetFeature`.
+- `FUN_18002b9f0` resends the stored value whenever an Enterprise is opened. It
+  then sleeps 3 s and resets the WinUSB LCD manager.
+- In `3DxService.exe`, `FUN_1400af6a0` case 8 writes the same field to `+0x380`.
+  `FUN_1400adf40` saves that field as `<LCDIntensity>%d</LCDIntensity>` in `LCDCfg.xml`.
+- The 0..100 range comes from the `Driver_LCD*` actions:
+  - `Driver_LCDOn` sets the intensity to 100, or to the value saved before it was turned off.
+  - `Driver_LCDOff` saves the current value and sets it to 0.
+
+`tdxd` sends `{0x11, lcd_brightness}` to an Enterprise on attach and on reload,
+when `lcd_brightness` is set. This is the same option that controls the
+SpacePilot Pro's backlight, which uses its own USB vendor request (section 5).
+
+- **Unknown:** whether the 3 s settle is needed. `tdxd` does not wait, because it
+  does not drive the Enterprise's WinUSB LCD.
 
 For the SpacePilot Pro, `HIDDev.dll` `FUN_180034060` also notifies the Logitech LCD
 Monitor window (`PostMessage(WM_CLOSE)`) on device changes. This confirms that the
@@ -221,7 +245,10 @@ LCD is owned by the Logitech stack and not by `HIDDev`.
 
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
   decompiled `HIDDev.dll`, but no device was available to test them.
-- **Unknown:** the purpose of the Enterprise `{0x11, n}` report.
+- **Unknown:** whether the Enterprise `{0x11, n}` LCD intensity report works on
+  real hardware. No device was available to test it.
+- **Not implemented:** the Enterprise's 640×150 WinUSB LCD image transfer
+  (`CWinUSBLCDMgr` in `HIDDev.dll`).
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
   accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on
   attach as a precaution and continues if the device does not answer.
