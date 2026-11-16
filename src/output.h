@@ -22,8 +22,13 @@ void tdx_uinput_close(struct tdx_uinput *u);
 struct tdx_spnav {
 	int lfd;
 	int cfd[TDX_SPNAV_MAX_CLIENTS];
+	char app[TDX_SPNAV_MAX_CLIENTS][64]; /* client process name (SO_PEERCRED) */
+	long long seq[TDX_SPNAV_MAX_CLIENTS]; /* connection order */
+	long long next_seq;
 	char path[108];
 };
+/* Application of the most recently connected client still connected, or NULL. */
+const char *tdx_spnav_latest_app(const struct tdx_spnav *s);
 int tdx_spnav_open(struct tdx_spnav *s, const char *path);
 void tdx_spnav_accept(struct tdx_spnav *s);
 void tdx_spnav_client_input(struct tdx_spnav *s, int idx);

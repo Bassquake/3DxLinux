@@ -30,6 +30,8 @@ void tdx_config_defaults(struct tdx_config *c)
 	for (int i = 0; i < TDX_MAX_LABELS; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
 	c->lcd_slide_step = 80; /* px per 25 ms step: a 1280 px slide takes 0.4 s */
+	snprintf(c->profile_dir, sizeof c->profile_dir, "/etc/tdxd.d");
+	snprintf(c->control_socket, sizeof c->control_socket, "/run/tdxd.sock");
 }
 
 int tdx_config_lcd_pages(const struct tdx_config *c)
@@ -111,7 +113,41 @@ static int64_t parse_rgb(const char *v)
 
 static int parse_bool(const char *v) { return !strcasecmp(v, "yes") || !strcasecmp(v, "true") || !strcasecmp(v, "on") || atoi(v) != 0; }
 
-int tdx_config_load(struct tdx_config *c, const char *path)
+/* Options that only make sense daemon-wide; ignored in per-app profiles. */
+static int daemon_only(const char *k)
+{
+	static const char *const keys[] = {"uinput", "spnav", "spnav_socket", "lcd", "lcd_bmp_dir",
+					   "verbose", "profile_dir", "control_socket",
+					   "calibrate_on_start", NULL};
+	for (int i = 0; keys[i]; i++)
+		if (!strcmp(k, keys[i]))
+			return 1;
+	return 0;
+}
+
+/* Find an existing entry for @name so later files override earlier ones. */
+static struct tdx_keymap *keymap_slot(struct tdx_config *c, const char *name)
+{
+	for (int i = 0; i < c->nkeymap; i++)
+		if (!strcasecmp(c->keymap[i].v3dk, name))
+			return &c->keymap[i];
+	return c->nkeymap < TDX_MAX_KEYMAP ? &c->keymap[c->nkeymap++] : NULL;
+}
+
+static struct tdx_ledcolor *ledcolor_slot(struct tdx_config *c, const char *name)
+{
+	for (int i = 0; i < c->nledcolor; i++)
+		if (!strcasecmp(c->ledcolor[i].v3dk, name))
+			return &c->ledcolor[i];
+	return c->nledcolor < TDX_MAX_LEDCOLOR ? &c->ledcolor[c->nledcolor++] : NULL;
+}
+
+static int config_load(struct tdx_config *c, const char *path, int profile);
+
+int tdx_config_load(struct tdx_config *c, const char *path) { return config_load(c, path, 0); }
+int tdx_config_load_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 1); }
+
+static int config_load(struct tdx_config *c, const char *path, int profile)
 {
 	FILE *f = fopen(path, "r");
 	if (!f)
@@ -139,7 +175,19 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 		char *k = trim(s), *v = trim(eq + 1);
 		int ai;
 
+		if (profile && daemon_only(k)) {
+			fprintf(stderr, "%s:%d: '%s' is daemon-wide; ignored in a profile\n", path, ln, k);
+			continue;
+		}
+		if (!strcmp(k, "match")) {
+			snprintf(c->match, sizeof c->match, "%s", v);
+			continue;
+		}
 		if (!strcmp(k, "sensitivity")) c->sensitivity = atof(v);
+		else if (!strcmp(k, "calibrate_on_start")) c->calibrate_on_start = parse_bool(v);
+		else if (!strcmp(k, "calibrate_button")) snprintf(c->calibrate_button, sizeof c->calibrate_button, "%s", v);
+		else if (!strcmp(k, "profile_dir")) snprintf(c->profile_dir, sizeof c->profile_dir, "%s", v);
+		else if (!strcmp(k, "control_socket")) snprintf(c->control_socket, sizeof c->control_socket, "%s", v);
 		else if (!strcmp(k, "deadzone")) c->deadzone = atoi(v);
 		else if (!strcmp(k, "dominant")) c->dominant = parse_bool(v);
 		else if (!strcmp(k, "disable_translation")) c->disable_translation = parse_bool(v);
@@ -158,10 +206,12 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 				c->led_button_color = rgb;
 			else if (!strcmp(k, "led_ring_color"))
 				c->led_ring_color = rgb;
-			else if (c->nledcolor < TDX_MAX_LEDCOLOR) {
-				struct tdx_ledcolor *lc = &c->ledcolor[c->nledcolor++];
-				snprintf(lc->v3dk, sizeof lc->v3dk, "%s", k + 10);
-				lc->rgb = (uint32_t)rgb;
+			else {
+				struct tdx_ledcolor *lc = ledcolor_slot(c, k + 10);
+				if (lc) {
+					snprintf(lc->v3dk, sizeof lc->v3dk, "%s", k + 10);
+					lc->rgb = (uint32_t)rgb;
+				}
 			}
 		}
 		else if (!strcmp(k, "lcd_brightness")) c->lcd_brightness = atoi(v);
@@ -170,7 +220,7 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 		else if (!strcmp(k, "verbose")) c->verbose = atoi(v);
 		else if (!strncmp(k, "scale_", 6) && (ai = axis_index(k + 6)) >= 0) c->axis_scale[ai] = atof(v);
 		else if (!strncmp(k, "invert_", 7) && (ai = axis_index(k + 7)) >= 0) {
-			if (parse_bool(v)) c->axis_scale[ai] = -c->axis_scale[ai];
+			c->axis_invert[ai] = parse_bool(v); /* a setting, not a toggle: profiles can undo it */
 		} else if (!strncmp(k, "map_", 4) && (ai = axis_index(k + 4)) >= 0) {
 			int src = axis_index(v);
 			if (src >= 0) c->axis_map[ai] = src;
@@ -189,17 +239,25 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 					c->lcd_label_max = n;
 			}
 		} else if (!strncmp(k, "key_", 4)) {
-			if (c->nkeymap >= TDX_MAX_KEYMAP) continue;
-			struct tdx_keymap *m = &c->keymap[c->nkeymap];
+			/* later files override earlier ones; "none" removes the binding */
+			int keys[4] = {0}, nk = 0, bad = 0;
+			if (strcasecmp(v, "none"))
+				for (char *tok = strtok(v, "+ "); tok && nk < 3; tok = strtok(NULL, "+ ")) {
+					int code = tdx_key_from_name(tok);
+					if (code < 0) {
+						fprintf(stderr, "%s:%d: unknown key '%s'\n", path, ln, tok);
+						bad = 1;
+					} else
+						keys[nk++] = code;
+				}
+			if (bad && !nk)
+				continue;
+			struct tdx_keymap *m = keymap_slot(c, k + 4);
+			if (!m)
+				continue;
 			memset(m, 0, sizeof *m);
 			snprintf(m->v3dk, sizeof m->v3dk, "%s", k + 4);
-			int nk = 0;
-			for (char *tok = strtok(v, "+ "); tok && nk < 3; tok = strtok(NULL, "+ ")) {
-				int code = tdx_key_from_name(tok);
-				if (code < 0) fprintf(stderr, "%s:%d: unknown key '%s'\n", path, ln, tok);
-				else m->keys[nk++] = code;
-			}
-			if (nk) c->nkeymap++;
+			memcpy(m->keys, keys, sizeof keys);
 		} else
 			fprintf(stderr, "%s:%d: unknown option '%s'\n", path, ln, k);
 	}

@@ -41,10 +41,10 @@ BUILD   := build/$(ARCH)
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx output process
+CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx output process profile control
 CORE_OBJ := $(addprefix $(BUILD)/,$(addsuffix .o,$(CORE)))
 
-all: $(BUILD)/tdxd $(BUILD)/tdx-lcd
+all: $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl
 
 $(BUILD)/%.o: src/%.c src/*.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -56,6 +56,9 @@ $(BUILD)/tdxd: $(BUILD)/tdxd.o $(CORE_OBJ)
 	$(CC) $(LDFLAGS) $^ -o $@
 
 $(BUILD)/tdx-lcd: $(BUILD)/tdx-lcd.o $(CORE_OBJ)
+	$(CC) $(LDFLAGS) $^ -o $@
+
+$(BUILD)/tdxctl: $(BUILD)/tdxctl.o $(BUILD)/control.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
 $(BUILD)/test_core: tests/test_core.c $(CORE_OBJ)
@@ -74,6 +77,10 @@ devices:
 install: all
 	install -Dm755 $(BUILD)/tdxd     $(DESTDIR)$(PREFIX)/bin/tdxd
 	install -Dm755 $(BUILD)/tdx-lcd  $(DESTDIR)$(PREFIX)/bin/tdx-lcd
+	install -Dm755 $(BUILD)/tdxctl   $(DESTDIR)$(PREFIX)/bin/tdxctl
+	install -Dm755 packaging/tdx-focus $(DESTDIR)$(PREFIX)/bin/tdx-focus
+	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
+	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/tdxd.d/blender.conf.example
 	install -Dm644 packaging/99-3dconnexion-tdxd.rules $(DESTDIR)/etc/udev/rules.d/99-3dconnexion-tdxd.rules
 	install -Dm644 packaging/tdxd.service $(DESTDIR)/etc/systemd/system/tdxd.service
 	test -e $(DESTDIR)/etc/tdxd.conf || install -Dm644 packaging/tdxd.conf $(DESTDIR)/etc/tdxd.conf
@@ -90,9 +97,10 @@ dist:
 	rm -rf $(BUILD)   # rebuild everything so the embedded version is current
 	$(MAKE) STATIC=1 ARCH=$(ARCH) VERSION=$(VERSION) all
 	rm -rf $(DIST) && mkdir -p $(DIST)/bin
-	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(DIST)/bin/
-	$(STRIP) $(DIST)/bin/*
+	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl packaging/tdx-focus $(DIST)/bin/
+	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
 	cp packaging/99-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
+	   packaging/tdx-focus.service packaging/profiles/blender.conf.example \
 	   packaging/install.sh README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
 	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION

@@ -61,6 +61,53 @@ parameters come from `3DxService` through custom IOCTLs:
 `tdxd` re-implements the same options in user space (`sensitivity`, `scale_*`,
 `invert_*`, `map_*`, `dominant`, `disable_*`).
 
+### 3.1 Calibration / re-zero (observed: `HIDDev.dll`, `3DxService.exe`)
+
+The control panel's **Calibrate** button reaches the same function as the
+assignable action `Driver_RezeroDevice`. `3DxService.exe` resolves the export
+`UdDevRezero` from `HIDDev.dll` with `GetProcAddress` and calls it.
+`UdDevRezero` (`0x180026f60`) logs "UdDev: Rezeroing the device" and queues a
+2-byte **feature report** for `HidD_SetFeature`:
+
+```
+{ 0x07, 0x00 }
+```
+
+The report is only sent when the HID `VersionNumber` passes a check. That field
+is at offset `0x58`, after `HidD_GetAttributes` filled a `HIDD_ATTRIBUTES` at
+`+0x50`, and it is the USB `bcdDevice`:
+
+- `VersionNumber >= 0x200`, and
+- for the SpaceMouse Enterprise (C633), `VersionNumber > 0x441`.
+
+The SpacePilot Pro's HID descriptor declares feature report `0x07` with one data
+byte (see `docs/HARDWARE_TESTS.md`).
+
+`3DxService.exe` and `HIDDev.dll` also read `AutoCalibrateEnabled`,
+`AutoCalibratePeriod` and `AutoCalibrateWindow` settings.
+- **Unknown:** what auto-calibration does. It was not traced, and `tdxd` does
+  not implement it.
+
+**What `tdxd` does:**
+
+- It reads `bcdDevice` from sysfs and sends `{0x07, 0x00}` with
+  `HIDIOCSFEATURE` under the same version check.
+- When the version is unknown, for example over Bluetooth, it sends the report
+  anyway.
+- Triggers: `tdxctl calibrate`, `calibrate_button = V3DK_…`, or
+  `calibrate_on_start = yes`.
+
+### 3.2 Per-application configuration
+
+3DxWare keeps one XML configuration per application, for example `Blender.xml`
+or `SolidWorks.xml` in `3DxWinCore64.msi`, and switches with the focused window.
+
+`tdxd` implements this as overlay files in `/etc/tdxd.d/*.conf`, chosen by
+process name. The focused application comes from `tdx-focus` (X11
+`_NET_ACTIVE_WINDOW` → `_NET_WM_PID` → `/proc/PID/exe`, or sway's IPC), or else
+from the newest spacenavd client (`SO_PEERCRED`). The 3DxWare XML files are not
+imported. Their actions refer to Windows applications' commands.
+
 ## 4. Button layout (observed: `Base.xml`)
 
 Each `<Device>` entry lists its buttons as one of:

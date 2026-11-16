@@ -1,0 +1,25 @@
+# Example per-application profile. Copy to /etc/tdxd.d/blender.conf (any name
+# ending in .conf) and run `tdxctl reload`. Everything here is layered on top of
+# /etc/tdxd.conf while a matching application has the focus.
+
+# Process names this profile applies to (case-insensitive, * and ? allowed).
+# Without a match line the file name (here "blender") is used.
+match = blender, blender-*
+
+# Motion: the Windows "Advanced Settings" for this application.
+sensitivity = 1.2
+# scale_rz = 0          # an axis set to 0 is switched off ("Active" unticked)
+# invert_ry = yes       # "Reverse"
+# dominant = yes
+
+# Buttons: Blender's own NDOF handling uses the spacenavd button events, so only
+# remap what Blender doesn't handle itself. "none" removes a base binding.
+key_V3DK_1 = KEY_TAB          # edit/object mode
+key_V3DK_2 = LEFTCTRL + Z     # undo
+key_V3DK_3 = LEFTCTRL + LEFTSHIFT + Z
+# key_V3DK_ESC = none
+
+# SpacePilot Pro LCD labels shown while Blender is focused
+lcd_label_1 = Edit
+lcd_label_2 = Undo
+lcd_label_3 = Redo

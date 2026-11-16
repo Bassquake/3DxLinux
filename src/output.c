@@ -1,5 +1,6 @@
-#define _GNU_SOURCE
+#define _GNU_SOURCE /* accept4, struct ucred */
 #include "output.h"
+#include "profile.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -161,9 +162,24 @@ void tdx_spnav_accept(struct tdx_spnav *s)
 	for (int i = 0; i < TDX_SPNAV_MAX_CLIENTS; i++)
 		if (s->cfd[i] < 0) {
 			s->cfd[i] = fd;
+			s->app[i][0] = 0;
+			s->seq[i] = ++s->next_seq;
+			struct ucred cr;
+			socklen_t len = sizeof cr;
+			if (!getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cr, &len) && cr.pid > 0)
+				tdx_app_from_pid(cr.pid, s->app[i], sizeof s->app[i]);
 			return;
 		}
 	close(fd);
+}
+
+const char *tdx_spnav_latest_app(const struct tdx_spnav *s)
+{
+	int best = -1;
+	for (int i = 0; i < TDX_SPNAV_MAX_CLIENTS; i++)
+		if (s->cfd[i] >= 0 && s->app[i][0] && (best < 0 || s->seq[i] > s->seq[best]))
+			best = i;
+	return best < 0 ? NULL : s->app[best];
 }
 
 void tdx_spnav_client_input(struct tdx_spnav *s, int idx)

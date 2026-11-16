@@ -75,6 +75,16 @@ int tdx_has_rgb_leds(const struct tdx_device_def *dev);
 #define TDX_LCD_INTENSITY_REPORT_ID 0x11
 int tdx_lcd_intensity_report(const struct tdx_device_def *dev, int percent, uint8_t out[2]);
 
+/*
+ * Re-zero / calibrate (HIDDev.dll UdDevRezero, the GUI's "Calibrate" button and the
+ * Driver_RezeroDevice action): HID feature report {0x07, 0x00}. Windows sends it only
+ * when the device's HID VersionNumber (USB bcdDevice) is >= 0x200, and for the
+ * SpaceMouse Enterprise (C633) only when it is > 0x441. @version 0 = unknown (sent).
+ * Returns report length (2) or 0 when Windows would not send it.
+ */
+#define TDX_REZERO_REPORT_ID 0x07
+int tdx_rezero_report(const struct tdx_device_def *dev, uint16_t version, uint8_t out[2]);
+
 /* Number of logical buttons exposed for a device. */
 int tdx_button_count(const struct tdx_device_def *dev);
 

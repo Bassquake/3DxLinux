@@ -43,6 +43,31 @@ static int parse_uevent(const char *path, struct tdx_hid_node *n)
 	return got ? 0 : -1;
 }
 
+/* Walk up from the hidraw's HID device to the USB device and read bcdDevice. */
+static uint16_t read_version(const char *hidraw_name)
+{
+	char p[600], real[512];
+	snprintf(p, sizeof p, "/sys/class/hidraw/%s/device", hidraw_name);
+	if (!realpath(p, real))
+		return 0;
+	for (int up = 0; up < 4; up++) {
+		char *slash = strrchr(real, '/');
+		if (!slash || slash == real)
+			break;
+		*slash = 0; /* parent directory */
+		snprintf(p, sizeof p, "%s/bcdDevice", real);
+		FILE *f = fopen(p, "r");
+		if (f) {
+			unsigned v = 0;
+			int ok = fscanf(f, "%x", &v) == 1;
+			fclose(f);
+			if (ok)
+				return (uint16_t)v;
+		}
+	}
+	return 0;
+}
+
 int tdx_hidraw_scan(struct tdx_hid_node *out, int max)
 {
 	DIR *d = opendir("/sys/class/hidraw");
@@ -67,6 +92,7 @@ int tdx_hidraw_scan(struct tdx_hid_node *out, int max)
 		if (n.bus == 3 && n.def->hid_iface && n.iface >= 0 && n.iface != n.def->hid_iface)
 			continue;
 		snprintf(n.devnode, sizeof n.devnode, "/dev/%s", e->d_name);
+		n.version = read_version(e->d_name);
 		out[cnt++] = n;
 	}
 	closedir(d);

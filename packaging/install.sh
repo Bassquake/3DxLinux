@@ -13,16 +13,23 @@ fi
 
 if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
-	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" \
-	      /etc/udev/rules.d/99-3dconnexion-tdxd.rules /etc/systemd/system/tdxd.service
+	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
+	      /etc/udev/rules.d/99-3dconnexion-tdxd.rules /etc/systemd/system/tdxd.service \
+	      /etc/systemd/user/tdx-focus.service /etc/tdxd.d/blender.conf.example
 	udevadm control --reload 2>/dev/null || true
 	systemctl daemon-reload 2>/dev/null || true
-	echo "removed (kept /etc/tdxd.conf)"
+	echo "removed (kept /etc/tdxd.conf and any profiles in /etc/tdxd.d)"
 	exit 0
 fi
 
 install -Dm755 bin/tdxd    "$PREFIX/bin/tdxd"
 install -Dm755 bin/tdx-lcd "$PREFIX/bin/tdx-lcd"
+install -Dm755 bin/tdxctl  "$PREFIX/bin/tdxctl"
+install -Dm755 bin/tdx-focus "$PREFIX/bin/tdx-focus"
+mkdir -p /etc/systemd/user /etc/tdxd.d
+sed "s#/usr/local/bin#$PREFIX/bin#" tdx-focus.service > /etc/systemd/user/tdx-focus.service
+chmod 644 /etc/systemd/user/tdx-focus.service
+install -Dm644 blender.conf.example /etc/tdxd.d/blender.conf.example
 install -Dm644 99-3dconnexion-tdxd.rules /etc/udev/rules.d/99-3dconnexion-tdxd.rules
 sed "s#/usr/local/bin/tdxd#$PREFIX/bin/tdxd#" tdxd.service > /etc/systemd/system/tdxd.service
 chmod 644 /etc/systemd/system/tdxd.service
@@ -37,3 +44,6 @@ echo "installed tdxd $(cat VERSION 2>/dev/null) to $PREFIX/bin"
 echo "  try it in the foreground:  sudo $PREFIX/bin/tdxd -v -v"
 echo "  or as a service:           sudo systemctl enable --now tdxd"
 echo "  (stop spacenavd first if it is running: sudo systemctl disable --now spacenavd)"
+echo "  calibrate (re-zero) the cap:   tdxctl calibrate"
+echo "  per-application profiles:      /etc/tdxd.d/*.conf (see blender.conf.example)"
+echo "  focus tracking (X11 / sway), as your user:  systemctl --user enable --now tdx-focus"

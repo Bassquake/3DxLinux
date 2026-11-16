@@ -11,7 +11,8 @@ void tdx_process_axes(const struct tdx_config *cfg, const int16_t raw[6], int ou
 		int v = raw[cfg->axis_map[i]];
 		if (abs(v) <= cfg->deadzone)
 			v = 0;
-		out[i] = (int)((double)v * cfg->axis_scale[i] * cfg->sensitivity);
+		double s = cfg->axis_scale[i] * (cfg->axis_invert[i] ? -1.0 : 1.0);
+		out[i] = (int)((double)v * s * cfg->sensitivity);
 	}
 	if (cfg->disable_translation)
 		out[0] = out[1] = out[2] = 0;
@@ -37,7 +38,7 @@ const struct tdx_keymap *tdx_keymap_for(const struct tdx_config *cfg,
 	for (int i = 0; i < cfg->nkeymap; i++) {
 		const char *n = cfg->keymap[i].v3dk;
 		if ((v3dk && !strcasecmp(n, v3dk)) || !strcasecmp(n, generic))
-			return &cfg->keymap[i];
+			return cfg->keymap[i].keys[0] ? &cfg->keymap[i] : NULL; /* "none" = unmapped */
 	}
 	return NULL;
 }

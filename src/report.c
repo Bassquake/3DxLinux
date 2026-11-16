@@ -40,6 +40,19 @@ int tdx_lcd_intensity_report(const struct tdx_device_def *dev, int percent, uint
 	return 2;
 }
 
+int tdx_rezero_report(const struct tdx_device_def *dev, uint16_t version, uint8_t out[2])
+{
+	if (version) {
+		if (version < 0x200)
+			return 0;
+		if (dev && dev->pid == 0xC633 && version <= 0x441)
+			return 0;
+	}
+	out[0] = TDX_REZERO_REPORT_ID;
+	out[1] = 0;
+	return 2;
+}
+
 int tdx_button_count(const struct tdx_device_def *dev)
 {
 	if (dev && dev->nbuttons)

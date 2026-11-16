@@ -139,6 +139,67 @@ attached, Windows and 3DxWare cannot use it.
 5. **Give it back.** Run `usbipd detach --busid <id>`, then
    `usbipd unbind --busid <id>` as admin. Windows reloads its drivers.
 
+## Settings (compared with 3DxWare on Windows)
+
+Everything is set in `/etc/tdxd.conf`; apply changes with `tdxctl reload` or
+`systemctl reload tdxd`.
+
+| 3DxWare setting | tdxd |
+|---|---|
+| Speed | `sensitivity` |
+| Pan/Zoom, Rotation, Dominant | `disable_translation`, `disable_rotation`, `dominant` |
+| Per-axis Active / speed / Reverse | `scale_tx … scale_rz` (0 = off) / `invert_tx … invert_rz` |
+| Zoom direction | `map_ty = tz` + `map_tz = ty` |
+| LEDs Active | `led` |
+| **Calibrate** | `tdxctl calibrate`, `calibrate_button`, or `calibrate_on_start` |
+| Buttons | `key_<V3DK id> = KEY [+ KEY …]` (or `none`) |
+| LCD Manager | `lcd_brightness`, `lcd_label_N`, `lcd_image` |
+| **Per-application settings** | `/etc/tdxd.d/<name>.conf` profiles |
+
+### Calibrate
+
+Leave the cap untouched, then run:
+
+```bash
+tdxctl calibrate
+```
+
+This sends the same firmware re-zero command as the Calibrate button in
+3DxWare: HID feature report `0x07`, from `UdDevRezero` in `HIDDev.dll`. As in
+3DxWare, devices with firmware older than 2.00 are skipped. You can also bind it
+to a button with `calibrate_button = V3DK_…`, or run it whenever a device
+connects with `calibrate_on_start = yes`.
+
+### Per-application profiles
+
+A profile is a file in `/etc/tdxd.d/` ending in `.conf`. It holds any
+`tdxd.conf` options and is layered on top of the base file while a matching
+application has the focus. Daemon-wide options (sockets, uinput, spnav, `lcd`)
+can't be set in a profile. Start from the shipped example:
+
+```bash
+sudo cp /etc/tdxd.d/blender.conf.example /etc/tdxd.d/blender.conf && tdxctl reload
+```
+
+`match = blender, blender-*` lists the process names (case-insensitive, globs
+allowed). Without it, the file name is used.
+
+tdxd learns which application is focused in one of two ways:
+
+- **`tdx-focus` (X11 or sway).** Run it in your desktop session:
+
+  ```bash
+  systemctl --user enable --now tdx-focus
+  ```
+
+- **Fallback.** Without `tdx-focus`, tdxd uses the newest application connected
+  to the spacenavd socket (Blender, FreeCAD, …). That covers the common case of
+  one 3D application, including on Wayland desktops that `tdx-focus` doesn't
+  support.
+
+`tdxctl status` shows the active profile and how the application was detected.
+`tdxctl profiles` lists the profiles.
+
 ## LCD
 
 `tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240), SpaceMouse

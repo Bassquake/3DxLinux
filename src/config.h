@@ -20,7 +20,8 @@ struct tdx_ledcolor {
 
 struct tdx_config {
 	double sensitivity;       /* global multiplier */
-	double axis_scale[6];     /* per axis multiplier, sign = invert */
+	double axis_scale[6];     /* per axis multiplier (0 = axis off, like Windows "Active") */
+	int axis_invert[6];       /* per axis reverse (Windows "Reverse") */
 	int axis_map[6];          /* output axis i <- input axis axis_map[i] */
 	int deadzone;             /* raw units */
 	int disable_translation, disable_rotation, dominant;
@@ -46,11 +47,21 @@ struct tdx_config {
 	struct tdx_keymap keymap[TDX_MAX_KEYMAP];
 	int nkeymap;
 	int verbose;
+	/* calibration (HIDDev.dll UdDevRezero: feature report {0x07, 0x00}) */
+	int calibrate_on_start;
+	char calibrate_button[32];    /* V3DK id that re-zeroes the device */
+	/* per-application profiles */
+	char profile_dir[256];        /* directory of <name>.conf overlays */
+	char control_socket[108];     /* tdxctl / tdx-focus command socket */
+	char match[256];              /* profile files: comma-separated process names */
 };
 
 void tdx_config_defaults(struct tdx_config *c);
 /* Returns 0, -errno if unreadable (defaults kept). Unknown keys are warned and ignored. */
 int tdx_config_load(struct tdx_config *c, const char *path);
+/* Load a per-application overlay on top of @c. Daemon-wide options (sockets,
+ * uinput, spnav, lcd on/off, profile_dir, lcd_bmp_dir, verbose) are ignored with a warning. */
+int tdx_config_load_profile(struct tdx_config *c, const char *path);
 int tdx_key_from_name(const char *name);
 /* Number of 12-label pages configured (1..4). */
 int tdx_config_lcd_pages(const struct tdx_config *c);

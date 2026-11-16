@@ -3,7 +3,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <unistd.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <time.h>
+#include <sys/wait.h>
+#include <linux/input-event-codes.h>
+
 #include "config.h"
+#include "control.h"
+#include "profile.h"
 #include "devices.h"
 #include "deflate.h"
 #include "lcd.h"
@@ -141,7 +150,7 @@ static void test_config(void)
 	tdx_config_defaults(&c);
 	CHECK(tdx_config_load(&c, p) == 0);
 	remove(p);
-	CHECK(c.sensitivity == 0.5 && c.axis_scale[4] == -1.0 && c.axis_map[1] == 2);
+	CHECK(c.sensitivity == 0.5 && c.axis_invert[4] == 1 && c.axis_scale[4] == 1.0 && c.axis_map[1] == 2);
 	CHECK(c.nkeymap == 2 && c.keymap[1].keys[0] == 29 && c.keymap[1].keys[1] == 46);
 	CHECK(!strcmp(c.lcd_label[2], "Measure"));
 	CHECK(c.enable_spnav == 0);
@@ -764,9 +773,146 @@ static void test_giotto_bmp(void)
 	CHECK(tdx_bmp_load("does_not_exist.bmp", &bmp) < 0);
 }
 
+static void write_file(const char *path, const char *text)
+{
+	FILE *f = fopen(path, "w");
+	if (f) {
+		fputs(text, f);
+		fclose(f);
+	}
+}
+
+static void test_rezero(void)
+{
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	const struct tdx_device_def *ent = tdx_device_lookup(0x256F, 0xC633);
+	uint8_t r[2] = {0xAA, 0xAA};
+	CHECK(tdx_rezero_report(spp, 0x0300, r) == 2 && r[0] == 0x07 && r[1] == 0x00);
+	CHECK(tdx_rezero_report(spp, 0x0200, r) == 2);
+	CHECK(tdx_rezero_report(spp, 0x01FF, r) == 0); /* UdDevRezero: version >= 0x200 */
+	CHECK(tdx_rezero_report(spp, 0, r) == 2);      /* unknown version: send */
+	CHECK(tdx_rezero_report(ent, 0x0441, r) == 0); /* Enterprise needs > 0x441 */
+	CHECK(tdx_rezero_report(ent, 0x0442, r) == 2);
+}
+
+static void test_profiles(void)
+{
+	/* base config and two profiles in a scratch directory */
+	const char *base = "test_base.conf", *dir = "test_profiles.d";
+	mkdir(dir, 0755);
+	write_file(base, "sensitivity = 1.5\ninvert_ry = yes\nscale_tz = 0.5\n"
+			 "key_V3DK_ESC = KEY_ESC\nlcd_label_1 = Base\n");
+	write_file("test_profiles.d/zeta.conf",
+		   "match = blender, blender-*   # Blender builds\n"
+		   "invert_ry = no\nsensitivity = 2\nkey_V3DK_ESC = none\nkey_V3DK_FIT = KEY_F\n"
+		   "spnav_socket = /tmp/ignored.sock\nlcd_label_1 = Prof\n");
+	write_file("test_profiles.d/alpha.conf", "scale_rx = 0\n");
+	write_file("test_profiles.d/notes.txt", "not a profile\n");
+	write_file("test_profiles.d/.hidden.conf", "sensitivity = 9\n");
+
+	struct tdx_profiles ps;
+	CHECK(tdx_profiles_scan(dir, &ps) == 0 && ps.n == 2);
+	CHECK(!strcmp(ps.p[0].name, "alpha") && !strcmp(ps.p[1].name, "zeta"));
+	CHECK(!strcmp(ps.p[0].match, "alpha") && !strcmp(ps.p[1].match, "blender, blender-*"));
+	CHECK(tdx_profile_match(&ps, "blender") == 1);
+	CHECK(tdx_profile_match(&ps, "Blender-3.6") == 1); /* case-insensitive glob */
+	CHECK(tdx_profile_match(&ps, "ALPHA") == 0);
+	CHECK(tdx_profile_match(&ps, "gimp") == -1 && tdx_profile_match(&ps, NULL) == -1);
+
+	static struct tdx_config c;
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	int esc = -1, fit = -1;
+	for (int i = 0; i < spp->nbuttons; i++) {
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_ESC")) esc = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_FIT")) fit = i;
+	}
+
+	/* base only */
+	tdx_config_compose(&c, base, &ps, -1);
+	CHECK(c.sensitivity == 1.5 && c.axis_invert[4] == 1 && c.axis_scale[2] == 0.5);
+	const struct tdx_keymap *km = tdx_keymap_for(&c, spp, esc);
+	CHECK(km && km->keys[0] == KEY_ESC && !tdx_keymap_for(&c, spp, fit));
+	CHECK(!strcmp(c.lcd_label[0], "Base"));
+
+	/* base + zeta: overrides, "none" unbinds, invert undone, daemon-wide key ignored */
+	tdx_config_compose(&c, base, &ps, 1);
+	CHECK(c.sensitivity == 2.0 && c.axis_invert[4] == 0 && c.axis_scale[2] == 0.5);
+	CHECK(!tdx_keymap_for(&c, spp, esc));
+	km = tdx_keymap_for(&c, spp, fit);
+	CHECK(km && km->keys[0] == KEY_F);
+	CHECK(!strcmp(c.spnav_socket, "/run/spnav.sock") && !strcmp(c.lcd_label[0], "Prof"));
+	int16_t raw[6] = {0, 0, 100, 0, 0, 0};
+	int out[6];
+	tdx_process_axes(&c, raw, out);
+	CHECK(out[2] == 100); /* 100 * 0.5 * 2 */
+
+	/* base + alpha: an axis scaled to 0 is switched off */
+	tdx_config_compose(&c, base, &ps, 0);
+	int16_t raw2[6] = {0, 0, 0, 300, 0, 0};
+	tdx_process_axes(&c, raw2, out);
+	CHECK(out[3] == 0 && c.sensitivity == 1.5);
+
+	/* uinput capabilities cover every profile's keys */
+	int codes[64];
+	int n = tdx_profiles_key_union(base, &ps, codes, 64);
+	int has_esc = 0, has_f = 0;
+	for (int i = 0; i < n; i++) {
+		has_esc |= codes[i] == KEY_ESC;
+		has_f |= codes[i] == KEY_F;
+	}
+	CHECK(n == 2 && has_esc && has_f);
+
+	/* a missing directory is simply "no profiles" */
+	CHECK(tdx_profiles_scan("does_not_exist.d", &ps) == 0 && ps.n == 0);
+
+	remove("test_profiles.d/zeta.conf");
+	remove("test_profiles.d/alpha.conf");
+	remove("test_profiles.d/notes.txt");
+	remove("test_profiles.d/.hidden.conf");
+	rmdir(dir);
+	remove(base);
+
+	char app[64] = "";
+	CHECK(tdx_app_from_pid(getpid(), app, sizeof app) == 0 && !strcmp(app, "test_core"));
+}
+
+static void echo_handler(char *cmd, char *reply, size_t len)
+{
+	snprintf(reply, len, "got <%s>\n", cmd);
+}
+
+static void test_control(void)
+{
+	const char *path = "/tmp/tdx_test_ctl.sock"; /* not on /mnt: needs a Linux filesystem */
+	int lfd = tdx_ctl_listen(path);
+	CHECK(lfd >= 0);
+	if (lfd < 0)
+		return;
+	pid_t pid = fork();
+	if (pid == 0) { /* server: answer one request */
+		struct timespec ts = {0, 50 * 1000 * 1000};
+		for (int i = 0; i < 40; i++) { /* the listener is non-blocking */
+			nanosleep(&ts, NULL);
+			tdx_ctl_serve(lfd, echo_handler);
+		}
+		_exit(0);
+	}
+	char reply[256] = "";
+	int rc = tdx_ctl_request(path, "focus blender 1234", reply, sizeof reply);
+	CHECK(rc == 0 && !strcmp(reply, "got <focus blender 1234>\n"));
+	kill(pid, SIGTERM);
+	waitpid(pid, NULL, 0);
+	close(lfd);
+	unlink(path);
+	CHECK(tdx_ctl_request("no_such.sock", "status", reply, sizeof reply) < 0);
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
+	test_rezero();
+	test_profiles();
+	test_control();
 	test_enterprise_lcd();
 	test_giotto_lcd();
 	test_giotto_slide();

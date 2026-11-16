@@ -28,7 +28,9 @@
 #include "lcd.h"
 #include "lcd_ent.h"
 #include "lcd_giotto.h"
+#include "control.h"
 #include "output.h"
+#include "profile.h"
 #include "process.h"
 #include "report.h"
 
@@ -58,6 +60,18 @@ static const char *conf_path = DEFAULT_CONF;
 static struct dev_ctx devs[MAX_DEV];
 static int ndev;
 static struct tdx_spnav spnav = {.lfd = -1};
+
+/* per-application profiles */
+static int cli_verbose;
+static struct tdx_profiles profiles;
+static int active_profile = -1;   /* index into profiles, -1 = base configuration */
+static char focus_app[64];        /* last application reported by tdx-focus / tdxctl */
+static int focus_pid;
+static int focus_known;           /* a focus helper has reported at least once */
+static int ctl_fd = -1;
+static char ctl_path[108];
+static int key_union[3 * TDX_MAX_KEYMAP];
+static int nkey_union;
 
 static void on_sig(int s) { if (s == SIGHUP) g_reload = 1; else g_quit = 1; }
 
@@ -382,6 +396,165 @@ static void dev_close(struct dev_ctx *d)
 	*d = devs[--ndev];
 }
 
+/* ---- calibration (HIDDev.dll UdDevRezero) ---- */
+
+static int device_rezero(struct dev_ctx *d)
+{
+	uint8_t rep[2];
+	if (!tdx_rezero_report(d->node.def, d->node.version, rep)) {
+		LOG(0, "%s: firmware %x.%02x does not support re-zero (3DxWare skips it too)\n",
+		    d->node.def->name, d->node.version >> 8, d->node.version & 0xFF);
+		return -ENOTSUP;
+	}
+	if (ioctl(d->fd, HIDIOCSFEATURE(2), rep) < 0) {
+		int e = errno;
+		LOG(0, "%s: re-zero failed: %s\n", d->node.def->name, strerror(e));
+		return -e;
+	}
+	LOG(0, "%s: re-zeroed (rest position calibrated)\n", d->node.def->name);
+	return 0;
+}
+
+/* ---- per-application profiles ---- */
+
+static void apply_effective(int idx)
+{
+	tdx_config_compose(&cfg, conf_path, &profiles, idx);
+	if (cli_verbose)
+		cfg.verbose = cli_verbose;
+	active_profile = idx;
+}
+
+/* Base config, profile list, and the union of all keys any profile can send. */
+static void load_all(void)
+{
+	tdx_config_compose(&cfg, conf_path, &profiles, -1); /* profile_dir lives in the base */
+	int rc = tdx_profiles_scan(cfg.profile_dir, &profiles);
+	if (rc)
+		fprintf(stderr, "tdxd: cannot read %s: %s\n", cfg.profile_dir, strerror(-rc));
+	nkey_union = tdx_profiles_key_union(conf_path, &profiles, key_union,
+					    (int)(sizeof key_union / sizeof key_union[0]));
+	int idx = active_profile < profiles.n ? active_profile : -1;
+	apply_effective(idx);
+}
+
+static const char *profile_name(int idx)
+{
+	return idx >= 0 ? profiles.p[idx].name : "default";
+}
+
+/* The application profiles follow: what tdx-focus reported, else the newest spnav client. */
+static const char *current_app(const char **source)
+{
+	if (focus_known) {
+		*source = "focus";
+		return focus_app;
+	}
+	const char *a = spnav.lfd >= 0 ? tdx_spnav_latest_app(&spnav) : NULL;
+	*source = a ? "spnav-client" : "none";
+	return a;
+}
+
+static void refresh_devices(void)
+{
+	for (int i = 0; i < ndev; i++) {
+		if (devs[i].lcd && cfg.lcd_brightness >= 0)
+			tdx_lcd_set_brightness(devs[i].lcd, cfg.lcd_brightness);
+		led_apply(&devs[i]);
+		lcd_intensity_apply(&devs[i]);
+		lcd_redraw(&devs[i]);
+	}
+}
+
+static void select_profile(void)
+{
+	const char *src;
+	const char *app = current_app(&src);
+	int idx = tdx_profile_match(&profiles, app);
+	if (idx == active_profile)
+		return;
+	apply_effective(idx);
+	LOG(0, "profile: %s (application %s, via %s)\n", profile_name(idx), app ? app : "-", src);
+	refresh_devices();
+}
+
+/* uinput gets every key any profile may send, so profile switches need no new device. */
+static void uinput_open_dev(struct dev_ctx *d)
+{
+	struct tdx_config *u = malloc(sizeof *u);
+	if (!u)
+		return;
+	*u = cfg;
+	u->nkeymap = 0;
+	for (int i = 0; i < nkey_union; i += 3) {
+		struct tdx_keymap *m = &u->keymap[u->nkeymap++];
+		memset(m, 0, sizeof *m);
+		for (int k = 0; k < 3 && i + k < nkey_union; k++)
+			m->keys[k] = key_union[i + k];
+	}
+	int rc = tdx_uinput_open(&d->ui, d->node.def, u);
+	free(u);
+	if (rc)
+		LOG(0, "uinput disabled: %s\n", strerror(-rc));
+}
+
+static void ctl_handler(char *cmd, char *reply, size_t len)
+{
+	char *save = NULL, *verb = strtok_r(cmd, " \t", &save);
+	if (!verb) {
+		snprintf(reply, len, "error: empty command\n");
+	} else if (!strcmp(verb, "focus")) {
+		char *app = strtok_r(NULL, " \t", &save), *pid = strtok_r(NULL, " \t", &save);
+		if (!app) {
+			snprintf(reply, len, "error: focus needs an application name\n");
+			return;
+		}
+		snprintf(focus_app, sizeof focus_app, "%s", app);
+		focus_pid = pid ? atoi(pid) : 0;
+		focus_known = 1;
+		select_profile();
+		snprintf(reply, len, "ok profile=%s\n", profile_name(active_profile));
+	} else if (!strcmp(verb, "calibrate")) {
+		size_t o = 0;
+		if (!ndev)
+			o += (size_t)snprintf(reply, len, "error: no device\n");
+		for (int i = 0; i < ndev && o < len; i++) {
+			int rc = device_rezero(&devs[i]);
+			o += (size_t)snprintf(reply + o, len - o, "%s %s: %s\n", rc ? "error" : "ok",
+					      devs[i].node.def->name,
+					      rc ? strerror(-rc) : "re-zeroed");
+		}
+	} else if (!strcmp(verb, "reload")) {
+		g_reload = 1;
+		snprintf(reply, len, "ok reloading\n");
+	} else if (!strcmp(verb, "profiles")) {
+		size_t o = (size_t)snprintf(reply, len, "profile_dir %s (%d profiles)\n", cfg.profile_dir,
+					    profiles.n);
+		for (int i = 0; i < profiles.n && o < len; i++)
+			o += (size_t)snprintf(reply + o, len - o, "%c %-20s match: %s\n",
+					      i == active_profile ? '*' : ' ', profiles.p[i].name,
+					      profiles.p[i].match);
+	} else if (!strcmp(verb, "status")) {
+		const char *src;
+		const char *app = current_app(&src);
+		size_t o = (size_t)snprintf(reply, len,
+					    "tdxd %s\nprofile %s\napplication %s (via %s)\ndevices %d\n",
+#ifdef TDX_VERSION
+					    TDX_VERSION,
+#else
+					    "unknown",
+#endif
+					    profile_name(active_profile), app ? app : "-", src, ndev);
+		for (int i = 0; i < ndev && o < len; i++)
+			o += (size_t)snprintf(reply + o, len - o, "  %s [%04x:%04x] %s firmware %x.%02x\n",
+					      devs[i].node.def->name, devs[i].node.vid,
+					      devs[i].node.pid, devs[i].node.devnode,
+					      devs[i].node.version >> 8, devs[i].node.version & 0xFF);
+	} else {
+		snprintf(reply, len, "error: unknown command '%s'\n", verb);
+	}
+}
+
 static void rescan(void)
 {
 	struct tdx_hid_node nodes[MAX_DEV];
@@ -408,11 +581,10 @@ static void rescan(void)
 		ndev++;
 		LOG(0, "device: %s [%04x:%04x] on %s\n", d->node.def->name, d->node.vid,
 		    d->node.pid, d->node.devnode);
-		if (cfg.enable_uinput) {
-			int rc = tdx_uinput_open(&d->ui, d->node.def, &cfg);
-			if (rc)
-				LOG(0, "uinput disabled: %s\n", strerror(-rc));
-		}
+		if (cfg.enable_uinput)
+			uinput_open_dev(d);
+		if (cfg.calibrate_on_start)
+			device_rezero(d);
 		led_apply(d);
 		lcd_intensity_apply(d);
 		lcd_attach(d);
@@ -440,6 +612,9 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 			d->lcd_page = p ? 1 : 0;
 			lcd_redraw(d);
 		}
+		/* "Calibrate" bound to a button (3DxWare's Driver_RezeroDevice action) */
+		if (p && v3dk && cfg.calibrate_button[0] && !strcasecmp(v3dk, cfg.calibrate_button))
+			device_rezero(d);
 		/* Giotto: slide to the next label page */
 		if (p && d->glcd && v3dk && cfg.lcd_slide_button[0] &&
 		    !strcasecmp(v3dk, cfg.lcd_slide_button))
@@ -513,11 +688,12 @@ int main(int argc, char **argv)
 		}
 	}
 
-	tdx_config_defaults(&cfg);
-	if (tdx_config_load(&cfg, conf_path) && strcmp(conf_path, DEFAULT_CONF))
+	cli_verbose = verbose;
+	if (access(conf_path, R_OK) && strcmp(conf_path, DEFAULT_CONF))
 		fprintf(stderr, "tdxd: cannot read %s: %s\n", conf_path, strerror(errno));
-	if (verbose)
-		cfg.verbose = verbose;
+	load_all();
+	if (profiles.n)
+		LOG(0, "%d per-application profile(s) in %s\n", profiles.n, cfg.profile_dir);
 
 	struct sigaction sa = {.sa_handler = on_sig};
 	sigaction(SIGINT, &sa, NULL);
@@ -531,23 +707,28 @@ int main(int argc, char **argv)
 			LOG(0, "spnav socket %s: %s (disabled)\n", cfg.spnav_socket, strerror(-rc));
 	}
 	bmp_watch_setup();
+	if (cfg.control_socket[0]) {
+		snprintf(ctl_path, sizeof ctl_path, "%s", cfg.control_socket);
+		ctl_fd = tdx_ctl_listen(ctl_path);
+		if (ctl_fd < 0)
+			LOG(0, "control socket %s: %s (tdxctl disabled)\n", ctl_path, strerror(-ctl_fd));
+	}
 
 	long long last_scan = 0;
 	while (!g_quit) {
 		if (g_reload) {
 			g_reload = 0;
-			tdx_config_defaults(&cfg);
-			tdx_config_load(&cfg, conf_path);
-			if (verbose)
-				cfg.verbose = verbose;
-			LOG(0, "configuration reloaded\n");
-			for (int i = 0; i < ndev; i++) {
-				if (devs[i].lcd && cfg.lcd_brightness >= 0)
-					tdx_lcd_set_brightness(devs[i].lcd, cfg.lcd_brightness);
-				led_apply(&devs[i]);
-				lcd_intensity_apply(&devs[i]);
-				lcd_redraw(&devs[i]);
+			load_all();
+			active_profile = -2; /* force re-selection against the new profile list */
+			select_profile();
+			LOG(0, "configuration reloaded (%d profiles, active %s)\n", profiles.n,
+			    profile_name(active_profile));
+			for (int i = 0; i < ndev; i++) { /* key bindings may have changed */
+				tdx_uinput_close(&devs[i].ui);
+				if (cfg.enable_uinput)
+					uinput_open_dev(&devs[i]);
 			}
+			refresh_devices();
 			bmp_watch_setup();
 			bmp_send_pending();
 		}
@@ -556,10 +737,15 @@ int main(int argc, char **argv)
 			last_scan = now_ms();
 		}
 
-		struct pollfd pfd[MAX_DEV + 2 + TDX_SPNAV_MAX_CLIENTS];
+		struct pollfd pfd[MAX_DEV + 3 + TDX_SPNAV_MAX_CLIENTS];
 		int np = 0;
 		for (int i = 0; i < ndev; i++)
 			pfd[np++] = (struct pollfd){.fd = devs[i].fd, .events = POLLIN};
+		int ctl_idx = -1;
+		if (ctl_fd >= 0) {
+			ctl_idx = np;
+			pfd[np++] = (struct pollfd){.fd = ctl_fd, .events = POLLIN};
+		}
 		int bmp_idx = -1;
 		if (bmp_ifd >= 0) {
 			bmp_idx = np;
@@ -587,6 +773,8 @@ int main(int argc, char **argv)
 			continue;
 		if (bmp_idx >= 0 && (pfd[bmp_idx].revents & POLLIN))
 			bmp_watch_read();
+		if (ctl_idx >= 0 && (pfd[ctl_idx].revents & POLLIN))
+			tdx_ctl_serve(ctl_fd, ctl_handler);
 		for (int i = ndev - 1; i >= 0; i--)
 			if (pfd[i].revents & (POLLIN | POLLHUP | POLLERR))
 				dev_read(&devs[i]);
@@ -596,11 +784,17 @@ int main(int argc, char **argv)
 			for (int i = 0; i < TDX_SPNAV_MAX_CLIENTS; i++)
 				if (spnav.cfd[i] >= 0 && (pfd[sp_base + 1 + i].revents & (POLLIN | POLLHUP)))
 					tdx_spnav_client_input(&spnav, i);
+			if (!focus_known) /* no focus helper: follow the newest spnav client */
+				select_profile();
 		}
 	}
 
 	while (ndev)
 		dev_close(&devs[ndev - 1]);
 	tdx_spnav_close(&spnav);
+	if (ctl_fd >= 0) {
+		close(ctl_fd);
+		unlink(ctl_path);
+	}
 	return 0;
 }
