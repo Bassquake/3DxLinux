@@ -104,7 +104,10 @@ dist:
 	   packaging/install.sh README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
 	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION
-	tar -C build/dist -czf $(DIST).tar.gz $(notdir $(DIST))
+	# normal modes / root ownership regardless of the build filesystem (e.g. WSL /mnt
+	# reports 0777 for everything, which root's tar would restore on extraction)
+	tar -C build/dist --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w' \
+	    -czf $(DIST).tar.gz $(notdir $(DIST))
 	@echo "wrote $(DIST).tar.gz"
 
 release:
