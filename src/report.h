@@ -45,6 +45,27 @@ int tdx_report_feed(struct tdx_state *st, const struct tdx_device_def *dev,
  */
 int tdx_led_report(const struct tdx_device_def *dev, int on, uint8_t out[2]);
 
+/*
+ * RGB LEDs (Giotto C63C) - HIDDev.dll FUN_180034af0 ("CUSBDev::SetLEDColor"):
+ *   HID feature report, 8 bytes: {0x1A, 0x25, index, R, G, B, 0, 0}
+ * index 0x00..0x1D  button LEDs (Base.xml <LEDNumber>), 0x1E..0x23 ring segments,
+ *       0x24 used with black to switch every LED off       (FUN_180033cd0)
+ *       0x25 sets all button LEDs to one colour            (FUN_180033cd0)
+ *       0x26 sets all ring segments to one colour          (FUN_180032e70 case 10)
+ */
+#define TDX_RGB_REPORT_ID   0x1A
+#define TDX_RGB_CMD_COLOR   0x25
+#define TDX_RGB_NUM_BUTTONS 30
+#define TDX_RGB_RING_FIRST  0x1E
+#define TDX_RGB_NUM_RING    6
+#define TDX_RGB_ALL_OFF     0x24
+#define TDX_RGB_ALL_BUTTONS 0x25
+#define TDX_RGB_RING        0x26
+
+void tdx_rgb_report(uint8_t index, uint32_t rgb, uint8_t out[8]);
+/* Does this device use the RGB feature-report LED path? */
+int tdx_has_rgb_leds(const struct tdx_device_def *dev);
+
 /* Number of logical buttons exposed for a device. */
 int tdx_button_count(const struct tdx_device_def *dev);
 

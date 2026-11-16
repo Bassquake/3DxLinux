@@ -152,6 +152,63 @@ static void test_config(void)
 	CHECK(km && km->keys[0] == 1);
 }
 
+static void test_rgb_leds(void)
+{
+	const struct tdx_device_def *giotto = tdx_device_lookup(0x256F, 0xC63C);
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	uint8_t r[40][8];
+	struct tdx_config c;
+
+	CHECK(tdx_has_rgb_leds(giotto) && !tdx_has_rgb_leds(spp));
+	tdx_rgb_report(7, 0x123456, r[0]);
+	const uint8_t exp[8] = {0x1A, 0x25, 0x07, 0x12, 0x34, 0x56, 0, 0};
+	CHECK(!memcmp(r[0], exp, 8));
+
+	tdx_config_defaults(&c);
+	CHECK(tdx_rgb_plan(&c, giotto, r, 40) == 0); /* nothing configured: leave LEDs alone */
+	CHECK(tdx_rgb_plan(&c, spp, r, 40) == 0);
+
+	c.led = 0; /* off -> single 0x24 broadcast with black */
+	CHECK(tdx_rgb_plan(&c, giotto, r, 40) == 1 && r[0][2] == 0x24 && !r[0][3] && !r[0][5]);
+
+	c.led = 1; /* on, no colours -> white buttons (0x25) + white ring (0x26) */
+	CHECK(tdx_rgb_plan(&c, giotto, r, 40) == 2);
+	CHECK(r[0][2] == 0x25 && r[0][3] == 0xFF && r[1][2] == 0x26 && r[1][5] == 0xFF);
+
+	c.led = -1; /* uniform button colour only */
+	c.led_button_color = 0x00FF00;
+	CHECK(tdx_rgb_plan(&c, giotto, r, 40) == 1 && r[0][2] == 0x25 && r[0][4] == 0xFF);
+
+	/* one button differs -> 30 individual reports; LED via Base.xml LEDNumber */
+	int fit = find_btn(giotto, "V3DK_FIT");
+	c.nledcolor = 1;
+	snprintf(c.ledcolor[0].v3dk, sizeof c.ledcolor[0].v3dk, "V3DK_FIT");
+	c.ledcolor[0].rgb = 0xFF0000;
+	c.led_ring_color = 0x0000FF;
+	int n = tdx_rgb_plan(&c, giotto, r, 40);
+	CHECK(n == 31);
+	int led = giotto->buttons[fit].led;
+	CHECK(led >= 0 && r[led][2] == led && r[led][3] == 0xFF && r[led][4] == 0);
+	CHECK(r[30][2] == 0x26 && r[30][5] == 0xFF);
+
+	/* individual ring segment by LED_n */
+	snprintf(c.ledcolor[0].v3dk, sizeof c.ledcolor[0].v3dk, "LED_31");
+	n = tdx_rgb_plan(&c, giotto, r, 40);
+	CHECK(n == 1 + 6 && r[0][2] == 0x25 && r[2][2] == 31 && r[2][3] == 0xFF && r[1][5] == 0xFF);
+
+	/* config parsing */
+	const char *p = "test_rgb.conf";
+	FILE *f = fopen(p, "w");
+	fputs("led_button_color = #102030\nled_ring_color = 0xA0B0C0\nled_color_V3DK_FIT = ff8000\n"
+	      "led_color_LED_32 = 00ff00\n", f);
+	fclose(f);
+	tdx_config_defaults(&c);
+	CHECK(tdx_config_load(&c, p) == 0);
+	remove(p);
+	CHECK(c.led_button_color == 0x102030 && c.led_ring_color == 0xA0B0C0 && c.nledcolor == 2);
+	CHECK(!strcmp(c.ledcolor[0].v3dk, "V3DK_FIT") && c.ledcolor[0].rgb == 0xFF8000);
+}
+
 int main(void)
 {
 	test_device_table();
@@ -159,6 +216,7 @@ int main(void)
 	test_buttons();
 	test_lcd();
 	test_config();
+	test_rgb_leds();
 	printf("%d/%d checks passed\n", checks - fails, checks);
 	return fails ? 1 : 0;
 }

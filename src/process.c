@@ -42,6 +42,74 @@ const struct tdx_keymap *tdx_keymap_for(const struct tdx_config *cfg,
 	return NULL;
 }
 
+/* LED index for a configured name: V3DK id via the device's <LEDNumber>, or "LED_n". */
+static int led_index_for(const struct tdx_device_def *dev, const char *name)
+{
+	if (!strncasecmp(name, "LED_", 4)) {
+		char *end;
+		long n = strtol(name + 4, &end, 10);
+		return (!*end && n >= 0 && n < TDX_RGB_RING_FIRST + TDX_RGB_NUM_RING) ? (int)n : -1;
+	}
+	for (int i = 0; dev && i < dev->nbuttons; i++)
+		if (dev->buttons[i].led >= 0 && dev->buttons[i].v3dk &&
+		    !strcasecmp(dev->buttons[i].v3dk, name))
+			return dev->buttons[i].led;
+	return -1;
+}
+
+int tdx_rgb_plan(const struct tdx_config *cfg, const struct tdx_device_def *dev,
+		 uint8_t out[][8], int max)
+{
+	int n = 0;
+	if (!tdx_has_rgb_leds(dev) || max < 1)
+		return 0;
+	int any_color = cfg->led_button_color >= 0 || cfg->led_ring_color >= 0 || cfg->nledcolor;
+	if (cfg->led == 0) {
+		tdx_rgb_report(TDX_RGB_ALL_OFF, 0, out[n++]);
+		return n;
+	}
+	if (cfg->led < 0 && !any_color)
+		return 0;
+
+	uint32_t base = cfg->led_button_color >= 0 ? (uint32_t)cfg->led_button_color : 0xFFFFFF;
+	uint32_t led[TDX_RGB_RING_FIRST + TDX_RGB_NUM_RING];
+	int ring_set = cfg->led_ring_color >= 0 || cfg->led == 1;
+	uint32_t ring = cfg->led_ring_color >= 0 ? (uint32_t)cfg->led_ring_color : 0xFFFFFF;
+	for (int i = 0; i < TDX_RGB_NUM_BUTTONS; i++)
+		led[i] = base;
+	int ring_individual = 0;
+	for (int i = TDX_RGB_NUM_BUTTONS; i < TDX_RGB_RING_FIRST + TDX_RGB_NUM_RING; i++)
+		led[i] = ring;
+	for (int i = 0; i < cfg->nledcolor; i++) {
+		int idx = led_index_for(dev, cfg->ledcolor[i].v3dk);
+		if (idx < 0) {
+			fprintf(stderr, "tdxd: no LED for '%s' on %s\n", cfg->ledcolor[i].v3dk, dev->name);
+			continue;
+		}
+		led[idx] = cfg->ledcolor[i].rgb;
+		if (idx >= TDX_RGB_RING_FIRST)
+			ring_individual = 1;
+	}
+
+	int uniform = 1;
+	for (int i = 1; i < TDX_RGB_NUM_BUTTONS; i++)
+		if (led[i] != led[0])
+			uniform = 0;
+	if (uniform) {
+		tdx_rgb_report(TDX_RGB_ALL_BUTTONS, led[0], out[n++]);
+	} else {
+		for (int i = 0; i < TDX_RGB_NUM_BUTTONS && n < max; i++)
+			tdx_rgb_report((uint8_t)i, led[i], out[n++]);
+	}
+	if (ring_individual) {
+		for (int i = TDX_RGB_RING_FIRST; i < TDX_RGB_RING_FIRST + TDX_RGB_NUM_RING && n < max; i++)
+			tdx_rgb_report((uint8_t)i, led[i], out[n++]);
+	} else if (ring_set && n < max) {
+		tdx_rgb_report(TDX_RGB_RING, ring, out[n++]);
+	}
+	return n;
+}
+
 void tdx_render_keys_page(struct tdx_fb *fb, const struct tdx_config *cfg,
 			  const char *devname, int page)
 {

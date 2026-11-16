@@ -24,6 +24,8 @@ void tdx_config_defaults(struct tdx_config *c)
 	snprintf(c->spnav_socket, sizeof c->spnav_socket, "/run/spnav.sock");
 	c->lcd_enable = 1;
 	c->led = -1;
+	c->led_button_color = -1;
+	c->led_ring_color = -1;
 	c->lcd_brightness = -1;
 	for (int i = 0; i < 10; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
@@ -86,6 +88,20 @@ static int axis_index(const char *s)
 	return -1;
 }
 
+/* "RRGGBB", "#RRGGBB" or "0xRRGGBB" -> 0xRRGGBB, -1 if malformed */
+static int64_t parse_rgb(const char *v)
+{
+	if (*v == '#')
+		v++;
+	else if (v[0] == '0' && (v[1] == 'x' || v[1] == 'X'))
+		v += 2;
+	if (strlen(v) != 6)
+		return -1;
+	char *end;
+	long x = strtol(v, &end, 16);
+	return *end ? -1 : (int64_t)x;
+}
+
 static int parse_bool(const char *v) { return !strcasecmp(v, "yes") || !strcasecmp(v, "true") || !strcasecmp(v, "on") || atoi(v) != 0; }
 
 int tdx_config_load(struct tdx_config *c, const char *path)
@@ -106,8 +122,10 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 			continue;
 		}
 		*eq = 0;
-		for (char *h = eq + 1; *h; h++) /* inline comment: whitespace then '#' */
-			if (*h == '#' && h > eq + 1 && isspace((unsigned char)h[-1])) {
+		/* inline comment: whitespace, '#', then whitespace/EOL (so "#RRGGBB" survives) */
+		for (char *h = eq + 1; *h; h++)
+			if (*h == '#' && h > eq + 1 && isspace((unsigned char)h[-1]) &&
+			    (!h[1] || isspace((unsigned char)h[1]))) {
 				*h = 0;
 				break;
 			}
@@ -124,6 +142,21 @@ int tdx_config_load(struct tdx_config *c, const char *path)
 		else if (!strcmp(k, "spnav_socket")) snprintf(c->spnav_socket, sizeof c->spnav_socket, "%s", v);
 		else if (!strcmp(k, "lcd")) c->lcd_enable = parse_bool(v);
 		else if (!strcmp(k, "led")) c->led = parse_bool(v);
+		else if (!strcmp(k, "led_button_color") || !strcmp(k, "led_ring_color") ||
+			 !strncmp(k, "led_color_", 10)) {
+			int64_t rgb = parse_rgb(v);
+			if (rgb < 0)
+				fprintf(stderr, "%s:%d: bad colour '%s' (want RRGGBB)\n", path, ln, v);
+			else if (!strcmp(k, "led_button_color"))
+				c->led_button_color = rgb;
+			else if (!strcmp(k, "led_ring_color"))
+				c->led_ring_color = rgb;
+			else if (c->nledcolor < TDX_MAX_LEDCOLOR) {
+				struct tdx_ledcolor *lc = &c->ledcolor[c->nledcolor++];
+				snprintf(lc->v3dk, sizeof lc->v3dk, "%s", k + 10);
+				lc->rgb = (uint32_t)rgb;
+			}
+		}
 		else if (!strcmp(k, "lcd_brightness")) c->lcd_brightness = atoi(v);
 		else if (!strcmp(k, "lcd_image")) snprintf(c->lcd_image, sizeof c->lcd_image, "%s", v);
 		else if (!strcmp(k, "verbose")) c->verbose = atoi(v);

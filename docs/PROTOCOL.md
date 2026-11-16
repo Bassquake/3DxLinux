@@ -162,11 +162,56 @@ with `WriteFile` on the HID handle:
                     (3 instead of 1 on the Enterprise C633 when a device flag is clear)
 ```
 
-Giotto (C63C, `-0x39c4`) branches to `FUN_180033cd0` instead. That path, which also
-carries per-button RGB colour (`SetLEDColor`, `ButtonLEDColor`, `RingLEDColor`,
-`<LEDNumber>` in `Base.xml`), was not recovered.
+Giotto (C63C, `-0x39c4`) branches to `FUN_180033cd0` instead. See 6.1.
 
-`tdxd` sends `{0x04, led}` when `led = yes|no` is set.
+`tdxd` sends `{0x04, led}` when `led = yes|no` is set (all devices except Giotto).
+
+### 6.1 Giotto RGB LEDs (observed: `HIDDev.dll`)
+
+`FUN_180034af0` (logged as `CUSBDev::SetLEDColor`) builds an 8-byte buffer and
+queues it with `FUN_180033360`. The device write thread sends each queued buffer
+with `HidD_SetFeature(handle, buf, len)`. So this is a **feature report**:
+
+```
+{ 0x1A, 0x25, index, R, G, B, 0x00, 0x00 }
+```
+
+LED indices come from the device setup in `FUN_18002b9f0`:
+
+| index | LED |
+|---|---|
+| `0x00`–`0x1D` | 30 button LEDs. Index = `<LEDNumber>` in `Base.xml` (Giotto buttons use 0–29). |
+| `0x1E`–`0x23` | 6 ring segments, at table offsets `+0xf44..+0xf58`. |
+| `0x24` | Sent with black by `FUN_180033cd0` when the LEDs are switched **off**. |
+| `0x25` | Sent with one colour by `FUN_180033cd0` when all 30 button LEDs share it (broadcast). |
+| `0x26` | Sent by `FUN_180032e70` case 10 (`RingLEDColor`) with the ring colour (broadcast). |
+
+How `FUN_180033cd0` applies the table:
+
+- **Off:** it sends `0x24` with `(0,0,0)` and clears the table.
+- **On, all 30 button colours equal:** it sends one `0x25` report.
+- **On, button colours differ:** it sends one report per button LED, then one per ring segment.
+
+`FUN_180032e70` case 14 updates a single LED from a packed
+`idx | R<<8 | G<<16 | B<<24` and marks the table dirty; case 15 commits it.
+
+`tdxd` reproduces this in `tdx_rgb_plan()` and writes the reports with
+`HIDIOCSFEATURE(8)`.
+
+| Setting | Effect |
+|---|---|
+| `led = no` | Sends the `0x24` "off" report. |
+| `led = yes` | Without other colour settings, sets buttons and ring to white. |
+| `led_button_color` | Colour for all button LEDs. |
+| `led_ring_color` | Colour for the ring. |
+| `led_color_<V3DK id \| LED_n>` | Colour for a single LED. |
+
+- **Inferred:** the meanings of the broadcast indices `0x24`/`0x25`/`0x26` come
+  from how each is used, not from firmware.
+
+The Enterprise (C633) has a related 2-byte report, `{0x11, n}`. It is sent on
+open with a stored value, followed by a 3 s sleep.
+- **Unknown:** what that report does. `tdxd` does not send it.
 
 For the SpacePilot Pro, `HIDDev.dll` `FUN_180034060` also notifies the Logitech LCD
 Monitor window (`PostMessage(WM_CLOSE)`) on device changes. This confirms that the
@@ -174,7 +219,9 @@ LCD is owned by the Logitech stack and not by `HIDDev`.
 
 ## 7. Open items
 
-- **Unknown:** the Giotto LED/colour feature-report format.
+- **Unknown:** whether the Giotto LED reports work on real hardware. They match the
+  decompiled `HIDDev.dll`, but no device was available to test them.
+- **Unknown:** the purpose of the Enterprise `{0x11, n}` report.
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
   accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on
   attach as a precaution and continues if the device does not answer.

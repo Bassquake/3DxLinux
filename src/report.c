@@ -12,6 +12,23 @@ int tdx_led_report(const struct tdx_device_def *dev, int on, uint8_t out[2])
 	return 2;
 }
 
+int tdx_has_rgb_leds(const struct tdx_device_def *dev)
+{
+	return dev && dev->pid == 0xC63C;
+}
+
+void tdx_rgb_report(uint8_t index, uint32_t rgb, uint8_t out[8])
+{
+	out[0] = TDX_RGB_REPORT_ID;
+	out[1] = TDX_RGB_CMD_COLOR;
+	out[2] = index;
+	out[3] = (uint8_t)(rgb >> 16);
+	out[4] = (uint8_t)(rgb >> 8);
+	out[5] = (uint8_t)rgb;
+	out[6] = 0;
+	out[7] = 0;
+}
+
 int tdx_button_count(const struct tdx_device_def *dev)
 {
 	if (dev && dev->nbuttons)

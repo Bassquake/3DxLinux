@@ -10,6 +10,13 @@ struct tdx_keymap {
 	int keys[4];    /* evdev KEY_* codes, chord, 0-terminated */
 };
 
+#define TDX_MAX_LEDCOLOR 64
+
+struct tdx_ledcolor {
+	char v3dk[32];  /* button whose LED this colours, e.g. V3DK_FIT, or "LED_n" */
+	uint32_t rgb;   /* 0xRRGGBB */
+};
+
 struct tdx_config {
 	double sensitivity;       /* global multiplier */
 	double axis_scale[6];     /* per axis multiplier, sign = invert */
@@ -21,6 +28,11 @@ struct tdx_config {
 	char spnav_socket[108];
 	int lcd_enable;
 	int led;                  /* -1 keep, 0 off, 1 on (HID output report 0x04) */
+	/* RGB LEDs (Giotto, feature report 0x1A): -1 = not set */
+	int64_t led_button_color; /* all button LEDs */
+	int64_t led_ring_color;   /* the 6 ring segments */
+	struct tdx_ledcolor ledcolor[TDX_MAX_LEDCOLOR];
+	int nledcolor;
 	int lcd_brightness;       /* 0..100, -1 = keep */
 	char lcd_label[10][24];   /* function keys 1..10 */
 	char lcd_image[256];      /* optional 320x240 PPM shown instead of labels */

@@ -17,6 +17,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/hidraw.h>
 
 #include "config.h"
 #include "gfx.h"
@@ -102,6 +104,18 @@ static void lcd_attach(struct dev_ctx *d)
 
 static void led_apply(struct dev_ctx *d)
 {
+	if (tdx_has_rgb_leds(d->node.def)) {
+		uint8_t reps[TDX_RGB_RING_FIRST + TDX_RGB_NUM_RING + 2][8];
+		int n = tdx_rgb_plan(&cfg, d->node.def, reps, (int)(sizeof reps / sizeof reps[0]));
+		for (int i = 0; i < n; i++)
+			if (ioctl(d->fd, HIDIOCSFEATURE(8), reps[i]) < 0) {
+				LOG(1, "LED colour write failed on %s: %s\n", d->node.devnode,
+				    strerror(errno));
+				break;
+			}
+		LOG(2, "sent %d LED colour report(s)\n", n);
+		return;
+	}
 	uint8_t rep[2];
 	if (cfg.led < 0 || !tdx_led_report(d->node.def, cfg.led, rep))
 		return;
