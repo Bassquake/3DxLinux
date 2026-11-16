@@ -4,11 +4,12 @@
  * Supported panels (auto-detected, or pick one with -d VID:PID):
  *   046d:c629  SpacePilot Pro         320x240, raw RGB565 frames
  *   256f:c633  SpaceMouse Enterprise  640x150, deflate-compressed RGB565 frames
+ *   256f:c63c  Giotto                1280x416, deflate-compressed 24 bpp, double-buffered
  *
  *   tdx-lcd image FILE.ppm        show a binary PPM (cropped / padded to the panel)
  *   tdx-lcd text "line1" ...      show text lines
  *   tdx-lcd fill RRGGBB|bars      solid colour or colour bars
- *   tdx-lcd brightness [0-100]    get (SpacePilot Pro only) / set backlight
+ *   tdx-lcd brightness [0-100]    get (SpacePilot Pro) / set (SpacePilot Pro, Enterprise)
  *   tdx-lcd ping                  SpacePilot Pro vendor request 0x01
  *   tdx-lcd dump OUT.bin          write the USB transfer for 'bars' to a file, no device
  *   tdx-lcd preview OUT.ppm [CONF] render tdxd's key page to a PPM, no device
@@ -29,12 +30,13 @@
 #include "hidraw.h"
 #include "lcd.h"
 #include "lcd_ent.h"
+#include "lcd_giotto.h"
 #include "process.h"
 #include "usbfs.h"
 
-static uint32_t px[TDX_ENT_PIXELS > TDX_LCD_W * TDX_LCD_H ? TDX_ENT_PIXELS : TDX_LCD_W * TDX_LCD_H];
+static uint32_t px[TDX_GIO_PIXELS]; /* largest panel */
 static struct tdx_fb fb;
-static int kind; /* TDX_LCD_QVGA or TDX_LCD_ENT640 */
+static int kind; /* TDX_LCD_QVGA, TDX_LCD_ENT640 or TDX_LCD_GIO1280 */
 
 static void bars(void)
 {
@@ -50,7 +52,8 @@ static int usage(void)
 {
 	fputs("usage: tdx-lcd [-d VID:PID] image FILE.ppm | text LINE... | fill RRGGBB|bars |\n"
 	      "               brightness [0-100] | ping | dump OUT.bin | preview OUT.ppm [CONF]\n"
-	      "  panels: 046d:c629 SpacePilot Pro (320x240), 256f:c633 SpaceMouse Enterprise (640x150)\n",
+	      "  panels: 046d:c629 SpacePilot Pro (320x240), 256f:c633 SpaceMouse Enterprise (640x150),\n"
+	      "          256f:c63c Giotto (1280x416)\n",
 	      stderr);
 	return 2;
 }
@@ -59,8 +62,8 @@ static void set_kind(int k)
 {
 	kind = k;
 	fb.px = px;
-	fb.w = k == TDX_LCD_ENT640 ? TDX_ENT_W : TDX_LCD_W;
-	fb.h = k == TDX_LCD_ENT640 ? TDX_ENT_H : TDX_LCD_H;
+	fb.w = k == TDX_LCD_GIO1280 ? TDX_GIO_W : k == TDX_LCD_ENT640 ? TDX_ENT_W : TDX_LCD_W;
+	fb.h = k == TDX_LCD_GIO1280 ? TDX_GIO_H : k == TDX_LCD_ENT640 ? TDX_ENT_H : TDX_LCD_H;
 }
 
 static int write_ppm(const char *path)
@@ -126,7 +129,7 @@ int main(int argc, char **argv)
 
 	/* Pick the panel: explicit -d, else the first LCD device present, else SpacePilot Pro. */
 	if (!vid) {
-		static const uint16_t cand[][2] = {{0x046D, 0xC629}, {0x256F, 0xC633}};
+		static const uint16_t cand[][2] = {{0x046D, 0xC629}, {0x256F, 0xC633}, {0x256F, 0xC63C}};
 		char node[64];
 		vid = cand[0][0];
 		pid = cand[0][1];
@@ -150,7 +153,7 @@ int main(int argc, char **argv)
 		struct tdx_config cfg;
 		tdx_config_defaults(&cfg);
 		tdx_config_load(&cfg, ai + 1 < argc ? argv[ai + 1] : "/etc/tdxd.conf");
-		if (kind == TDX_LCD_ENT640)
+		if (kind == TDX_LCD_ENT640 || kind == TDX_LCD_GIO1280)
 			tdx_render_ent_page(&fb, &cfg, def->name);
 		else
 			tdx_render_keys_page(&fb, &cfg, def->name, 0);
@@ -167,7 +170,16 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		int ok;
-		if (kind == TDX_LCD_ENT640) {
+		if (kind == TDX_LCD_GIO1280) {
+			/* command 0x20 for buffer 1 (first back buffer) + payload */
+			static uint8_t raw[TDX_GIO_RAW], comp[TDX_DEFLATE_BOUND(TDX_GIO_RAW)];
+			uint8_t pkt[TDX_GIO_PKT];
+			tdx_gio_pack(px, raw, 0);
+			long n = tdx_deflate_fixed(raw, sizeof raw, comp, sizeof comp);
+			tdx_gio_cmd_write(pkt, 1, (uint32_t)(n > 0 ? n : 0));
+			ok = n > 0 && fwrite(pkt, 1, sizeof pkt, f) == sizeof pkt &&
+			     fwrite(comp, 1, (size_t)n, f) == (size_t)n;
+		} else if (kind == TDX_LCD_ENT640) {
 			static uint16_t p565[TDX_ENT_PIXELS];
 			static uint8_t comp[TDX_DEFLATE_BOUND(TDX_ENT_RAW)];
 			uint8_t pkt[TDX_ENT_PKT];
@@ -200,6 +212,10 @@ int main(int argc, char **argv)
 			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
 		return rc ? 1 : 0;
 	}
+	if (kind == TDX_LCD_GIO1280 && (!strcmp(cmd, "brightness") || !strcmp(cmd, "ping"))) {
+		fputs("tdx-lcd: no brightness/ping request is known for the Giotto LCD\n", stderr);
+		return 1;
+	}
 	if (!strcmp(cmd, "ping") && kind == TDX_LCD_ENT640) {
 		fputs("tdx-lcd: ping is a SpacePilot Pro request\n", stderr);
 		return 1;
@@ -227,7 +243,13 @@ int main(int argc, char **argv)
 		return usage();
 	}
 
-	if (kind == TDX_LCD_ENT640) {
+	if (kind == TDX_LCD_GIO1280) {
+		static struct tdx_giolcd gl;
+		if ((rc = tdx_giolcd_open(&gl, (uint16_t)vid, (uint16_t)pid)))
+			return open_error(vid, pid, rc);
+		rc = tdx_giolcd_show(&gl, px);
+		tdx_giolcd_close(&gl);
+	} else if (kind == TDX_LCD_ENT640) {
 		static struct tdx_entlcd el;
 		if ((rc = tdx_entlcd_open(&el, (uint16_t)vid, (uint16_t)pid)))
 			return open_error(vid, pid, rc);

@@ -32,7 +32,8 @@ CLASS_MAP = {
 HID_IFACE = {0xC629: 1, 0xC633: 1, 0xC63C: 1, 0xC650: 1, 0xC651: 1,
              0xC654: 1, 0xC655: 1, 0xC656: 1, 0xC657: 1, 0xC658: 1}
 LCD_KIND = {(0x046D, 0xC629): "TDX_LCD_QVGA",    # LGPBTDD.inf (Logitech G19-class)
-            (0x256F, 0xC633): "TDX_LCD_ENT640"}  # HIDDev.dll CWinUSBLCDMgr
+            (0x256F, 0xC633): "TDX_LCD_ENT640",  # HIDDev.dll CWinUSBLCDMgr
+            (0x256F, 0xC63C): "TDX_LCD_GIO1280"} # HIDDev.dll DAT_1800de3e0 descriptor
 
 # Devices older than this 3DxWare release (absent from Base.xml).  Their IDs
 # are publicly documented; buttons are exposed generically (bit n -> n+1).

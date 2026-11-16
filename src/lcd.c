@@ -129,6 +129,29 @@ int tdx_usb_find_bulk_out(int fd, int iface, unsigned *ep)
 	return -ENOENT;
 }
 
+int tdx_usb_find_vendor_iface(const char *path, int *iface)
+{
+	int fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return -errno;
+	uint8_t buf[4096];
+	ssize_t n = pread(fd, buf, sizeof buf, 0);
+	close(fd);
+	int cur = -1, vendor = 0;
+	for (ssize_t i = 0; n > 0 && i + 2 <= n && buf[i] >= 2 && i + buf[i] <= n; i += buf[i]) {
+		uint8_t len = buf[i], type = buf[i + 1];
+		if (type == 4 && len >= 9) { /* INTERFACE: [2] number, [5] class */
+			cur = buf[i + 2];
+			vendor = buf[i + 5] == 0xFF;
+		} else if (type == 5 && len >= 7 && vendor && !(buf[i + 2] & 0x80) &&
+			   (buf[i + 3] & 3) == 2) {
+			*iface = cur;
+			return 0;
+		}
+	}
+	return -ENOENT;
+}
+
 int tdx_usb_claim(const char *path, int iface)
 {
 	int fd = open(path, O_RDWR | O_CLOEXEC);

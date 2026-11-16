@@ -8,6 +8,7 @@
 #include "deflate.h"
 #include "lcd.h"
 #include "lcd_ent.h"
+#include "lcd_giotto.h"
 #include "process.h"
 #include "report.h"
 
@@ -226,7 +227,7 @@ static const char *vec_dir;
 
 static void dump_vector(const char *name, const uint8_t *raw, size_t n)
 {
-	static uint8_t comp[TDX_DEFLATE_BOUND(200000)];
+	static uint8_t comp[TDX_DEFLATE_BOUND(1600000)];
 	long c = tdx_deflate_fixed(raw, n, comp, sizeof comp);
 	CHECK(c > 0 && (size_t)c <= TDX_DEFLATE_BOUND(n));
 	if (!vec_dir || c <= 0)
@@ -313,10 +314,68 @@ static void test_deflate_vectors(void)
 	dump_vector("ent_page_192000", buf, sizeof buf);
 }
 
+static void test_giotto_lcd(void)
+{
+	const struct tdx_device_def *gio = tdx_device_lookup(0x256F, 0xC63C);
+	CHECK(gio && gio->lcd == TDX_LCD_GIO1280);
+	CHECK(TDX_GIO_RAW == 1597440);
+
+	/* rotation: out[((1279 - x) * 416 + y) * 3] = B,G,R of pixel (x, y) */
+	static uint32_t px[TDX_GIO_PIXELS];
+	static uint8_t raw[TDX_GIO_RAW];
+	memset(px, 0, sizeof px);
+	px[0] = 0x112233;                              /* (0,0)    */
+	px[5 * TDX_GIO_W + 7] = 0xAABBCC;              /* (7,5)    */
+	px[TDX_GIO_PIXELS - 1] = 0x445566;             /* (1279,415) */
+	tdx_gio_pack(px, raw, 0);
+	size_t o00 = ((size_t)1279 * 416 + 0) * 3, o75 = ((size_t)(1279 - 7) * 416 + 5) * 3;
+	size_t oend = ((size_t)0 * 416 + 415) * 3;
+	CHECK(raw[o00] == 0x33 && raw[o00 + 1] == 0x22 && raw[o00 + 2] == 0x11);
+	CHECK(raw[o75] == 0xCC && raw[o75 + 1] == 0xBB && raw[o75 + 2] == 0xAA);
+	CHECK(raw[oend] == 0x66 && raw[oend + 2] == 0x44);
+	tdx_gio_pack(px, raw, 1);
+	CHECK(raw[o00] == 0x11 && raw[o00 + 2] == 0x33);
+
+	/* command packets: 64 bytes, 55 AA trailer at 22..23 */
+	uint8_t p[TDX_GIO_PKT];
+	tdx_gio_cmd_write(p, 1, 0x00123456);
+	const uint8_t w[8] = {0x20, 0, 1, 1, 0x56, 0x34, 0x12, 0};
+	CHECK(!memcmp(p, w, 8) && p[22] == 0x55 && p[23] == 0xAA && p[21] == 0 && p[63] == 0);
+	tdx_gio_cmd_show(p, 2);
+	CHECK(p[0] == 0x24 && p[1] == 2 && p[2] == 0 && p[22] == 0x55);
+	tdx_gio_cmd_copy(p, 1, 3);
+	CHECK(p[0] == 0x22 && p[1] == 1 && p[2] == 3);
+
+	/* frame sequence from FUN_180048fb0 / FUN_18004aee0: A=1, B=0, C=3 */
+	int a = 1, b = 0;
+	uint8_t pk[4][TDX_GIO_PKT];
+	tdx_gio_plan_frame(&a, &b, 3, 100, pk);
+	CHECK(pk[0][0] == 0x20 && pk[0][2] == 1 && pk[0][4] == 100);
+	CHECK(pk[1][0] == 0x24 && pk[1][1] == 1);
+	CHECK(pk[2][0] == 0x22 && pk[2][1] == 1 && pk[2][2] == 0);
+	CHECK(pk[3][0] == 0x22 && pk[3][1] == 1 && pk[3][2] == 3);
+	CHECK(a == 0 && b == 1);
+	tdx_gio_plan_frame(&a, &b, 3, 100, pk); /* second frame alternates buffers */
+	CHECK(pk[0][2] == 0 && pk[1][1] == 0 && pk[2][1] == 0 && pk[2][2] == 1 && pk[3][2] == 3);
+	CHECK(a == 1 && b == 0);
+
+	/* a rendered Giotto page must compress into Windows' 0x1ad080-byte buffer */
+	struct tdx_config cfg;
+	tdx_config_defaults(&cfg);
+	struct tdx_fb fb = {TDX_GIO_W, TDX_GIO_H, px};
+	tdx_render_ent_page(&fb, &cfg, "Giotto");
+	tdx_gio_pack(px, raw, 0);
+	dump_vector("giotto_page_1597440", raw, sizeof raw);
+	static uint8_t comp[TDX_DEFLATE_BOUND(TDX_GIO_RAW)];
+	long n = tdx_deflate_fixed(raw, sizeof raw, comp, sizeof comp);
+	CHECK(n > 0 && n < TDX_GIO_COMP_MAX);
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
 	test_enterprise_lcd();
+	test_giotto_lcd();
 	test_deflate_vectors();
 	test_lcd_intensity();
 	test_device_table();

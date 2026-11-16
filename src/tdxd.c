@@ -25,6 +25,7 @@
 #include "hidraw.h"
 #include "lcd.h"
 #include "lcd_ent.h"
+#include "lcd_giotto.h"
 #include "output.h"
 #include "process.h"
 #include "report.h"
@@ -39,6 +40,7 @@ struct dev_ctx {
 	struct tdx_uinput ui;
 	struct tdx_lcd *lcd;
 	struct tdx_entlcd *elcd;
+	struct tdx_giolcd *glcd;
 	int lcd_page;
 	int lcd_dirty;
 	long long last_motion_ms;
@@ -75,10 +77,26 @@ static void entlcd_redraw(struct dev_ctx *d)
 		LOG(0, "Enterprise LCD update failed: %s\n", strerror(-rc));
 }
 
+static void giolcd_redraw(struct dev_ctx *d)
+{
+	static uint32_t px[TDX_GIO_PIXELS];
+	struct tdx_fb fb = {TDX_GIO_W, TDX_GIO_H, px};
+	if (!cfg.lcd_image[0] || gfx_load_ppm(&fb, cfg.lcd_image) != 0)
+		tdx_render_ent_page(&fb, &cfg, d->node.def->name);
+	d->glcd->swap_rb = cfg.lcd_swap_rb;
+	int rc = tdx_giolcd_show(d->glcd, px);
+	if (rc)
+		LOG(0, "Giotto LCD update failed: %s\n", strerror(-rc));
+}
+
 static void lcd_redraw(struct dev_ctx *d)
 {
 	if (d->elcd) {
 		entlcd_redraw(d);
+		return;
+	}
+	if (d->glcd) {
+		giolcd_redraw(d);
 		return;
 	}
 	if (!d->lcd)
@@ -122,6 +140,23 @@ static void lcd_attach(struct dev_ctx *d)
 		return;
 	if (d->node.def->lcd == TDX_LCD_ENT640) {
 		entlcd_attach(d);
+		return;
+	}
+	if (d->node.def->lcd == TDX_LCD_GIO1280) {
+		d->glcd = calloc(1, sizeof *d->glcd);
+		if (!d->glcd)
+			return;
+		int rc = tdx_giolcd_open(d->glcd, d->node.vid, d->node.pid);
+		if (rc) {
+			LOG(0, "Giotto LCD unavailable (%s): %s\n",
+			    d->glcd->path[0] ? d->glcd->path : "no usb node", strerror(-rc));
+			free(d->glcd);
+			d->glcd = NULL;
+			return;
+		}
+		LOG(1, "Giotto LCD on %s, interface %d, bulk ep 0x%02x\n", d->glcd->path,
+		    d->glcd->iface, d->glcd->ep_out);
+		lcd_redraw(d);
 		return;
 	}
 	if (d->node.def->lcd != TDX_LCD_QVGA)
@@ -192,6 +227,10 @@ static void dev_close(struct dev_ctx *d)
 	if (d->elcd) {
 		tdx_entlcd_close(d->elcd);
 		free(d->elcd);
+	}
+	if (d->glcd) {
+		tdx_giolcd_close(d->glcd);
+		free(d->glcd);
 	}
 	*d = devs[--ndev];
 }

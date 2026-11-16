@@ -87,6 +87,9 @@ int tdx_entlcd_open(struct tdx_entlcd *l, uint16_t vid, uint16_t pid)
 	int rc = tdx_usb_find_node(vid, pid, l->path, sizeof l->path);
 	if (rc)
 		return rc;
+	int ifc;
+	if (!tdx_usb_find_vendor_iface(l->path, &ifc)) /* WinUSB function; normally 0 */
+		l->iface = ifc;
 	int fd = tdx_usb_claim(l->path, l->iface);
 	if (fd < 0)
 		return fd;
@@ -123,8 +126,8 @@ int tdx_entlcd_show(struct tdx_entlcd *l, const uint32_t *xrgb, int allow_delta)
 		op = TDX_ENT_OP_DELTA;
 	}
 	long n = tdx_ent_encode(send, op, pkt, l->comp, sizeof l->comp);
-	if (n < 0)
-		return -EOVERFLOW;
+	if (n < 0 || n > TDX_ENT_COMP_MAX)
+		return -EFBIG;
 	int rc = tdx_usb_bulk_out(l->fd, l->ep_out, pkt, TDX_ENT_PKT, 1000);
 	if (!rc)
 		rc = tdx_usb_bulk_out(l->fd, l->ep_out, l->comp, (size_t)n, 2000);

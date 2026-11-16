@@ -29,6 +29,7 @@
 #define TDX_ENT_PIXELS (TDX_ENT_W * TDX_ENT_H)
 #define TDX_ENT_RAW (TDX_ENT_PIXELS * 2) /* 0x2ee00 */
 #define TDX_ENT_PKT 512
+#define TDX_ENT_COMP_MAX 0x33980 /* Windows' tdefl output buffer (avail_out) */
 
 enum { TDX_ENT_OP_FULL = 0x11, TDX_ENT_OP_FIRST = 0x15, TDX_ENT_OP_DELTA = 0x18 };
 

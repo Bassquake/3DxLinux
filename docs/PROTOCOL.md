@@ -313,6 +313,84 @@ Whether that byte is red depends on how 3DxService writes the TIFF. Windows
 bitmaps are BGR in memory, which would make it standard RGB565. `tdxd` assumes
 standard RGB565 (red in the top bits); `lcd_swap_rb = yes` flips it.
 
+### 6.4 Giotto LCD (observed: `HIDDev.dll` `CWinUSBLCDMgr`)
+
+Giotto (256f:c63c) has a 1280×416 colour LCD on its WinUSB function. `tdxd` claims
+the first vendor-class interface (class `0xFF`) that has a bulk OUT endpoint,
+rather than assuming interface 0.
+
+**Panel descriptor.** This is static data at `DAT_1800de3e0`, read from the PE
+`.data` section:
+
+```
+{ pid 0xC63C, rotate 1, width 1280, height 416, bytes/pixel 3, height-1 415, -1, 1 }
+```
+
+The neighbouring Enterprise descriptor is `{640, 150, 2, 149}`.
+
+**Pixels** (`FUN_18004a760`, rotate mode). Each pixel is copied from a 32 bpp
+source row as its first three memory bytes:
+
+```
+out[((w-1-x) * h + (y - y0)) * 3 + k] = src(x, y)[k]      k = 0..2
+```
+
+The panel is therefore fed 1280 reversed columns of 416 pixels each, 3 bytes per
+pixel, for 1 597 440 bytes per full frame. Compression is the same miniz `tdefl`
+raw deflate as the Enterprise, into a `0x1ad080`-byte output buffer.
+
+**Command packets** (`FUN_180048530` … `FUN_180048980`). Each is 24 meaningful
+bytes, with `55 AA` at offsets 22–23, zero-padded to the packet size. That size
+is 64 bytes for C63C (`FUN_180048480`). Multi-byte fields are little-endian.
+
+| op | bytes | meaning (inferred from use) |
+|---|---|---|
+| `0x20` | `20 00 buf 01 len32` | write a full compressed frame into device buffer `buf`; payload follows |
+| `0x21` | `21 00 buf 01 len32 00×4 y16 mx16 h16 w16` | write a rectangle (`mx = 1280 - w - x`, mirrored by the rotation) |
+| `0x22` | `22 b1 b2` | copy whole buffer `b1` → `b2` |
+| `0x23` | `23 b1 b2 … y16 mx16 y16 mx16 h16 w16` | copy a rectangle |
+| `0x24` | `24 buf` | show buffer `buf` |
+
+**Buffers and the static-image sequence:**
+
+- `FUN_180048fb0` starts with A = 1 (back), B = 0 (front), C = 3 and D = 2,
+  and sends `24 {B}`.
+- `CWinUSBLCDMgr::SetLCDImage` (`FUN_180049e10`) with usage 0 (static image)
+  calls `FUN_18004b2e0` (`SendImageToDevice_RGB888`), which calls
+  `FUN_18004aee0` with buffer A:
+
+```
+20 {A, len}  + compressed payload
+swap A <-> B
+24 {B}                 show the frame just written
+22 {B, A}              copy it into the new back buffer
+22 {B, C}              and into C
+```
+
+The other usages (moving / slide animations, `FUN_180049fd0`) combine the
+`0x21` and `0x23` rectangle commands across buffers C and D. They are not
+implemented.
+
+**Legacy path.** `FUN_18004a8a0` (`SendBMPFileToDevice_RGB888`) watches the file
+`sp4LCD.bmp`. It sends a G19-style header with opcode `0x13`:
+`13 0F len32 00 y16 mx16 h16 w16 0F`, followed by the payload. `tdxd` does not
+use this path.
+
+**What `tdxd` does** (`src/lcd_giotto.c`):
+
+- On attach it sends `24 {0}`, then each redraw follows the static-image
+  sequence above.
+- It refuses frames that would not fit Windows' output buffer (`-EFBIG`). A
+  rendered key page compresses to about 18 KB.
+
+**Inferred source layout.** Two things depend on the source buffer the service
+renders, which is not visible in `HIDDev.dll`:
+
+- **Channel order:** on Windows a 32 bpp DIB is `B,G,R,X` in memory, so the
+  panel gets `B,G,R`. `lcd_swap_rb` flips this.
+- **Row order:** the source rows are assumed to be top-down. `HIDDev`'s own BMP
+  loader flips bottom-up DIBs to top-down before using this converter.
+
 ## 7. Open items
 
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
@@ -323,8 +401,11 @@ standard RGB565 (red in the top bits); `lcd_swap_rb = yes` flips it.
   assumes standard RGB565 and offers `lcd_swap_rb = yes` if red and blue appear swapped.
 - **Unknown:** whether the Enterprise LCD transfer works on real hardware. Its
   deflate payload was checked against Python's zlib, but not against the device.
-- **Not implemented:** the Giotto 1280×416 LCD path (`FUN_18004aee0`, opcodes
-  0x20–0x24, double-buffered, 24 bpp, compressed with the same deflate).
+- **Unknown:** the Giotto LCD's source orientation and channel order (see 6.4), and
+  whether its transfer works on real hardware. No device was available.
+- **Not implemented:** the Giotto animated/sliding views (rectangle writes `0x21`
+  and copies `0x23`, buffer D) and the legacy `sp4LCD.bmp` path (opcode `0x13`).
+- **Unknown:** a Giotto LCD brightness command. None was found in `HIDDev.dll`.
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
   accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on
   attach as a precaution and continues if the device does not answer.

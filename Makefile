@@ -36,7 +36,7 @@ BUILD   := build/$(ARCH)
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-CORE := devices_gen report config hidraw lcd lcd_ent deflate gfx output process
+CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx output process
 CORE_OBJ := $(addprefix $(BUILD)/,$(addsuffix .o,$(CORE)))
 
 all: $(BUILD)/tdxd $(BUILD)/tdx-lcd

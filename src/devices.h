@@ -17,6 +17,7 @@ enum tdx_lcd_kind {
 	TDX_LCD_NONE = 0,
 	TDX_LCD_QVGA,   /* 320x240 RGB565 raw frames, USB iface 0 (SpacePilot Pro) */
 	TDX_LCD_ENT640, /* 640x150 RGB565 deflate frames, USB iface 0 (SpaceMouse Enterprise) */
+	TDX_LCD_GIO1280, /* 1280x416 24 bpp rotated deflate frames, buffered (Giotto) */
 };
 
 enum tdx_button_kind {

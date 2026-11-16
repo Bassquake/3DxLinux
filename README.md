@@ -19,8 +19,9 @@ components speak, using standard Linux interfaces:
 | `HIDDev.dll` LED on/off | HID output report `{0x04, on}` |
 | `HIDDev.dll` RGB LED colours (Giotto) | HID feature report `{0x1A, 0x25, led, R, G, B, 0, 0}` |
 | `HIDDev.dll` LCD intensity (Enterprise) | HID feature report `{0x11, percent}` |
+| `HIDDev.dll` `CWinUSBLCDMgr` (Giotto 1280×416 LCD) | `lcd_giotto.c`: rotated 24 bpp raw-deflate frames, double-buffered with 64-byte command packets (0x20/0x24/0x22) |
 | `HIDDev.dll` `CWinUSBLCDMgr` (Enterprise 640×150 LCD) | `lcd_ent.c` + `deflate.c`: 512-byte header packet and raw-deflate RGB565 frames over usbfs |
-| `3DxLCDSPPRO.exe` "Function Keys" applet | built-in key-label pages: SpacePilot Pro keys 1–5 (SHIFT shows 6–10), Enterprise keys 1–12; or any PPM image |
+| `3DxLCDSPPRO.exe` "Function Keys" applet | built-in key-label pages: SpacePilot Pro keys 1–5 (SHIFT shows 6–10), Enterprise and Giotto keys 1–12; or any PPM image |
 
 ## Supported devices
 
@@ -77,8 +78,8 @@ Edit `/etc/tdxd.conf` and apply the changes with `systemctl reload tdxd`.
 
 ## LCD
 
-`tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240) or SpaceMouse
-Enterprise (640×150). Use `-d VID:PID` to pick one.
+`tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240), SpaceMouse
+Enterprise (640×150) or Giotto (1280×416). Use `-d VID:PID` to pick one.
 
 ```bash
 tdx-lcd preview page.ppm /etc/tdxd.conf   # render the key page offline
