@@ -105,15 +105,37 @@ def paint(cr, name, x, y, w=None, h=None):
     return True
 
 
+def paint_tiled(cr, name, x, y, w, h):
+    """Repeat an image over x,y,w,h at 1:1 (no scaling, so no blended,
+    half-transparent edge columns where it meets its neighbours)."""
+    s = ART.surface(name)
+    if not s:
+        return False
+    pat = cairo.SurfacePattern(s)
+    pat.set_extend(cairo.EXTEND_REPEAT)
+    pat.set_filter(cairo.FILTER_NEAREST)
+    m = cairo.Matrix()
+    m.translate(-x, -y)
+    pat.set_matrix(m)
+    cr.save()
+    cr.rectangle(x, y, w, h)
+    cr.clip()
+    cr.set_source(pat)
+    cr.paint()
+    cr.restore()
+    return True
+
+
 def three_slice(cr, prefix, x, y, w):
-    """Pane header: L / stretched MID / R images."""
+    """Pane header: L / repeated MID / R images (LCDMon tiles the middle)."""
     l, m, r = (ART.surface(prefix + s) for s in ("_L", "_MID", "_R"))
     if not (l and m and r):
         return False
-    paint(cr, prefix + "_L", x, y)
-    paint(cr, prefix + "_MID", x + l.get_width(), y, w - l.get_width() - r.get_width(),
-          m.get_height())
-    paint(cr, prefix + "_R", x + w - r.get_width(), y)
+    x, y, w = int(round(x)), int(round(y)), int(round(w))
+    paint_tiled(cr, prefix + "_MID", x + l.get_width(), y, w - l.get_width() - r.get_width(),
+                m.get_height())
+    paint_tiled(cr, prefix + "_L", x, y, l.get_width(), l.get_height())
+    paint_tiled(cr, prefix + "_R", x + w - r.get_width(), y, r.get_width(), r.get_height())
     return True
 
 
@@ -376,9 +398,9 @@ class LcdManager:
                 cr.set_source_surface(s, sx, yy)
                 cr.paint()
             cr.restore()
-        paint(cr, "PANE_SHADOW_BOTTOM", x + 8, y + h, w - 16, 10)
-        paint(cr, "PANE_SHADOW_BL", x - 7, y + h)
-        paint(cr, "PANE_SHADOW_BR", x + w - 8, y + h)
+        paint_tiled(cr, "PANE_SHADOW_BOTTOM", x + 8, y + h, w - 16, 10)
+        paint_tiled(cr, "PANE_SHADOW_BL", x - 7, y + h, 15, 10)
+        paint_tiled(cr, "PANE_SHADOW_BR", x + w - 8, y + h, 15, 10)
 
     # ---- layout
     def put(self, widget, x, y):
