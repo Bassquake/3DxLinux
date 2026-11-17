@@ -235,6 +235,7 @@ applet ports and used the artwork extracted from the 3DxWare installer.
 | Picture Viewer mini menu | **Pass:** the MENU key (white square) opens Configure... / Cancel; OK opened the settings dialog on the PC, the back arrow closed the menu. |
 | RSS Feeds, OK on a story | **Pass** after a fix: the program list keeps three entries. |
 | Function Keys app switch | **Pass:** `tdxctl focus` blender / freecad / gedit with two profiles: LCDCfg.xml and Function Keys follow each time (application name, the profile's labels, base labels for keys it leaves alone). A switch or reload sends nothing to the device unless the LED or brightness changes (strace). |
+| Function Keys app icon | **Pass:** Blender's logo (its scalable SVG, found through blender.desktop) in the header. |
 | Taskbar icons (WSLg) | **Pass:** the settings window shows the 3Dconnexion logo and the LCD Manager LCDMon's icon, as on Windows; window dragging still works. |
 
 **Fixed during this test:** tdxd only wrote `LCDCfg.xml` after an input event;

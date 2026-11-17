@@ -18,6 +18,7 @@ been extracted from the 3DxWare installer (tdx-extract-3dxware-ui).
 
 import math
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -63,18 +64,97 @@ def lcdcfg_path():
     return os.environ.get("TDX_LCDCFG", "/run/tdxd/LCDCfg.xml")
 
 
-def app_icon(name, exe):
-    """An icon file for the focused application (freedesktop locations)."""
-    cands = []
-    for n in filter(None, [name, os.path.basename(exe or "")]):
-        n = n.lower()
-        for size in ("48x48", "32x32", "64x64", "128x128", "256x256", "scalable"):
-            cands.append("/usr/share/icons/hicolor/%s/apps/%s.png" % (size, n))
-        cands.append("/usr/share/pixmaps/%s.png" % n)
-    for c in cands:
-        if os.path.isfile(c):
-            return c
+ICON_SIZES = ("32x32", "48x48", "64x64", "128x128", "256x256", "scalable", "24x24", "16x16")
+ICON_EXTS = (".png", ".svg", ".xpm")
+
+
+def data_dirs():
+    home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    return [home] + [d for d in dirs.split(":") if d]
+
+
+def desktop_icon_names(name, exe):
+    """Icon= of the .desktop entries for this program (matched on the entry's
+    file name or its Exec command), as the desktop's own launcher shows it."""
+    want = {n.lower() for n in (name, os.path.basename(exe or "")) if n}
+    names = []
+    for d in data_dirs():
+        apps = os.path.join(d, "applications")
+        try:
+            files = sorted(f for f in os.listdir(apps) if f.endswith(".desktop"))
+        except OSError:
+            continue
+        for f in files:
+            try:
+                with open(os.path.join(apps, f), encoding="utf-8", errors="replace") as fh:
+                    text = fh.read(16384)
+            except OSError:
+                continue
+            m_icon = re.search(r"(?m)^Icon=(.+)$", text)
+            m_exec = re.search(r"(?m)^Exec=(\S+)", text)
+            cmd = os.path.basename(m_exec.group(1).strip('"')).lower() if m_exec else ""
+            if m_icon and (f[:-8].lower() in want or cmd in want):
+                names.append(m_icon.group(1).strip())
+    return names
+
+
+def find_icon(icon):
+    """An icon name (or absolute path) -> a PNG / SVG / XPM file."""
+    if os.path.isabs(icon):
+        return icon if os.path.isfile(icon) else None
+    for d in data_dirs():
+        for size in ICON_SIZES:
+            for ext in ICON_EXTS:
+                p = os.path.join(d, "icons", "hicolor", size, "apps", icon + ext)
+                if os.path.isfile(p):
+                    return p
+    for d in data_dirs():
+        for ext in ICON_EXTS:
+            p = os.path.join(d, "pixmaps", icon + ext)
+            if os.path.isfile(p):
+                return p
     return None
+
+
+_icon_cache = {}
+
+
+def app_icon(name, exe):
+    """An icon file for the focused application: its .desktop entry's icon,
+    else one named like the program (freedesktop locations). Cached per
+    program - LCDCfg.xml changes on every button press."""
+    if (name, exe) not in _icon_cache:
+        _icon_cache[(name, exe)] = _app_icon(name, exe)
+    return _icon_cache[(name, exe)]
+
+
+def _app_icon(name, exe):
+    names = desktop_icon_names(name, exe)
+    for n in filter(None, [name, os.path.basename(exe or "")]):
+        names += [n, n.lower()]
+    for n in names:
+        p = find_icon(n)
+        if p:
+            return p
+    return None
+
+
+def load_icon(path, size=32):
+    """The icon as a size x size cairo surface (SVGs rendered at that size)."""
+    import gi
+    gi.require_version("GdkPixbuf", "2.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, GdkPixbuf, GLib
+    try:
+        pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, size, size, True)
+    except GLib.Error:
+        return None
+    surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, pb.get_width(), pb.get_height())
+    cr = cairo.Context(surf)
+    Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
+    cr.paint()
+    return surf
 
 
 class FunctionKeys(la.Applet):
@@ -122,10 +202,7 @@ class FunctionKeys(la.Applet):
         p = app_icon(self.info["app"], self.info["image"])
         if p != self.icon_path:
             self.icon_path = p
-            try:
-                self.icon = cairo.ImageSurface.create_from_png(p) if p else None
-            except (cairo.Error, OSError):
-                self.icon = None
+            self.icon = load_icon(p) if p else None
         return True
 
     def on_buttons(self, pressed, held):

@@ -134,6 +134,31 @@ def main():
     check(f.page == 1, "LEFT pages back")
     f.snapshot(os.path.join(d, "fk.png"))
     check(os.path.getsize(os.path.join(d, "fk.png")) > 1000, "Function Keys renders")
+    # header icon: from the program's .desktop entry, SVG rendered at 32 px
+    import cairo
+    xdg = os.path.join(d, "xdg")
+    os.makedirs(os.path.join(xdg, "applications"))
+    os.makedirs(os.path.join(xdg, "icons", "hicolor", "scalable", "apps"))
+    with open(os.path.join(xdg, "applications", "org.example.Cad.desktop"), "w") as fh:
+        fh.write("[Desktop Entry]\nName=Cad\nExec=/opt/cad/bin/CadApp %F\nIcon=org.example.Cad\n")
+    svg = os.path.join(xdg, "icons", "hicolor", "scalable", "apps", "org.example.Cad.svg")
+    s = cairo.SVGSurface(svg, 100, 100)
+    cr = cairo.Context(s)
+    cr.set_source_rgb(0.9, 0.4, 0.1)
+    cr.arc(50, 50, 40, 0, 6.3)
+    cr.fill()
+    s.finish()
+    old_dirs = os.environ.get("XDG_DATA_DIRS")
+    os.environ["XDG_DATA_DIRS"] = xdg
+    p = fk.app_icon("CadApp", "/opt/cad/bin/CadApp")
+    icon = fk.load_icon(p) if p else None
+    check(p == svg and icon is not None and icon.get_width() == 32,
+          "app icon via the .desktop entry, SVG at 32 px: %s" % p)
+    check(fk.app_icon("NoSuchApp", "") is None, "no icon for an unknown program")
+    if old_dirs is None:
+        del os.environ["XDG_DATA_DIRS"]
+    else:
+        os.environ["XDG_DATA_DIRS"] = old_dirs
 
     # Picture Viewer
     pv = load("tdx-lcd-pictures")
