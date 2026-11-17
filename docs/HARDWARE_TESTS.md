@@ -277,6 +277,7 @@ on), then tested with the SpacePilot PRO attached.
 | Upgrade (reinstall) | **Pass:** tdxd restarted, an edit to `/etc/tdxd.conf` kept. |
 | Purge | **Pass:** service, user unit, programs, config, udev rule removed; no tdxd left running. |
 | 3DxWare look | **Pass:** `sudo tdx-extract-3dxware-ui <installer>` from the package filled `/usr/local/share/tdxd/3dxware-ui` and the icon theme; after restarting tdx-lcdmgr the device showed the Windows look (program list and applets). |
+| Import button | **Pass:** tdx-settings → About → **Import 3DxWare look…** imported the installer chosen in the file dialog, reported what it imported, restarted the panel on its About window with the new date. |
 
 **Fixed during this test:**
 

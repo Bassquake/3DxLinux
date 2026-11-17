@@ -7,6 +7,7 @@ accepts every file the GUI writes. Needs GTK 3 and a display (X11/Wayland).
 import importlib.machinery
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -156,6 +157,34 @@ def gui_tests(d, tdxd):
             break
     else:
         print("skip: tdxd not built")
+
+    # ---- About: the 3DxWare look, and the importer it runs
+    cmd = ts.find_extractor()
+    check(cmd and cmd[-1].endswith("extract_3dxware_ui.py"), "importer found: %s" % cmd)
+    old_assets = ts.ASSETS
+    ts.ASSETS = ts.Assets(os.path.join(d, "none"))
+    about = ts.AboutPanel(app)
+    about.refresh()
+    check(ts.look_source() is None and about.look.get_text().startswith("Not imported"),
+          "About: not imported")
+    art = os.path.join(d, "art")
+    os.makedirs(os.path.join(art, "ui"))
+    with open(os.path.join(art, "SOURCE"), "w") as f:
+        f.write("Extracted from 3DxWare64_v10-9-14_b745.exe for local use by tdx-settings.\n")
+    ts.ASSETS = ts.Assets(art)
+    about.refresh()
+    check(re.match(r"Imported from 3DxWare64_v10-9-14_b745\.exe on \d\d \w+ \d{4}, \d\d:\d\d\.$",
+                   about.look.get_text()), "About: imported from, when: %s" % about.look.get_text())
+    ts.ASSETS = old_assets
+    out = ["unpacking 3DxWare64_v10-9-14_b745.exe", "96 icons and device images",
+           "265 control-panel images from 3DxSmartUi.exe",
+           "window icon sizes [16, 24, 32, 48, 64, 128, 256] from 3DxSmartUi.exe",
+           "18 images from 3DxLCD10SPPRO.exe", "7 images from zz3DxLCD50RSSReader.exe",
+           "10 images from zz3DxLCD60Picture.exe", "75 LCD Manager images from LCDMon.exe",
+           "14 taskbar icons in /home/u/.local/share/icons",
+           "wrote /home/u/.local/share/tdxd/3dxware-ui"]
+    check(ts.import_summary(out) == "485 images into /home/u/.local/share/tdxd/3dxware-ui",
+          "import summary: %s" % ts.import_summary(out))
 
     # ---- restore button defaults in the base
     app.store.select(None)

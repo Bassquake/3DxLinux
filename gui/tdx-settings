@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import gi
 
@@ -1689,8 +1690,15 @@ class AboutPanel(Panel):
         link = Gtk.LinkButton.new_with_label(PROJECT_URL, "tdxd project page")
         link.get_style_context().add_class("tdx-link")
         self.put(link, 31, 272)
-        self.section("Devices", 33, 420, 403)
-        self.devbox = self.put(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2), 34, 412)
+        self.section("3DxWare Look", 33, 420, 313)
+        self.look = self.put(lab("", "tdx-dim"), 34, 322)
+        self.look.set_line_wrap(True)
+        self.look.set_max_width_chars(60)
+        self.look.set_size_request(386, -1)
+        self.import_btn = self.put(flat_button("Import 3DxWare look…", 180), 34, 364)
+        self.import_btn.connect("clicked", lambda *_: import_look(self.box.get_toplevel(), self.app))
+        self.section("Devices", 33, 420, 418)
+        self.devbox = self.put(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2), 34, 427)
         self.put(lab("tdxd is an independent Linux driver, not a 3Dconnexion product.",
                      "tdx-small"), 34, 494)
         self.close = self.put(flat_button("Close", 94), 324, 535)
@@ -1705,6 +1713,12 @@ class AboutPanel(Panel):
                                         ("Profiles", self.store.profile_dir),
                                         ("Control socket", self.app.daemon.socket)]):
             l.set_text("%s: %s" % (k, v))
+        src, at = look_source(), look_imported_at()
+        when = time.strftime(" on %d %b %Y, %H:%M", time.localtime(at)) if at else ""
+        self.look.set_text(
+            "Imported from %s%s." % (src, when) if src else
+            "Not imported: plain drawings are used. Import the artwork from your "
+            "3DxWare installer (.exe).")
         for c in self.devbox.get_children():
             self.devbox.remove(c)
         devs = st.get("devices", [])
@@ -1723,6 +1737,138 @@ class AboutPanel(Panel):
                 row.pack_start(lab(sup, "tdx-dim"), False, False, 0)
             self.devbox.add(row)
         self.devbox.show_all()
+
+
+# --------------------------------------------------------------------------
+# importing the 3DxWare look (About window)
+
+def look_source():
+    """The installer the artwork in use came from (its SOURCE file), or None."""
+    if not ASSETS.dir:
+        return None
+    try:
+        with open(os.path.join(ASSETS.dir, "SOURCE")) as f:
+            m = re.match(r"Extracted from (\S+)", f.readline())
+        return m.group(1) if m else os.path.basename(ASSETS.dir)
+    except OSError:
+        return os.path.basename(ASSETS.dir)
+
+
+def look_imported_at():
+    """When the artwork in use was imported (its SOURCE file's time), or None."""
+    try:
+        return os.path.getmtime(os.path.join(ASSETS.dir, "SOURCE")) if ASSETS.dir else None
+    except OSError:
+        return None
+
+
+def import_summary(lines):
+    """The importer's output -> 'N images from <installer> into <dir>'."""
+    n = sum(int(m.group(1)) for m in (re.match(r"(\d+) .*(images|icons)", l) for l in lines) if m)
+    dest = next((l[6:] for l in reversed(lines) if l.startswith("wrote ")), "")
+    return "%d images%s" % (n, " into " + dest if dest else "")
+
+
+def find_extractor():
+    """The command that runs tools/extract_3dxware_ui.py: installed, or from the source tree."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    for p in (os.path.join(here, "tdx-extract-3dxware-ui"),
+              os.path.join(here, "..", "tools", "extract_3dxware_ui.py"),
+              shutil.which("tdx-extract-3dxware-ui")):
+        if p and os.path.isfile(p):
+            return [sys.executable, os.path.realpath(p)]
+    return None
+
+
+def message(parent, kind, text, secondary=None):
+    d = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=kind,
+                          buttons=Gtk.ButtonsType.OK, text=text)
+    if secondary:
+        d.format_secondary_text(secondary)
+    d.run()
+    d.destroy()
+
+
+def import_look(parent, app):
+    """Pick the 3DxWare installer and extract its artwork for this user
+    (~/.local/share/tdxd/3dxware-ui, no password), then restart the LCD
+    Manager and this panel so both show it."""
+    cmd = find_extractor()
+    if not cmd:
+        message(parent, Gtk.MessageType.ERROR, "The importer is missing",
+                "tdx-extract-3dxware-ui was not found. Reinstall tdxd.")
+        return
+    if not (shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")):
+        message(parent, Gtk.MessageType.WARNING, "Importing needs 7-Zip",
+                "Install the p7zip-full package (Fedora: p7zip) with your software "
+                "app, then try again.")
+        return
+    fc = Gtk.FileChooserDialog(title="Choose the 3DxWare installer", transient_for=parent,
+                               action=Gtk.FileChooserAction.OPEN, modal=True)
+    fc.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Import", Gtk.ResponseType.OK)
+    filt = Gtk.FileFilter()
+    filt.set_name("3DxWare installer (*.exe)")
+    filt.add_pattern("*.exe")
+    filt.add_pattern("*.EXE")
+    fc.add_filter(filt)
+    dl = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+    if dl and os.path.isdir(dl):
+        fc.set_current_folder(dl)
+    ok = fc.run() == Gtk.ResponseType.OK
+    path = fc.get_filename()
+    fc.destroy()
+    if not ok or not path:
+        return
+
+    # progress: the importer takes a while (installer -> MSI -> CAB -> images)
+    dlg = Gtk.Dialog(title="Importing the 3DxWare look", transient_for=parent, modal=True)
+    dlg.set_deletable(False)
+    box = dlg.get_content_area()
+    box.set_border_width(16)
+    box.set_spacing(10)
+    row = Gtk.Box(spacing=10)
+    spin = Gtk.Spinner()
+    spin.start()
+    row.pack_start(spin, False, False, 0)
+    row.pack_start(Gtk.Label(label="Reading %s…" % os.path.basename(path), xalign=0), False, False, 0)
+    box.add(row)
+    step = Gtk.Label(label="", xalign=0)
+    step.get_style_context().add_class("dim-label")
+    box.add(step)
+    dlg.set_default_size(420, -1)
+    dlg.show_all()
+    lines = []
+
+    def run():
+        try:
+            p = subprocess.Popen(cmd + [path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, errors="replace")
+            for line in p.stdout:
+                lines.append(line.rstrip())
+                GLib.idle_add(step.set_text, line.strip()[:80])
+            rc = p.wait()
+        except OSError as e:
+            lines.append(str(e))
+            rc = -1
+        GLib.idle_add(done, rc)
+
+    def done(rc):
+        dlg.destroy()
+        if rc != 0:
+            message(parent, Gtk.MessageType.ERROR, "The import failed",
+                    "\n".join(lines[-4:]) or "The importer stopped with code %d." % rc)
+            return False
+        # the LCD Manager and its applets load the artwork when they start
+        subprocess.call(["systemctl", "--user", "try-restart", "tdx-lcdmgr.service"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        message(parent, Gtk.MessageType.INFO, "The 3DxWare look is imported",
+                "%s, from %s.\n\nThe settings panel restarts now to show it, and the "
+                "LCD Manager restarts too." % (import_summary(lines), os.path.basename(path)))
+        app.restart(show_about=True)
+        return False
+
+    import threading
+    threading.Thread(target=run, daemon=True).start()
 
 
 # --------------------------------------------------------------------------
@@ -1776,6 +1922,15 @@ class App:
         self.set_save_state("Saved" if rc == 0 else "Saved; tdxd not reloaded")
         GLib.timeout_add(800, self.poll_status)
         return False
+
+    def restart(self, show_about=False):
+        """Save, then start this panel again (new artwork is read at start)."""
+        if self.store.dirty():
+            self.flush()
+        argv = [a for a in sys.argv[1:] if a != "--show-about"]
+        if show_about:
+            argv.append("--show-about")
+        os.execv(sys.executable, [sys.executable, os.path.realpath(sys.argv[0])] + argv)
 
     def poll_status(self):
         self.status = self.daemon.status()
@@ -1903,6 +2058,8 @@ class App:
         self.win.connect("delete-event", lambda *_: (self.quit(), True)[1])
         self.win.show_all()
         self.main.refresh()
+        if getattr(self.args, "show_about", False):  # back from importing the 3DxWare look
+            GLib.idle_add(lambda: self.show_about() or False)
         Gtk.main()
 
     # ---- --snapshot
@@ -1945,6 +2102,7 @@ def main():
     ap.add_argument("--snapshot", metavar="DIR", help="render every window to DIR/*.png and exit")
     ap.add_argument("--status-file", help=argparse.SUPPRESS)  # canned `tdxctl status` (tests)
     ap.add_argument("--no-save", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--show-about", action="store_true", help=argparse.SUPPRESS)  # after an import
     ap.add_argument("-V", "--version", action="version", version="tdx-settings " + APP_VERSION)
     args = ap.parse_args()
     ASSETS = Assets(args.assets) if not args.no_assets else Assets("/nonexistent")

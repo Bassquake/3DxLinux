@@ -175,8 +175,11 @@ application.
 
 The 3DxWare artwork (backgrounds, device photos, key caps, axis icons, check
 boxes, slider thumbs, function icons) belongs to 3Dconnexion and is **not**
-included with tdxd. If you have the Windows installer, copy it out once and
-`tdx-settings` uses it automatically:
+included with tdxd. If you have the Windows installer (download it from
+3Dconnexion), copy the artwork out of it once. The easiest way: in `tdx-settings`
+click **More ›**, then **About**, then **Import 3DxWare look…**, and pick the
+installer. It imports for your user (no password), then restarts the panel and
+the LCD Manager so both show it. From a terminal:
 
 ```bash
 sudo tdx-extract-3dxware-ui 3DxWare64_v10-9-14_b745.exe     # -> /usr/local/share/tdxd/3dxware-ui
