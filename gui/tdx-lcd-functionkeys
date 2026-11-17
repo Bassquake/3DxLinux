@@ -29,23 +29,25 @@ WHITE = (1, 1, 1)
 BLUE = la.rgb(0x2A9BE0)
 GREY = la.rgb(0xC8C8C8)
 
-# page layouts: (V3DK, x, y, colour, width) - text positions over the original backgrounds
+# page layouts: (V3DK, x, baseline, colour, width). The baselines are those of
+# the key numbers / key glyphs printed on the original page backgrounds
+# (bottom row of each glyph, measured in bitmap_112 / 122 / 123).
 PAGES = [
-    ("bitmap_112", [("V3DK_1", 27, 50, WHITE, 128), ("V3DK_6", 27, 70, BLUE, 128),
-                    ("V3DK_2", 185, 50, WHITE, 128), ("V3DK_7", 185, 70, BLUE, 128),
-                    ("V3DK_5", 108, 113, WHITE, 132), ("V3DK_10", 108, 133, BLUE, 132),
-                    ("V3DK_3", 27, 174, WHITE, 128), ("V3DK_8", 27, 194, BLUE, 128),
-                    ("V3DK_4", 185, 174, WHITE, 128), ("V3DK_9", 185, 194, BLUE, 128)]),
-    ("bitmap_122", [("V3DK_ROLL_CW", 33, 47, WHITE, 120), ("V3DK_ROLL_CCW", 33, 70, BLUE, 120),
-                    ("V3DK_TOP", 187, 47, WHITE, 126), ("V3DK_BOTTOM", 187, 70, BLUE, 126),
-                    ("V3DK_ISO1", 118, 113, WHITE, 120), ("V3DK_ISO2", 118, 133, BLUE, 120),
-                    ("V3DK_FRONT", 31, 172, WHITE, 122), ("V3DK_BACK", 31, 194, BLUE, 122),
-                    ("V3DK_RIGHT", 187, 172, WHITE, 126), ("V3DK_LEFT", 187, 194, BLUE, 126)]),
-    ("bitmap_123", [("V3DK_SHIFT", 46, 50, GREY, 122), ("V3DK_ESC", 46, 85, GREY, 122),
-                    ("V3DK_CTRL", 46, 120, GREY, 122), ("V3DK_ALT", 46, 155, GREY, 122),
-                    ("V3DK_MENU", 46, 190, GREY, 122), ("SPEED", 210, 50, GREY, 106),
-                    ("V3DK_PANZOOM", 210, 85, GREY, 106), ("V3DK_DOMINANT", 210, 120, GREY, 106),
-                    ("V3DK_ROTATE", 210, 155, GREY, 106), ("V3DK_FIT", 210, 190, GREY, 106)]),
+    ("bitmap_112", [("V3DK_1", 27, 62, WHITE, 128), ("V3DK_6", 27, 82, BLUE, 128),
+                    ("V3DK_2", 185, 62, WHITE, 128), ("V3DK_7", 185, 82, BLUE, 128),
+                    ("V3DK_5", 108, 125, WHITE, 132), ("V3DK_10", 108, 145, BLUE, 132),
+                    ("V3DK_3", 27, 186, WHITE, 128), ("V3DK_8", 27, 205, BLUE, 128),
+                    ("V3DK_4", 185, 186, WHITE, 128), ("V3DK_9", 185, 205, BLUE, 128)]),
+    ("bitmap_122", [("V3DK_ROLL_CW", 33, 61, WHITE, 120), ("V3DK_ROLL_CCW", 33, 83, BLUE, 120),
+                    ("V3DK_TOP", 187, 61, WHITE, 126), ("V3DK_BOTTOM", 187, 82, BLUE, 126),
+                    ("V3DK_ISO1", 118, 123, WHITE, 120), ("V3DK_ISO2", 118, 143, BLUE, 120),
+                    ("V3DK_FRONT", 31, 185, WHITE, 122), ("V3DK_BACK", 31, 205, BLUE, 122),
+                    ("V3DK_RIGHT", 187, 185, WHITE, 126), ("V3DK_LEFT", 187, 205, BLUE, 126)]),
+    ("bitmap_123", [("V3DK_SHIFT", 46, 62, GREY, 122), ("V3DK_ESC", 46, 97, GREY, 122),
+                    ("V3DK_CTRL", 46, 132, GREY, 122), ("V3DK_ALT", 46, 167, GREY, 122),
+                    ("V3DK_MENU", 46, 202, GREY, 122), ("SPEED", 210, 62, GREY, 106),
+                    ("V3DK_PANZOOM", 210, 97, GREY, 106), ("V3DK_DOMINANT", 210, 132, GREY, 106),
+                    ("V3DK_ROTATE", 210, 167, GREY, 106), ("V3DK_FIT", 210, 202, GREY, 106)]),
 ]
 # labels baked into the page art, drawn when there is no artwork
 FALLBACK_KEYS = {"V3DK_1": "1", "V3DK_6": "6", "V3DK_2": "2", "V3DK_7": "7", "V3DK_5": "5",
@@ -180,10 +182,11 @@ class FunctionKeys(la.Applet):
             cr.paint()
             la.default_header(cr, "")
         self.draw_header(cr)
-        for key, x, y, col, w in items:
+        for key, x, base, col, w in items:
             if not self.art.dir:
-                la.text(cr, x - 22, y, FALLBACK_KEYS.get(key, ""), 12, col, bold=True)
-            la.text(cr, x, y, self.label(key), 16, col, width=w)
+                la.text(cr, x - 22, base, FALLBACK_KEYS.get(key, ""), 12, col, bold=True,
+                        baseline=True)
+            la.text(cr, x, base, self.label(key), 16, col, width=w, baseline=True)
         if not self.art.dir:
             la.text(cr, 15, 218, "Long press buttons" if self.page < 2 else "", 12, BLUE)
             la.text(cr, 280, 218, ["▶", "◀ ▶", "◀"][self.page], 12, GREY)

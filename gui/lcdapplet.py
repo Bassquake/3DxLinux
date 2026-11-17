@@ -104,9 +104,12 @@ def layout(cr, text, size, bold=False, width=None, align=None, wrap=False, lines
 
 
 def text(cr, x, y, s, size=13, rgb=(1, 1, 1), bold=False, width=None, align=None, wrap=False,
-         lines=None, valign_h=None):
+         lines=None, valign_h=None, baseline=False):
+    """Draw text with its top at y, or (baseline=True) its first baseline at y."""
     lay = layout(cr, s, size, bold, width, align, wrap, lines)
-    if valign_h:
+    if baseline:
+        y -= lay.get_baseline() / Pango.SCALE
+    elif valign_h:
         _w, h = lay.get_pixel_size()
         y += (valign_h - h) / 2
     cr.set_source_rgb(*rgb)
