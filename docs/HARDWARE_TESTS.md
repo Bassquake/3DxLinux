@@ -218,3 +218,20 @@ wMaxPacketSize too.
   `make test-lcdmgr` with the virtual LCD).
 - The user service (`systemctl --user`) and the `pkexec`-less user access
   through the udev `uaccess` rule on a real desktop (WSL runs as root).
+
+## 2026-11-17: the LCD applets (Function Keys, RSS Feeds, Picture Viewer)
+
+Same SpacePilot PRO and WSL2 setup. tdxd wrote `/run/tdxd/LCDCfg.xml`;
+`tdx-lcdmgr` started with a new database, registered and autostarted the three
+applet ports and used the artwork extracted from the 3DxWare installer.
+
+| Test | Result |
+|---|---|
+| First run | **Pass:** Function Keys, RSS Feeds and Picture Viewer registered in the Windows order and autostarted; the program list used the extracted Finder skin. |
+| Program list on the LCD | **Pass:** looks like the Windows one (photo): "SpacePilot PRO" header with the cube, each applet's icon and name, highlighted row. |
+| Function Keys | **Pass:** application name in the header (`tdxctl focus blender`), keys 1-5 with 6-10 in blue; LEFT/RIGHT switch the three pages; +/- show the Speed pop-up; a function key shows its text. |
+| RSS Feeds | **Pass:** "No Feeds Found!" without feeds; after adding a feed with Configure... (LCD Manager → Programs) its items appeared on the LCD. |
+| Picture Viewer | **Pass:** slideshow of the 3Dconnexion sample pictures with transitions; LEFT/RIGHT, OK pause/play. |
+
+**Fixed during this test:** tdxd only wrote `LCDCfg.xml` after an input event;
+it now also writes it on an idle poll.

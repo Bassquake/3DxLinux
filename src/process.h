@@ -12,6 +12,26 @@ void tdx_process_axes(const struct tdx_config *cfg, const int16_t raw[6], int ou
 const struct tdx_keymap *tdx_keymap_for(const struct tdx_config *cfg,
 					const struct tdx_device_def *dev, int idx);
 
+/* What button @idx does, as 3DxWare's LCDCfg.xml <Text> shows it: an explicit
+ * lcd_label_N, else the driver action ("Increase Speed"), else the key binding
+ * ("Copy", "Esc Key", "Ctrl+Shift+Z"), else the button's own function
+ * ("Top View", "Fit", "Button 1"). */
+void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *dev, int idx,
+		     char *out, size_t len);
+
+struct tdx_lcdcfg_info {
+	const char *app;        /* focused application / profile name */
+	const char *app_image;  /* its executable (icon source), may be NULL */
+	const char *pressed;    /* text of the button just pressed, or NULL */
+	int slider;             /* speed shown as a slider (percent), -1 = none */
+	int lcd_level, led;     /* <LCDIntensity> 0..2, <LEDIntensity> 0/100 */
+};
+/* 3DxService's LCDCfg.xml (as read by the Function Keys applet) into @buf.
+ * Returns the length, or -1 if it didn't fit. */
+int tdx_lcdcfg_xml(char *buf, size_t len, const struct tdx_config *cfg,
+		   const struct tdx_device_def *dev, uint16_t vid, uint16_t pid,
+		   const struct tdx_lcdcfg_info *info);
+
 /* Built-in action (action_<V3DK>) bound to logical button @idx, TDX_ACT_NONE if none. */
 int tdx_action_for(const struct tdx_config *cfg, const struct tdx_device_def *dev, int idx);
 

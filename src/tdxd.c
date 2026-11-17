@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <linux/hidraw.h>
 
 #include "config.h"
@@ -66,6 +67,10 @@ static int cli_verbose;
 static struct tdx_profiles profiles;
 static int active_profile = -1;   /* index into profiles, -1 = base configuration */
 static char focus_app[64];        /* last application reported by tdx-focus / tdxctl */
+static char info_pressed[128];    /* LCDCfg.xml InfoLine: the button just pressed */
+static int info_slider = -1;      /* ... and the speed after +/- */
+static int lcdcfg_dirty;
+static long long info_until;      /* when to clear them again */
 static int focus_pid;
 static int focus_known;           /* a focus helper has reported at least once */
 static int ctl_fd = -1;
@@ -458,6 +463,56 @@ static const char *current_app(const char **source)
 	return a;
 }
 
+/* LCDCfg.xml for the LCD applets (Function Keys), as 3DxService writes it. */
+static void lcdcfg_write(void)
+{
+	if (!cfg.lcd_cfg[0] || !ndev)
+		return;
+	const struct dev_ctx *d = &devs[0];
+	for (int i = 0; i < ndev; i++)
+		if (devs[i].node.def->lcd) {
+			d = &devs[i];
+			break;
+		}
+	const char *src;
+	const char *app = current_app(&src);
+	char exe[256] = "";
+	if (focus_known && focus_pid > 0) {
+		char p[64];
+		snprintf(p, sizeof p, "/proc/%d/exe", focus_pid);
+		ssize_t n = readlink(p, exe, sizeof exe - 1);
+		exe[n > 0 ? n : 0] = 0;
+	}
+	struct tdx_lcdcfg_info info = {
+		.app = app ? app : profile_name(active_profile), .app_image = exe,
+		.pressed = info_pressed, .slider = info_slider,
+		.lcd_level = cfg.lcd_brightness < 0 ? 2 : cfg.lcd_brightness < 40 ? 0
+			   : cfg.lcd_brightness < 75 ? 1 : 2,
+		.led = cfg.led == 0 ? 0 : 100,
+	};
+	static char xml[16384];
+	int n = tdx_lcdcfg_xml(xml, sizeof xml, &cfg, d->node.def, d->node.vid, d->node.pid, &info);
+	if (n < 0)
+		return;
+	char dir[256], tmp[300];
+	snprintf(dir, sizeof dir, "%s", cfg.lcd_cfg);
+	char *slash = strrchr(dir, '/');
+	if (slash && slash != dir) {
+		*slash = 0;
+		mkdir(dir, 0755);
+	}
+	snprintf(tmp, sizeof tmp, "%s.tmp", cfg.lcd_cfg);
+	int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+	if (fd < 0)
+		return;
+	int ok = write(fd, xml, (size_t)n) == n;
+	close(fd);
+	if (ok)
+		rename(tmp, cfg.lcd_cfg);
+	else
+		unlink(tmp);
+}
+
 static void refresh_devices(void)
 {
 	for (int i = 0; i < ndev; i++) {
@@ -467,6 +522,7 @@ static void refresh_devices(void)
 		lcd_intensity_apply(&devs[i]);
 		lcd_redraw(&devs[i]);
 	}
+	lcdcfg_write();
 }
 
 static void select_profile(void)
@@ -516,6 +572,7 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		focus_pid = pid ? atoi(pid) : 0;
 		focus_known = 1;
 		select_profile();
+		lcdcfg_write(); /* the application name changed even if the profile didn't */
 		snprintf(reply, len, "ok profile=%s\n", profile_name(active_profile));
 	} else if (!strcmp(verb, "calibrate")) {
 		size_t o = 0;
@@ -613,6 +670,7 @@ static void rescan(void)
 		led_apply(d);
 		lcd_intensity_apply(d);
 		lcd_attach(d);
+		lcdcfg_dirty = 1;
 	}
 }
 
@@ -625,16 +683,26 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 		int p = d->st.btn[i];
 		const char *v3dk = d->node.def->nbuttons ? d->node.def->buttons[i].v3dk : NULL;
 		LOG(2, "button %d (%s) %s\n", i + 1, v3dk ? v3dk : "-", p ? "down" : "up");
+		if (p && cfg.lcd_cfg[0]) { /* LCDCfg.xml <ButtonPressed>, cleared after 3 s */
+			tdx_button_text(&cfg, d->node.def, i, info_pressed, sizeof info_pressed);
+			info_until = now_ms() + 3000;
+			lcdcfg_dirty = 1;
+		}
 		int act = tdx_action_for(&cfg, d->node.def, i);
 		if (act != TDX_ACT_NONE) {
 			/* driver action: consumed here, like 3DxWare (not sent to applications) */
 			if (!p)
 				continue;
-			if (tdx_apply_action(&cfg, act))
+			if (tdx_apply_action(&cfg, act)) {
 				LOG(0, "%s: speed %.2f, pan/zoom %s, rotation %s, dominant %s\n",
 				    tdx_action_name(act), cfg.sensitivity,
 				    cfg.disable_translation ? "off" : "on",
 				    cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off");
+				if (act == TDX_ACT_SPEED_UP || act == TDX_ACT_SPEED_DOWN)
+					info_slider = (int)(cfg.sensitivity * 100 + 0.5);
+				info_until = now_ms() + 3000;
+				lcdcfg_dirty = 1;
+			}
 			else if (act == TDX_ACT_CALIBRATE)
 				device_rezero(d);
 			else if (act == TDX_ACT_LCD_NEXT && d->glcd)
@@ -815,8 +883,19 @@ int main(int argc, char **argv)
 		for (int i = 0; i < ndev; i++) /* Enterprise LCD finished its init window? */
 			if (devs[i].lcd_dirty)
 				lcd_redraw(&devs[i]);
-		if (r <= 0)
+		if (info_until && now_ms() >= info_until) { /* InfoLine shown long enough */
+			info_until = 0;
+			info_pressed[0] = 0;
+			info_slider = -1;
+			lcdcfg_dirty = 1;
+		}
+		if (r <= 0) {
+			if (lcdcfg_dirty) {
+				lcdcfg_dirty = 0;
+				lcdcfg_write();
+			}
 			continue;
+		}
 		if (bmp_idx >= 0 && (pfd[bmp_idx].revents & POLLIN))
 			bmp_watch_read();
 		if (mgr_idx >= 0 && (pfd[mgr_idx].revents & (POLLIN | POLLHUP | POLLERR))) {
@@ -854,6 +933,10 @@ int main(int argc, char **argv)
 					tdx_spnav_client_input(&spnav, i);
 			if (!focus_known) /* no focus helper: follow the newest spnav client */
 				select_profile();
+		}
+		if (lcdcfg_dirty) {
+			lcdcfg_dirty = 0;
+			lcdcfg_write();
 		}
 	}
 

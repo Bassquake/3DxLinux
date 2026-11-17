@@ -39,6 +39,8 @@ enum lm_type {
 	LM_FOREGROUND = 7,  /* u32 device, u32 yes */
 	LM_READBUTTONS = 8, /* u32 device -> reply u32 buttons */
 	LM_FAMILIES = 9,    /* u32 families (lgLcdSetDeviceFamiliesToUse) */
+	LM_ICON = 10,       /* u32 w, u32 h (<= 64), w*h RGBA: the program's icon in the
+			     * on-LCD program list (LCDMon extracted it from the .exe) */
 	/* server -> client events */
 	LM_EV_BUTTONS = 64,   /* u32 device, u32 buttons */
 	LM_EV_CONFIGURE = 65, /* (user pressed Configure... in the LCD Manager) */
@@ -64,6 +66,7 @@ struct lm_devdesc {
 #define LGLCD_DEVICE_QVGA_ 2
 #define LGLCD_BMP_FORMAT_160x43x1_ 1
 #define LGLCD_BMP_FORMAT_QVGAx32_ 3
+#define LGLCD_APPLET_CAP_QVGA_ 2
 #define LGLCD_NOTIFICATION_DEVICE_ARRIVAL_ 1
 #define LGLCD_NOTIFICATION_DEVICE_REMOVAL_ 2
 #define LGLCD_NOTIFICATION_CLOSE_CONNECTION_ 3

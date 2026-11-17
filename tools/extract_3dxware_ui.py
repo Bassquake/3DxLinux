@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+import zlib
 
 # installer files copied by name (device photos, button / macro icons)
 FILE_PATTERNS = [r".*_Head\.png$", r"V3DK_.*\.png$", r"KB_.*\.png$", r"Macro_.*\.png$",
@@ -62,26 +63,47 @@ def msi_strings(d):
     return strings, (3 if wide else 2)
 
 
-def msi_files(d):
+def msi_files(d, cabdir=None):
     """{cab key: long file name} from the column-major !File table."""
     strings, sref = msi_strings(d)
     raw = open(os.path.join(d, "!File"), "rb").read()
-    # File, Component_, FileName, FileSize(i4), Version, Language, Attributes(i2), Sequence(i4)
-    widths = [sref, sref, sref, 4, sref, sref, 2, 4]
+    # File, Component_, FileName, FileSize(i4), Version, Language, Attributes(i2),
+    # Sequence (i2 in older schemas, i4 in newer). Both can divide the table size,
+    # so keep the layout whose FileSize column matches the extracted cab files.
+    best, best_score = {}, -1
+    for seq in (4, 2):
+        cand = _msi_files_layout(raw, strings, [sref, sref, sref, 4, sref, sref, 2, seq])
+        if cand is None:
+            continue
+        files, sizes = cand
+        score = sum(1 for k, s in sizes.items()
+                    if cabdir and os.path.isfile(os.path.join(cabdir, k))
+                    and os.path.getsize(os.path.join(cabdir, k)) == s)
+        if score > best_score:
+            best, best_score = files, score
+    return best
+
+
+def _msi_files_layout(raw, strings, widths):
+    """({key: name}, {key: size}) for one column layout, or None if it doesn't fit."""
+    if len(raw) % sum(widths):
+        return None
     rows = len(raw) // sum(widths)
     cols, off = [], 0
     for w in widths:
-        col = []
-        for r in range(rows):
-            b = raw[off + r * w: off + (r + 1) * w]
-            col.append(int.from_bytes(b, "little"))
-        cols.append(col)
+        cols.append([int.from_bytes(raw[off + r * w:off + (r + 1) * w], "little")
+                     for r in range(rows)])
         off += rows * w
-    out = {}
+    if any(i >= len(strings) for c in (cols[0], cols[2]) for i in c):
+        return None
+    out, sizes = {}, {}
     for r in range(rows):
         key, name = strings[cols[0][r]], strings[cols[2][r]]
+        if not key or not name:
+            return None
         out[key] = name.split("|")[-1]
-    return out
+        sizes[key] = cols[3][r] ^ 0x80000000  # MSI stores integers with the sign bit flipped
+    return out, sizes
 
 
 def r7(d, p):
@@ -200,7 +222,7 @@ def unpack_msi(installer, msi_name, t):
     for c in [f for f in os.listdir(md) if f.lower().endswith(".cab")]:
         run7z("x", "-y", "-o" + cd, os.path.join(md, c))
     by_name = {}
-    for key, name in msi_files(md).items():
+    for key, name in msi_files(md, cd).items():
         path = os.path.join(cd, key)
         if os.path.isfile(path):
             by_name.setdefault(name, path)
@@ -226,6 +248,177 @@ def lcdmon_images(lcdmon, outdir):
             hdr = b"BM" + struct.pack("<IHHI", 14 + len(data), 0, 0, 14 + hsz + pal)
             open(os.path.join(outdir, fn + ".bmp"), "wb").write(hdr + data)
             n += 1
+    return n
+
+
+# ---- image codecs (pure Python: PNG read/write, BMP/ICO DIB read, PAM write)
+
+def png_read(data):
+    """8-bit PNG (grey, RGB, palette, grey+alpha, RGBA; not interlaced) -> (w, h, RGBA)."""
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    o, idat, pal, trns = 8, b"", None, None
+    while o < len(data):
+        n, = struct.unpack_from(">I", data, o)
+        typ = data[o + 4:o + 8]
+        body = data[o + 8:o + 8 + n]
+        if typ == b"IHDR":
+            w, h, depth, ctype, _c, _f, inter = struct.unpack(">IIBBBBB", body)
+        elif typ == b"PLTE":
+            pal = body
+        elif typ == b"tRNS":
+            trns = body
+        elif typ == b"IDAT":
+            idat += body
+        o += 12 + n
+    if depth != 8 or inter:
+        raise ValueError("unsupported PNG (depth %d, interlace %d)" % (depth, inter))
+    ch = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype]
+    raw = zlib.decompress(idat)
+    stride = w * ch
+    out = bytearray(w * h * 4)
+    prev = bytearray(stride)
+    p = 0
+    for y in range(h):
+        f = raw[p]
+        line = bytearray(raw[p + 1:p + 1 + stride])
+        p += 1 + stride
+        for i in range(stride):
+            a = line[i - ch] if i >= ch else 0
+            b = prev[i]
+            c = prev[i - ch] if i >= ch else 0
+            if f == 1:
+                line[i] = (line[i] + a) & 255
+            elif f == 2:
+                line[i] = (line[i] + b) & 255
+            elif f == 3:
+                line[i] = (line[i] + ((a + b) >> 1)) & 255
+            elif f == 4:
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        prev = line
+        for x in range(w):
+            q = (y * w + x) * 4
+            if ctype == 6:
+                out[q:q + 4] = line[x * 4:x * 4 + 4]
+            elif ctype == 2:
+                out[q:q + 3] = line[x * 3:x * 3 + 3]
+                out[q + 3] = 255
+            elif ctype == 0:
+                out[q:q + 3] = bytes([line[x]]) * 3
+                out[q + 3] = 255
+            elif ctype == 4:
+                out[q:q + 3] = bytes([line[x * 2]]) * 3
+                out[q + 3] = line[x * 2 + 1]
+            else:
+                i = line[x]
+                out[q:q + 3] = pal[i * 3:i * 3 + 3]
+                out[q + 3] = trns[i] if trns and i < len(trns) else 255
+    return w, h, bytes(out)
+
+
+def png_write(path, w, h, rgba):
+    raw = b"".join(b"\0" + rgba[y * w * 4:(y + 1) * w * 4] for y in range(h))
+
+    def chunk(t, b):
+        return struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b) & 0xFFFFFFFF)
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
+def pam_write(path, w, h, rgba):
+    with open(path, "wb") as f:
+        f.write(b"P7\nWIDTH %d\nHEIGHT %d\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n" % (w, h))
+        f.write(rgba)
+
+
+def dib_read(data, icon=False):
+    """BITMAPINFOHEADER DIB (1/4/8/24/32 bpp, BI_RGB) -> (w, h, RGBA). Icons carry an AND mask."""
+    hsz, w, h, _pl, bpp, comp = struct.unpack_from("<IiiHHI", data, 0)
+    ncol, = struct.unpack_from("<I", data, 32)
+    if icon:
+        h //= 2
+    top_down = h < 0
+    h = abs(h)
+    if comp not in (0, 3):
+        raise ValueError("compressed DIB")
+    npal = ncol or (1 << bpp if bpp <= 8 else 0)
+    pal = data[hsz:hsz + 4 * npal]
+    o = hsz + 4 * npal + (12 if comp == 3 and hsz == 40 else 0)
+    stride = ((w * bpp + 31) // 32) * 4
+    out = bytearray(w * h * 4)
+    any_alpha = False
+    for y in range(h):
+        row = data[o + y * stride:o + (y + 1) * stride]
+        ty = y if top_down else h - 1 - y
+        for x in range(w):
+            q = (ty * w + x) * 4
+            if bpp == 32:
+                b, g, r, a = row[x * 4:x * 4 + 4]
+                any_alpha |= a != 0
+            elif bpp == 24:
+                b, g, r = row[x * 3:x * 3 + 3]
+                a = 255
+            else:
+                bits = row[x * bpp // 8] >> (8 - bpp - (x * bpp) % 8) & ((1 << bpp) - 1)
+                b, g, r = pal[bits * 4:bits * 4 + 3]
+                a = 255
+            out[q:q + 4] = bytes((r, g, b, a))
+    if bpp == 32 and not any_alpha:
+        for i in range(3, len(out), 4):
+            out[i] = 255
+    if icon and bpp < 32:  # 1-bpp AND mask follows the colour bits
+        mo = o + stride * h
+        mstride = ((w + 31) // 32) * 4
+        for y in range(h):
+            ty = h - 1 - y
+            for x in range(w):
+                if data[mo + y * mstride + x // 8] >> (7 - x % 8) & 1:
+                    out[(ty * w + x) * 4 + 3] = 0
+    return w, h, bytes(out)
+
+
+def save_both(base, w, h, rgba):
+    png_write(base + ".png", w, h, rgba)
+    pam_write(base + ".pam", w, h, rgba)
+
+
+def applet_art(exe, outdir):
+    """An applet's bitmaps, PNG resources and main icon -> outdir/*.png (+ .pam)."""
+    os.makedirs(outdir, exist_ok=True)
+    n = 0
+    icons = {}
+    groups = []
+    for typ, name, data in pe_resources(exe):
+        try:
+            if typ == 2:
+                save_both(os.path.join(outdir, "bitmap_%s" % name), *dib_read(data))
+                n += 1
+            elif data[:8] == b"\x89PNG\r\n\x1a\n" and typ != 3:
+                save_both(os.path.join(outdir, "png_%s" % name), *png_read(data))
+                n += 1
+            elif typ == 3:
+                icons[name] = data
+            elif typ == 14:
+                groups.append((name, data))
+        except (ValueError, struct.error, zlib.error, KeyError):
+            pass
+    # the executable's icon = first icon group (lowest id), its 32x32 entry
+    if groups:
+        groups.sort(key=lambda g: (isinstance(g[0], str), g[0]))
+        gdata = groups[0][1]
+        cnt, = struct.unpack_from("<H", gdata, 4)
+        best = None
+        for i in range(cnt):
+            w, h, _c, _r, _p, bpp, _sz, iid = struct.unpack_from("<BBBBHHIH", gdata, 6 + i * 14)
+            score = (w or 256) == 32, bpp
+            if best is None or score > best[0]:
+                best = (score, iid)
+        d = icons.get(best[1]) if best else None
+        if d:
+            img = png_read(d) if d[:8] == b"\x89PNG\r\n\x1a\n" else dib_read(d, icon=True)
+            save_both(os.path.join(outdir, "icon"), *img)
     return n
 
 
@@ -279,6 +472,23 @@ def main():
                 f.write(blob)
         print("%d control-panel images from 3DxSmartUi.exe" % len(imgs))
 
+        apps = unpack_msi(installer, "3DxLcdApplets64.msi", t) or {}
+        appdir = os.path.join(out, "lcdapplets")
+        for exe, sub_ in (("3DxLCD10SPPRO.exe", "functionkeys"), ("zz3DxLCD50RSSReader.exe", "rss"),
+                          ("zz3DxLCD60Picture.exe", "pictures")):
+            if exe in apps:
+                print("%d images from %s" % (applet_art(apps[exe], os.path.join(appdir, sub_)), exe))
+        fdir = os.path.join(appdir, "finder")
+        os.makedirs(fdir, exist_ok=True)
+        for name, path in apps.items():
+            if name.startswith(("client_list_", "vscroll_")) and name.endswith(".png"):
+                w, h, rgba = png_read(open(path, "rb").read())
+                save_both(os.path.join(fdir, name[:-4]), w, h, rgba)
+            elif name == "FinderConfig.txt":
+                shutil.copyfile(path, os.path.join(fdir, name))
+            elif re.match(r"3Dx_Images_\d+\.jpg$", name):
+                os.makedirs(os.path.join(appdir, "pictures", "default"), exist_ok=True)
+                shutil.copyfile(path, os.path.join(appdir, "pictures", "default", name))
         ladp = unpack_msi(installer, "LADPInst.msi", t)
         lcdmon = (ladp or {}).get("LCDMon.exe")
         if lcdmon:

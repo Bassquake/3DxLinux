@@ -38,6 +38,18 @@ def wait(pred, timeout=5.0):
     return False
 
 
+def bright_in_band(path, y0, y1):
+    """Number of near-white pixels in rows y0..y1 (text drawn on the LCD)."""
+    with open(path, "rb") as f:
+        data = f.read()
+    off = data.index(b"255\n") + 4
+    n = 0
+    for y in range(y0, y1):
+        row = data[off + y * 960:off + (y + 1) * 960]
+        n += sum(1 for i in range(0, 960, 3) if min(row[i], row[i + 1], row[i + 2]) > 200)
+    return n
+
+
 def frame_pixel(path, x, y):
     with open(path, "rb") as f:
         data = f.read()
@@ -55,7 +67,7 @@ def main():
     build = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", os.uname().machine)
     d = tempfile.mkdtemp(prefix="tdx-lcdmgr-test-")
     sock, dbp, ppm = (os.path.join(d, n) for n in ("lcd.sock", "lcdmgr.ini", "lcd.ppm"))
-    mgr = subprocess.Popen([os.path.join(build, "tdx-lcdmgr"), "-v", "-s", sock, "-d", dbp,
+    mgr = subprocess.Popen([os.path.join(build, "tdx-lcdmgr"), "-v", "-N", "-s", sock, "-d", dbp,
                             "-F", ppm, "-t", os.path.join(d, "no-tdxd.sock")],
                            stderr=subprocess.PIPE, text=True)
     log = []
@@ -159,7 +171,7 @@ def main():
 
         # --- identify / defaults / brightness
         check(tdxlcd.admin("identify", sock).startswith("ok"), "identify")
-        check(wait(lambda: frame_pixel(ppm, 2, 2) == (255, 255, 255)), "identify screen")
+        check(wait(lambda: bright_in_band(ppm, 96, 118) > 40), "identify screen")
         tdxlcd.admin("set brightness 40", sock)
         tdxlcd.admin("set delay 15", sock)
         check(tdxlcd.status(sock)["settings"]["brightness"] == 40, "brightness set")
@@ -182,7 +194,8 @@ def main():
         demo.wait(5)
         check(wait(lambda: not any(p["running"] for p in tdxlcd.status(sock)["programs"])),
               "applets gone from the running list")
-        check(wait(lambda: frame_pixel(ppm, 160, 14)[2] > 0x90), "idle screen again")
+        check(wait(lambda: max(frame_pixel(ppm, 5, 200)) < 0x40 and max(frame_pixel(ppm, 5, 200)) - min(frame_pixel(ppm, 5, 200)) < 10),
+              "idle screen again")
         names = [p["name"] for p in tdxlcd.status(sock)["programs"]]
         check(names == ["Demo C", "Py Red"], "persistent programs stay listed")
     finally:

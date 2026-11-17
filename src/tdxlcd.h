@@ -173,8 +173,11 @@ DWORD lgLcdSetAsLCDForegroundApp(int device, int foregroundYesNoFlag);
 #define lgLcdEnumerateExA lgLcdEnumerateEx
 #define lgLcdEnumerateExW lgLcdEnumerateEx
 
-/* Linux extension: socket path the library uses (NULL = default). */
-void tdxLcdSetSocketPath(const char *path);
+/* Linux extensions */
+void tdxLcdSetSocketPath(const char *path); /* NULL = default */
+/* The icon shown for this program in the LCD's program list (LCDMon took the
+ * .exe icon): width x height (<= 64) RGBA pixels, row-major. */
+DWORD tdxLcdSetIcon(int connection, int width, int height, const BYTE *rgba);
 
 #ifdef __cplusplus
 }

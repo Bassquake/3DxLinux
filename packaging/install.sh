@@ -17,7 +17,9 @@ if [ "${1:-}" = "--remove" ]; then
 	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
 	      "$PREFIX/bin/tdx-extract-3dxware-ui" \
 	      "$PREFIX/bin/tdx-lcdmgr" "$PREFIX/bin/tdx-lcdmanager" "$PREFIX/bin/tdx-lcd-demo" \
-	      "$PREFIX/lib/tdxd/python/tdxlcd.py" "$PREFIX/lib/libtdxlcd.a" "$PREFIX/lib/libtdxlcd.so" \
+	      "$PREFIX/lib/tdxd/python/tdxlcd.py" "$PREFIX/lib/tdxd/python/lcdapplet.py" \
+	      "$PREFIX/bin/tdx-lcd-functionkeys" "$PREFIX/bin/tdx-lcd-rss" "$PREFIX/bin/tdx-lcd-pictures" \
+	      "$PREFIX/lib/libtdxlcd.a" "$PREFIX/lib/libtdxlcd.so" \
 	      "$PREFIX/lib/libtdxlcd.so.1" "$PREFIX/include/tdxlcd.h" /etc/systemd/user/tdx-lcdmgr.service \
 	      "$PREFIX/share/applications/tdx-settings.desktop" \
 	      /usr/share/polkit-1/actions/org.tdxd.settings.policy \
@@ -43,6 +45,10 @@ install -Dm755 bin/tdx-lcdmgr "$PREFIX/bin/tdx-lcdmgr"
 install -Dm755 bin/tdx-lcdmanager "$PREFIX/bin/tdx-lcdmanager"
 install -Dm755 bin/tdx-lcd-demo "$PREFIX/bin/tdx-lcd-demo"
 install -Dm644 lib/python/tdxlcd.py "$PREFIX/lib/tdxd/python/tdxlcd.py"
+install -Dm644 lib/python/lcdapplet.py "$PREFIX/lib/tdxd/python/lcdapplet.py"
+for a in tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+	install -Dm755 "bin/$a" "$PREFIX/bin/$a"
+done
 install -Dm644 lib/libtdxlcd.a "$PREFIX/lib/libtdxlcd.a"
 install -Dm755 lib/libtdxlcd.so.1 "$PREFIX/lib/libtdxlcd.so.1"
 ln -sf libtdxlcd.so.1 "$PREFIX/lib/libtdxlcd.so"

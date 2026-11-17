@@ -24,7 +24,7 @@ import struct
 import threading
 
 VERSION = 1
-CONNECT, DISCONNECT, ENUMERATE, OPEN, CLOSE, UPDATE, FOREGROUND, READBUTTONS, FAMILIES = range(1, 10)
+CONNECT, DISCONNECT, ENUMERATE, OPEN, CLOSE, UPDATE, FOREGROUND, READBUTTONS, FAMILIES, ICON = range(1, 11)
 EV_BUTTONS, EV_CONFIGURE, EV_NOTIFY = 64, 65, 66
 REPLY, ADMIN = 128, 200
 
@@ -142,6 +142,24 @@ class Connection:
         fam, w, h, bpp, sb = struct.unpack("<5I", d[:20])
         return {"family": fam, "width": w, "height": h, "bpp": bpp, "softbuttons": sb,
                 "name": d[20:84].split(b"\0")[0].decode(errors="replace")}
+
+    def set_icon(self, width, height, rgba):
+        """Icon for the LCD's program list (<= 64x64, RGBA bytes)."""
+        self._request(ICON, struct.pack("<II", width, height) + bytes(rgba), "icon")
+
+    def set_icon_png(self, path):
+        """set_icon() from a PNG file (needs pycairo)."""
+        import cairo
+        s = cairo.ImageSurface.create_from_png(path)
+        w, h, st, d = s.get_width(), s.get_height(), s.get_stride(), bytes(s.get_data())
+        out = bytearray(w * h * 4)
+        for y in range(h):
+            for x in range(w):
+                b, g, r, a = d[y * st + x * 4:y * st + x * 4 + 4]  # premultiplied BGRA
+                if a:
+                    r, g, b = (min(255, c * 255 // a) for c in (r, g, b))
+                out[(y * w + x) * 4:(y * w + x) * 4 + 4] = bytes((r, g, b, a))
+        self.set_icon(w, h, out)
 
     def open(self, device_type=DEVICE_QVGA, on_buttons=None):
         dev = Device(self, on_buttons)

@@ -313,7 +313,7 @@ tdx-lcd bmp sp4LCD.bmp                    # Giotto: legacy 0x13 path (24 bpp BMP
 | x86_64 and arm64 builds | Compile without warnings |
 | SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, the daemon's key page with SHIFT paging, and **Blender 3.0.1** navigation and view buttons through libspnav |
 | SpaceMouse Enterprise and Giotto | Not verified on hardware (no device available) |
-| LCD Manager (`tdx-lcdmgr`, `libtdxlcd`, `tdx-lcdmanager`) | **Verified** on the SpacePilot Pro (2026-11-17): handover to and from tdxd, applet frames, all eight LCD keys, the on-LCD program list, autostart, Identify, brightness and the Programs page; switching rules end to end in `make test-lcdmgr` |
+| LCD Manager (`tdx-lcdmgr`, `libtdxlcd`, `tdx-lcdmanager`) and the applets (Function Keys, RSS Feeds, Picture Viewer) | **Verified** on the SpacePilot Pro (2026-11-17): handover to and from tdxd, all eight LCD keys, the program list in the Windows look, the three applets and their Configure dialogs, autostart, Identify, brightness; end to end in `make test-lcdmgr` and `make test-lcdapplets` |
 | `tdx-settings` panel and `action_*` button actions | **Verified** on the SpacePilot Pro (2026-11-17): speed ±, Dominant/Rotation/Pan Zoom toggles, and the panel's Speed, LEDs, Calibrate, button binding, LCD brightness and labels. Also unit-tested (`make test-gui`) |
 
 `docs/PROTOCOL.md` lists the open items.

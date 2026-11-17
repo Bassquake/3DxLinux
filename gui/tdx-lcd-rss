@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""RSS Feeds - Linux port of 3Dconnexion's "RSS Feeds" LCD applet
+(zz3DxLCD50RSSReader.exe) for the SpacePilot PRO.
+
+Reads RSS 2.0, RSS 1.0 (RDF) and Atom feeds (the formats the original parses:
+<rss><channel><item>, <rdf:RDF><item>, <feed><entry>) and shows one item at a
+time under the feed's title, moving on every "Display duration" seconds.
+
+  UP / DOWN     previous / next item
+  LEFT / RIGHT  previous / next feed
+  OK            open the item's link in the browser
+
+Configure... (LCD Manager) edits the list of feeds (URL + optional short name),
+the display duration and "Display feed icon", like the original's dialogs.
+Settings: ~/.config/tdxd/rss.json.
+"""
+
+import html
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import lcdapplet as la  # noqa: E402
+
+UA = "Mozilla/5.0 (compatible; tdxd RSS Feeds applet for Linux)"
+DARK = la.rgb(0x1E1E1E)
+MID = la.rgb(0x505050)
+
+
+def strip_html(s):
+    s = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", s or "", flags=re.S | re.I)
+    s = re.sub(r"<br\s*/?>|</p>", "\n", s, flags=re.I)
+    s = re.sub(r"<[^>]+>", "", s)
+    s = html.unescape(s)
+    return re.sub(r"[ \t\r\f\v]+", " ", re.sub(r"\n\s*\n+", "\n", s)).strip()
+
+
+def local(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def child(el, name):
+    for c in el:
+        if local(c.tag) == name:
+            return c
+    return None
+
+
+def ctext(el, *names):
+    for n in names:
+        c = child(el, n)
+        if c is not None:
+            if n == "link" and not (c.text or "").strip():
+                return c.get("href", "")
+            return (c.text or "").strip()
+    return ""
+
+
+def parse_feed(data):
+    """-> (title, logo_url, [(title, date, description, link)])"""
+    root = ET.fromstring(data)
+    kind = local(root.tag)
+    items = []
+    if kind == "rss":
+        ch = child(root, "channel")
+        if ch is None:
+            raise ValueError("no channel")
+        title = ctext(ch, "title")
+        img = child(ch, "image")
+        logo = ctext(img, "url") if img is not None else ""
+        for it in ch:
+            if local(it.tag) == "item":
+                items.append((ctext(it, "title"), ctext(it, "pubDate", "date"),
+                              strip_html(ctext(it, "description", "encoded")), ctext(it, "link")))
+    elif kind == "RDF":
+        ch = child(root, "channel")
+        title = ctext(ch, "title") if ch is not None else ""
+        logo = ""
+        for it in root:
+            if local(it.tag) == "item":
+                items.append((ctext(it, "title"), ctext(it, "date"),
+                              strip_html(ctext(it, "description")), ctext(it, "link")))
+    elif kind == "feed":
+        title = ctext(root, "title")
+        logo = ctext(root, "logo", "icon")
+        for it in root:
+            if local(it.tag) == "entry":
+                items.append((ctext(it, "title"), ctext(it, "updated", "published"),
+                              strip_html(ctext(it, "summary", "content")), ctext(it, "link")))
+    else:
+        raise ValueError("not a feed")
+    return strip_html(title), logo, items
+
+
+class Rss(la.Applet):
+    NAME = "RSS Feeds"
+    ART = "rss"
+    CONFIG = "rss.json"
+    # the original keeps "Download Period" and "Display Feed Icon" under
+    # HKCU\Software\3Dconnexion\LCD Software\LCDRSS
+    CONFIG_DEFAULTS = {"feeds": [], "duration": 10, "show_icon": True, "download_period": 30}
+    FPS = 4
+
+    def __init__(self):
+        super().__init__()
+        self.feeds = {}        # url -> {"title", "items", "error", "time"}
+        self.fi = 0            # feed index
+        self.ii = 0            # item index
+        self.shown_at = time.time()
+        self.fetching = set()
+        self.wake = threading.Event()
+        threading.Thread(target=self.fetcher, daemon=True).start()
+
+    def config_changed(self):
+        super().config_changed()
+        self.fi = min(self.fi, max(0, len(self.cfg.get("feeds", [])) - 1))
+        if hasattr(self, "wake"):
+            self.wake.set()
+
+    # downloads
+    def fetcher(self):
+        while True:
+            for f in list(self.cfg.get("feeds", [])):
+                url = f.get("url", "")
+                st = self.feeds.get(url)
+                period = max(5, int(self.cfg.get("download_period", 30))) * 60
+                if url and (not st or time.time() - st["time"] > period):
+                    self.fetch(url)
+            self.wake.wait(30)
+            self.wake.clear()
+
+    def fetch(self, url):
+        entry = {"title": "", "items": [], "error": None, "time": time.time()}
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = r.read(4 << 20)
+            entry["title"], _logo, entry["items"] = parse_feed(data)
+            if not entry["items"]:
+                entry["error"] = "Invalid Rss Feed"
+        except ET.ParseError:
+            entry["error"] = "Invalid Rss Feed"
+        except ValueError:
+            entry["error"] = "Invalid Rss Feed"
+        except Exception:  # network errors of every kind
+            entry["error"] = "Download failed"
+        with self.lock:
+            self.feeds[url] = entry
+            self.dirty = True
+
+    # navigation
+    def current(self):
+        feeds = self.cfg.get("feeds", [])
+        if not feeds:
+            return None, None
+        f = feeds[self.fi % len(feeds)]
+        return f, self.feeds.get(f.get("url", ""))
+
+    def tick(self, now):
+        f, st = self.current()
+        dur = max(2, int(self.cfg.get("duration", 10)))
+        if st and st["items"] and now - self.shown_at >= dur:
+            self.ii = (self.ii + 1) % len(st["items"])
+            self.shown_at = now
+            return True
+        return False
+
+    def on_buttons(self, pressed, held):
+        feeds = self.cfg.get("feeds", [])
+        f, st = self.current()
+        n = len(st["items"]) if st else 0
+        if pressed & la.DOWN and n:
+            self.ii = (self.ii + 1) % n
+        elif pressed & la.UP and n:
+            self.ii = (self.ii - 1) % n
+        elif pressed & la.RIGHT and feeds:
+            self.fi, self.ii = (self.fi + 1) % len(feeds), 0
+        elif pressed & la.LEFT and feeds:
+            self.fi, self.ii = (self.fi - 1) % len(feeds), 0
+        elif pressed & la.OK and n:
+            link = st["items"][self.ii % n][3]
+            if link.startswith(("http://", "https://")):
+                subprocess.Popen(["xdg-open", link], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+        self.shown_at = time.time()
+
+    # drawing
+    def draw(self, cr):
+        if not self.art.paint(cr, "bitmap_109"):
+            cr.set_source_rgb(0.78, 0.8, 0.82)
+            cr.paint()
+        if not self.art.paint(cr, "bitmap_112"):
+            cr.set_source_rgb(0.0, 0.47, 0.84)
+            cr.rectangle(0, 0, la.W, 51)
+            cr.fill()
+        f, st = self.current()
+        title = "My RSS Feeds"
+        if f:
+            title = f.get("name") or (st and st["title"]) or f.get("url", "")
+        tx = 8
+        if self.cfg.get("show_icon", True):
+            if self.art.paint(cr, "bitmap_111", 2, 7):
+                tx = 56
+        la.text(cr, tx, 0, title, 17, (1, 1, 1), bold=True, width=la.W - tx - 30, valign_h=51)
+        feeds = self.cfg.get("feeds", [])
+        if len(feeds) > 1:  # feed switch hint (bitmap_116: < >)
+            if not self.art.paint(cr, "bitmap_116", la.W - 26, 19):
+                la.text(cr, la.W - 26, 15, "◀▶", 11, (1, 1, 1))
+        msg = None
+        if not feeds:
+            msg = "No Feeds Found!"
+        elif not st:
+            msg = "Downloading..."
+        elif st["error"]:
+            msg = st["error"]
+        if msg:
+            box = self.art.get("bitmap_120")
+            bx, by = (la.W - 230) // 2, 51 + (la.H - 51 - 129) // 2
+            if box:
+                cr.set_source_surface(box, bx, by)
+                cr.paint()
+            else:
+                cr.set_source_rgb(0.1, 0.1, 0.1)
+                la.rounded(cr, bx, by, 230, 129, 8)
+                cr.fill()
+            la.text(cr, bx + 10, by, msg, 16, (1, 1, 1), bold=True, width=210, align="center",
+                    valign_h=129)
+            return
+        items = st["items"]
+        it = items[self.ii % len(items)]
+        y = 58
+        w, h = la.text(cr, 10, y, it[0], 15, DARK, bold=True, width=288, wrap=True, lines=3)
+        y += h + 2
+        if it[1]:
+            w, h = la.text(cr, 10, y, it[1], 11, MID, width=288)
+            y += h + 4
+        la.text(cr, 10, y, it[2], 13, DARK, width=288, wrap=True,
+                lines=max(1, (la.H - y - 6) // 16))
+        # position in the feed: bitmap_114 track + bitmap_115 thumb
+        track, thumb = self.art.get("bitmap_114"), self.art.get("bitmap_115")
+        n, k = len(items), self.ii % len(items)
+        tx, ty, th = la.W - 10, 55, 180
+        if track:
+            cr.set_source_surface(track, tx, ty)
+            cr.paint()
+        tlen = max(12, th // max(1, n))
+        tpos = ty + (th - tlen) * k // max(1, n - 1)
+        if thumb:
+            cr.save()
+            cr.translate(tx, tpos)
+            cr.scale(1, tlen / thumb.get_height())
+            cr.set_source_surface(thumb, 0, 0)
+            cr.paint()
+            cr.restore()
+        else:
+            cr.set_source_rgb(0.0, 0.47, 0.84)
+            cr.rectangle(tx + 1, tpos, 5, tlen)
+            cr.fill()
+
+    # Configure... (the original's "List of RSS Feeds" / "RSS Feed" dialogs)
+    def configure_dialog(self):
+        import gi
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk
+        feeds = [dict(f) for f in self.cfg.get("feeds", [])]
+        dlg = Gtk.Dialog(title="RSS Feeds")
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+        box = dlg.get_content_area()
+        box.set_border_width(12)
+        box.set_spacing(8)
+        fr = Gtk.Frame(label="List of RSS Feeds")
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        v.set_border_width(8)
+        store = Gtk.ListStore(str, str)
+        for f in feeds:
+            store.append([f.get("name", ""), f.get("url", "")])
+        tv = Gtk.TreeView(model=store)
+        tv.append_column(Gtk.TreeViewColumn("Name", Gtk.CellRendererText(), text=0))
+        tv.append_column(Gtk.TreeViewColumn("Feed", Gtk.CellRendererText(), text=1))
+        sw = Gtk.ScrolledWindow()
+        sw.set_size_request(520, 160)
+        sw.add(tv)
+        v.pack_start(sw, True, True, 0)
+        hb = Gtk.Box(spacing=8)
+        for label in ("New Feed...", "Edit Feed...", "Remove Feed"):
+            b = Gtk.Button(label=label)
+            hb.pack_start(b, True, True, 0)
+            b.connect("clicked", lambda _b, l=label: action(l))
+        v.pack_start(hb, False, False, 0)
+        fr.add(v)
+        box.pack_start(fr, True, True, 0)
+        fr2 = Gtk.Frame(label="LCD Display Options")
+        g = Gtk.Grid(column_spacing=8, row_spacing=6)
+        g.set_border_width(8)
+        g.attach(Gtk.Label(label="Display duration for each item in seconds", xalign=0), 0, 0, 1, 1)
+        dur = Gtk.SpinButton.new_with_range(2, 600, 1)
+        dur.set_value(int(self.cfg.get("duration", 10)))
+        g.attach(dur, 1, 0, 1, 1)
+        icon = Gtk.CheckButton(label="Check here if you want to display RSS feed icon")
+        icon.set_active(bool(self.cfg.get("show_icon", True)))
+        g.attach(icon, 0, 1, 2, 1)
+        fr2.add(g)
+        box.pack_start(fr2, False, False, 0)
+
+        def feed_dialog(name="", url=""):
+            d = Gtk.Dialog(title="RSS Feed", transient_for=dlg, modal=True)
+            d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+            gg = Gtk.Grid(column_spacing=8, row_spacing=8)
+            gg.set_border_width(12)
+            gg.attach(Gtk.Label(label="RSS Feed", xalign=0), 0, 0, 1, 1)
+            e_url = Gtk.Entry(text=url)
+            e_url.set_width_chars(50)
+            gg.attach(e_url, 1, 0, 1, 1)
+            cb = Gtk.CheckButton(label="Assign short feed name to be displayed")
+            cb.set_active(bool(name))
+            gg.attach(cb, 0, 1, 1, 1)
+            e_name = Gtk.Entry(text=name)
+            e_name.set_sensitive(bool(name))
+            cb.connect("toggled", lambda b: e_name.set_sensitive(b.get_active()))
+            gg.attach(e_name, 1, 1, 1, 1)
+            d.get_content_area().add(gg)
+            d.show_all()
+            ok = d.run() == Gtk.ResponseType.OK and e_url.get_text().strip()
+            res = (e_name.get_text().strip() if cb.get_active() else "", e_url.get_text().strip())
+            d.destroy()
+            return res if ok else None
+
+        def action(label):
+            m, it = tv.get_selection().get_selected()
+            if label == "New Feed...":
+                r = feed_dialog()
+                if r:
+                    store.append(list(r))
+            elif it is not None and label == "Edit Feed...":
+                r = feed_dialog(m[it][0], m[it][1])
+                if r:
+                    m[it][0], m[it][1] = r
+            elif it is not None and label == "Remove Feed":
+                q = Gtk.MessageDialog(transient_for=dlg, modal=True,
+                                      message_type=Gtk.MessageType.QUESTION,
+                                      buttons=Gtk.ButtonsType.YES_NO,
+                                      text="Are you sure you want to remove the selected RSS feed?")
+                q.set_title("Remove Selected Feed")
+                if q.run() == Gtk.ResponseType.YES:
+                    m.remove(it)
+                q.destroy()
+
+        dlg.show_all()
+        if dlg.run() == Gtk.ResponseType.OK:
+            self.cfg["feeds"] = [{"name": r[0], "url": r[1]} for r in store]
+            self.cfg["duration"] = int(dur.get_value())
+            self.cfg["show_icon"] = icon.get_active()
+            self.save_config()
+        dlg.destroy()
+
+
+if __name__ == "__main__":
+    sys.exit(la.main(Rss))

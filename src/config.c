@@ -32,6 +32,7 @@ void tdx_config_defaults(struct tdx_config *c)
 	c->lcd_slide_step = 80; /* px per 25 ms step: a 1280 px slide takes 0.4 s */
 	snprintf(c->profile_dir, sizeof c->profile_dir, "/etc/tdxd.d");
 	snprintf(c->control_socket, sizeof c->control_socket, "/run/tdxd.sock");
+	snprintf(c->lcd_cfg, sizeof c->lcd_cfg, "/run/tdxd/LCDCfg.xml");
 }
 
 static const char *const action_names[TDX_ACT_COUNT] = {
@@ -134,7 +135,7 @@ static int parse_bool(const char *v) { return !strcasecmp(v, "yes") || !strcasec
 static int daemon_only(const char *k)
 {
 	static const char *const keys[] = {"uinput", "spnav", "spnav_socket", "lcd", "lcd_bmp_dir",
-					   "verbose", "profile_dir", "control_socket",
+					   "verbose", "profile_dir", "control_socket", "lcd_cfg",
 					   "calibrate_on_start", NULL};
 	for (int i = 0; keys[i]; i++)
 		if (!strcmp(k, keys[i]))
@@ -205,6 +206,7 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 		else if (!strcmp(k, "calibrate_button")) snprintf(c->calibrate_button, sizeof c->calibrate_button, "%s", v);
 		else if (!strcmp(k, "profile_dir")) snprintf(c->profile_dir, sizeof c->profile_dir, "%s", v);
 		else if (!strcmp(k, "control_socket")) snprintf(c->control_socket, sizeof c->control_socket, "%s", v);
+		else if (!strcmp(k, "lcd_cfg")) snprintf(c->lcd_cfg, sizeof c->lcd_cfg, "%s", strcasecmp(v, "none") ? v : "");
 		else if (!strcmp(k, "deadzone")) c->deadzone = atoi(v);
 		else if (!strcmp(k, "dominant")) c->dominant = parse_bool(v);
 		else if (!strcmp(k, "disable_translation")) c->disable_translation = parse_bool(v);

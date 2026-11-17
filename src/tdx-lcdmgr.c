@@ -64,6 +64,7 @@ struct client {
 	int has_frame, priority, fg;
 	uint64_t fg_time, alert_time;
 	uint32_t buttons;
+	struct gfx_img icon; /* LM_ICON (LCDMon took it from the applet's .exe) */
 	/* receive state */
 	struct lm_hdr h;
 	uint32_t got;      /* bytes of header+payload received */
@@ -74,7 +75,8 @@ struct client {
 static struct client cl[MAX_CLIENTS];
 static int listen_fd = -1;
 static char sock_path[108], db_path[LM_PATH_MAX], tdxd_sock[108] = "/run/tdxd.sock";
-static char fake_path[LM_PATH_MAX]; /* -F: virtual LCD written to a PPM file (tests, preview) */
+static char fake_path[LM_PATH_MAX];
+static int no_seed; /* -F: virtual LCD written to a PPM file (tests, preview) */
 static struct lm_db db;
 static struct tdx_lcd lcd = {.fd = -1};
 static int lcd_ok, hold_fd = -1;
@@ -233,54 +235,168 @@ static int candidates(struct lm_cand *cand, int *idx)
 					   .fg_time = c->fg_time, .alert_time = c->alert_time};
 		idx[n++] = i;
 	}
+	/* in Programs-list order, like LCDMon's on-LCD list */
+	for (int a = 1; a < n; a++)
+		for (int b = a; b > 0 && cand[b - 1].prog > cand[b].prog; b--) {
+			struct lm_cand t = cand[b];
+			cand[b] = cand[b - 1];
+			cand[b - 1] = t;
+			int ti = idx[b];
+			idx[b] = idx[b - 1];
+			idx[b - 1] = ti;
+		}
 	return n;
 }
 
-static void draw_text_c(int y, const char *s, int scale, uint32_t col)
+/* ---- the program list ("Finder"), skinned like LCDMon's
+ * BrowserArtPath\FinderConfig.txt from 3Dconnexion's LCD applets package
+ * (client_list_header 320x36 "SpacePilot PRO", client_list_background,
+ * vscroll_*; Arial 10 in 204,204,204; icon/text offset 36; rows 40 px). */
+
+struct finder {
+	int loaded;
+	struct gfx_img bg, header, sb_base, sb_top, sb_mid, sb_bottom;
+	uint32_t font_rgb;
+	int header_text, icon_off, text_off, item_h;
+} finder = {.font_rgb = 0xCCCCCC, .icon_off = 36, .text_off = 36, .item_h = 40};
+static char assets_dir[LM_PATH_MAX];
+
+static void finder_load(void)
 {
-	gfx_text(&fb, (TDX_LCD_W - gfx_text_width(s, scale)) / 2, y, s, scale, col);
+	if (finder.loaded)
+		return;
+	finder.loaded = 1;
+	const char *home = getenv("HOME");
+	char cands[5][LM_PATH_MAX + 64];
+	int n = 0;
+	if (assets_dir[0])
+		snprintf(cands[n++], sizeof cands[0], "%s", assets_dir);
+	if (getenv("TDX_UI_ASSETS"))
+		snprintf(cands[n++], sizeof cands[0], "%.255s", getenv("TDX_UI_ASSETS"));
+	if (home)
+		snprintf(cands[n++], sizeof cands[0], "%.200s/.local/share/tdxd/3dxware-ui", home);
+	snprintf(cands[n++], sizeof cands[0], "/usr/local/share/tdxd/3dxware-ui");
+	snprintf(cands[n++], sizeof cands[0], "/usr/share/tdxd/3dxware-ui");
+	for (int i = 0; i < n; i++) {
+		char d[LM_PATH_MAX + 96], p[LM_PATH_MAX + 160];
+		snprintf(d, sizeof d, "%.300s/lcdapplets/finder", cands[i]);
+		snprintf(p, sizeof p, "%s/client_list_header.pam", d);
+		if (access(p, R_OK))
+			continue;
+		struct { struct gfx_img *img; const char *name; } t[] = {
+			{&finder.bg, "client_list_background"}, {&finder.header, "client_list_header"},
+			{&finder.sb_base, "vscroll_base"}, {&finder.sb_top, "vscroll_thumb_top"},
+			{&finder.sb_mid, "vscroll_thumb_mid"}, {&finder.sb_bottom, "vscroll_thumb_bottom"},
+		};
+		for (size_t k = 0; k < sizeof t / sizeof t[0]; k++) {
+			snprintf(p, sizeof p, "%s/%s.pam", d, t[k].name);
+			gfx_load_pam(t[k].img, p);
+		}
+		snprintf(p, sizeof p, "%s/FinderConfig.txt", d);
+		FILE *f = fopen(p, "r");
+		char line[256];
+		while (f && fgets(line, sizeof line, f)) {
+			int a, b, c;
+			if (sscanf(line, "client_list_font_RGB=%d %d %d", &a, &b, &c) == 3)
+				finder.font_rgb = (uint32_t)a << 16 | (uint32_t)b << 8 | (uint32_t)c;
+			sscanf(line, "client_list_icon_offset=%d", &finder.icon_off);
+			sscanf(line, "client_list_text_offset=%d", &finder.text_off);
+			sscanf(line, "client_list_item_height=%d", &finder.item_h);
+			if (!strncmp(line, "client_list_display_header_text=true", 36))
+				finder.header_text = 1;
+		}
+		if (f)
+			fclose(f);
+		/* LCDMon's clamps (CFinderConfig parser) */
+		finder.icon_off = finder.icon_off < 0 ? 0 : finder.icon_off > 120 ? 120 : finder.icon_off;
+		finder.text_off = finder.text_off < 7 ? 7 : finder.text_off > 120 ? 120 : finder.text_off;
+		finder.item_h = finder.item_h < 36 ? 36 : finder.item_h > 72 ? 72 : finder.item_h;
+		LOG(1, "program list skin from %s\n", d);
+		return;
+	}
+}
+
+static void draw_header(const char *title)
+{
+	finder_load();
+	if (finder.bg.rgba)
+		gfx_blit(&fb, &finder.bg, 0, 0);
+	else
+		gfx_vgradient(&fb, 0, 0, TDX_LCD_W, TDX_LCD_H, 0x262626, 0x161616);
+	if (finder.header.rgba) {
+		gfx_blit(&fb, &finder.header, 0, 0);
+		if (finder.header_text && title)
+			gfx_text_aa(&fb, 10, 9, title, &gfx_font_f14b, 0xE0E0E0);
+	} else {
+		gfx_vgradient(&fb, 0, 0, TDX_LCD_W, 36, 0x5A5A5A, 0x0E0E0E);
+		gfx_text_aa(&fb, 10, 7, title ? title : "SpacePilot PRO", &gfx_font_f18b, 0xC8C8C8);
+	}
 }
 
 static void draw_idle(void)
 {
-	gfx_fill(&fb, 0, 0, TDX_LCD_W, TDX_LCD_H, 0x101418);
-	gfx_fill(&fb, 0, 0, TDX_LCD_W, 28, 0x1F6FB2);
-	gfx_text(&fb, 8, 7, "LCD MANAGER", 2, 0xFFFFFF);
-	draw_text_c(100, "NO PROGRAMS", 3, 0xE6E6E6);
-	draw_text_c(140, "RUNNING", 3, 0xE6E6E6);
+	draw_header(NULL);
+	const char *a = "No programs running";
+	gfx_text_aa(&fb, (TDX_LCD_W - gfx_text_aa_width(a, &gfx_font_f14)) / 2, 128, a,
+		    &gfx_font_f14, finder.font_rgb);
 }
 
 static void draw_menu(const int *idx, int n)
 {
-	gfx_fill(&fb, 0, 0, TDX_LCD_W, TDX_LCD_H, 0x101418);
-	gfx_fill(&fb, 0, 0, TDX_LCD_W, 28, 0x1F6FB2);
-	gfx_text(&fb, 8, 7, "PROGRAMS", 2, 0xFFFFFF);
-	int rows = 5, top = menu.sel >= rows ? menu.sel - rows + 1 : 0;
+	draw_header(db.family_name);
+	int ih = finder.item_h, top_y = 36;
+	int rows = (TDX_LCD_H - top_y) / ih;
+	int top = menu.sel >= rows ? menu.sel - rows + 1 : 0;
+	int sb = n > rows; /* scrollbar only when the list doesn't fit */
+	int right = sb ? TDX_LCD_W - 12 : TDX_LCD_W - 20;
 	for (int r = 0; r < rows && top + r < n; r++) {
-		int i = top + r, y = 36 + r * 36;
+		int i = top + r, y = top_y + r * ih;
 		const struct client *c = &cl[idx[i]];
-		int sel = i == menu.sel;
-		if (sel)
-			gfx_fill(&fb, 4, y, TDX_LCD_W - 8, 32, 0x1F6FB2);
-		char name[24];
+		if (i == menu.sel) { /* highlight bar (colours taken from the device photo) */
+			gfx_vgradient(&fb, 0, y + 2, right, ih - 4, 0x707070, 0x4C4C4C);
+			gfx_fill(&fb, 0, y + 2, right, 1, 0x8C8C8C);
+		}
+		int ix = finder.icon_off - 1, iy = y + (ih - 32) / 2;
+		if (c->icon.rgba)
+			gfx_blit(&fb, &c->icon, ix + (32 - c->icon.w) / 2, iy + (32 - c->icon.h) / 2);
+		else { /* no icon from the applet: a neutral tile */
+			gfx_vgradient(&fb, ix + 2, iy + 2, 28, 28, 0x5A5A5A, 0x3A3A3A);
+		}
+		const struct gfx_font *f = &gfx_font_f14;
+		char name[LM_NAME_MAX];
 		snprintf(name, sizeof name, "%s", c->name);
-		for (char *q = name; *q; q++)
-			if (*q >= 'a' && *q <= 'z')
-				*q -= 32;
-		gfx_text(&fb, 14, y + 6, name, 3, sel ? 0xFFFFFF : 0xC8C8C8);
-		if (idx[i] == shown_client)
-			gfx_fill(&fb, TDX_LCD_W - 18, y + 12, 8, 8, 0xFFC040);
+		int tx = ix + 32 + finder.text_off - 6, maxw = right - tx - 4;
+		while (gfx_text_aa_width(name, f) > maxw && strlen(name) > 1)
+			name[strlen(name) - 1] = 0;
+		gfx_text_aa(&fb, tx, y + (ih - f->height) / 2, name, f,
+			    i == menu.sel ? 0xF0F0F0 : finder.font_rgb);
 	}
-	gfx_fill(&fb, 0, TDX_LCD_H - 22, TDX_LCD_W, 22, 0x2A3038);
-	gfx_text(&fb, 6, TDX_LCD_H - 17, "UP/DOWN  OK RUN  CANCEL", 2, 0xE6E6E6);
+	if (sb) { /* vscroll_base + thumb */
+		int sx = TDX_LCD_W - 10, sy = top_y + 8, sh = TDX_LCD_H - top_y - 16;
+		if (finder.sb_base.rgba)
+			gfx_blit_part(&fb, &finder.sb_base, 0, 0, finder.sb_base.w, sh, sx, sy);
+		else
+			gfx_fill(&fb, sx + 4, sy, 1, sh, 0x505050);
+		int th = sh * rows / n, ty = sy + (sh - th) * top / (n - rows > 0 ? n - rows : 1);
+		if (finder.sb_mid.rgba) {
+			gfx_blit(&fb, &finder.sb_top, sx + 1, ty);
+			for (int yy = ty + finder.sb_top.h; yy < ty + th - finder.sb_bottom.h; yy += finder.sb_mid.h)
+				gfx_blit(&fb, &finder.sb_mid, sx + 1, yy);
+			gfx_blit(&fb, &finder.sb_bottom, sx + 1, ty + th - finder.sb_bottom.h);
+		} else {
+			gfx_fill(&fb, sx + 2, ty, 5, th, 0x2A8FD6);
+		}
+	}
 }
 
 static void draw_identify(void)
 {
-	gfx_fill(&fb, 0, 0, TDX_LCD_W, TDX_LCD_H, 0xFFFFFF);
-	gfx_fill(&fb, 8, 8, TDX_LCD_W - 16, TDX_LCD_H - 16, 0x1F6FB2);
-	draw_text_c(80, "3DCONNEXION", 3, 0xFFFFFF);
-	draw_text_c(124, "SPACEPILOT PRO", 3, 0xFFFFFF);
+	draw_header(NULL);
+	const char *a = "3Dconnexion", *b = db.family_name;
+	gfx_text_aa(&fb, (TDX_LCD_W - gfx_text_aa_width(a, &gfx_font_f18b)) / 2, 96, a,
+		    &gfx_font_f18b, 0xF0F0F0);
+	gfx_text_aa(&fb, (TDX_LCD_W - gfx_text_aa_width(b, &gfx_font_f14)) / 2, 128, b,
+		    &gfx_font_f14, finder.font_rgb);
 }
 
 static void blit_client(const struct client *c)
@@ -480,6 +596,7 @@ static void client_close(struct client *c)
 		close(c->fd);
 	free(c->frame);
 	free(c->rx);
+	gfx_img_free(&c->icon);
 	int was_shown = c - cl == shown_client;
 	memset(c, 0, sizeof *c);
 	c->fd = -1;
@@ -551,6 +668,24 @@ static void handle(struct client *c)
 		c->connected = 0;
 		dirty = 1;
 		break;
+	case LM_ICON: {
+		uint32_t w = len >= 8 ? u[0] : 0, h = len >= 8 ? u[1] : 0;
+		if (w < 1 || h < 1 || w > 64 || h > 64 || len != 8 + w * h * 4) {
+			reply(c, LM_ICON, LM_ERROR_INVALID_PARAMETER, NULL, 0);
+			break;
+		}
+		gfx_img_free(&c->icon);
+		c->icon.rgba = malloc(w * h * 4);
+		if (c->icon.rgba) {
+			memcpy(c->icon.rgba, c->rx + 8, w * h * 4);
+			c->icon.w = (int)w;
+			c->icon.h = (int)h;
+		}
+		reply(c, LM_ICON, LM_OK, NULL, 0);
+		if (menu.open)
+			dirty = 1;
+		break;
+	}
 	case LM_FAMILIES:
 		c->families = len >= 4 ? u[0] : 0;
 		reply(c, LM_FAMILIES, LM_OK, NULL, 0);
@@ -720,6 +855,46 @@ static void spawn(int prog)
 		_exit(127);
 	}
 	LOG(0, "started %s (%s), pid %d\n", p->name, p->path, (int)pid);
+}
+
+/* First run: register the installed 3Dconnexion applet ports like the Windows
+ * installer does (Function Keys, RSS Feeds, Picture Viewer; autostart). */
+static void seed_programs(const char *argv0)
+{
+	static const struct { const char *exe, *name; } apps[] = {
+		{"tdx-lcd-functionkeys", "Function Keys"},
+		{"tdx-lcd-rss", "RSS Feeds"},
+		{"tdx-lcd-pictures", "Picture Viewer"},
+	};
+	char self[PATH_MAX], dirs[4][PATH_MAX];
+	int nd = 0;
+	if (realpath(argv0, self) || realpath("/proc/self/exe", self)) {
+		char *s = strrchr(self, '/');
+		if (s) {
+			*s = 0;
+			snprintf(dirs[nd++], PATH_MAX, "%s", self);
+			/* running from the source tree: build/<arch>/ -> gui/ */
+			snprintf(dirs[nd++], PATH_MAX, "%.*s/../../gui", PATH_MAX - 16, self);
+		}
+	}
+	snprintf(dirs[nd++], PATH_MAX, "/usr/local/bin");
+	snprintf(dirs[nd++], PATH_MAX, "/usr/bin");
+	for (size_t a = 0; a < sizeof apps / sizeof apps[0]; a++)
+		for (int d = 0; d < nd; d++) {
+			char p[PATH_MAX + 64], real[PATH_MAX];
+			snprintf(p, sizeof p, "%.*s/%s", PATH_MAX - 64, dirs[d], apps[a].exe);
+			if (access(p, X_OK) || !realpath(p, real))
+				continue;
+			int i = lm_db_add(&db, real, apps[a].name, LGLCD_APPLET_CAP_QVGA_, 1, 1);
+			if (i == 0 && !db.manual_name[0] && strlen(real) < sizeof db.manual_path) {
+				memcpy(db.manual_path, real, strlen(real) + 1);
+				snprintf(db.manual_name, sizeof db.manual_name, "%s", apps[a].name);
+			}
+			LOG(0, "registered %s (%s)\n", apps[a].name, real);
+			break;
+		}
+	if (db.nprog)
+		save_db();
 }
 
 static void autostart_all(void)
@@ -919,7 +1094,9 @@ static void usage(void)
 	     "  -s  applet socket (default $XDG_RUNTIME_DIR/tdx-lcd.sock)\n"
 	     "  -d  settings database (default ~/.config/tdxd/lcdmgr.ini)\n"
 	     "  -t  tdxd control socket (default /run/tdxd.sock)\n"
-	     "  -F  virtual LCD: write frames to FILE.ppm instead of the device (testing)");
+	     "  -F  virtual LCD: write frames to FILE.ppm instead of the device (testing)\n"
+	     "  -A  3DxWare artwork directory (tdx-extract-3dxware-ui; default: the usual places)\n"
+	     "  -N  don't register the installed applets on first run");
 }
 
 int main(int argc, char **argv)
@@ -927,13 +1104,15 @@ int main(int argc, char **argv)
 	int opt;
 	sock_path[0] = 0;
 	lm_db_default_path(db_path, sizeof db_path);
-	while ((opt = getopt(argc, argv, "vs:d:t:F:Vh")) != -1) {
+	while ((opt = getopt(argc, argv, "vs:d:t:F:A:NVh")) != -1) {
 		switch (opt) {
 		case 'v': verbose++; break;
 		case 's': snprintf(sock_path, sizeof sock_path, "%s", optarg); break;
 		case 'd': snprintf(db_path, sizeof db_path, "%s", optarg); break;
 		case 't': snprintf(tdxd_sock, sizeof tdxd_sock, "%s", optarg); break;
 		case 'F': snprintf(fake_path, sizeof fake_path, "%s", optarg); break;
+		case 'A': snprintf(assets_dir, sizeof assets_dir, "%s", optarg); break;
+		case 'N': no_seed = 1; break;
 		case 'V': puts("tdx-lcdmgr " TDX_VERSION); return 0;
 		default: usage(); return opt == 'h' ? 0 : 2;
 		}
@@ -951,6 +1130,8 @@ int main(int argc, char **argv)
 	}
 	lm_db_defaults(&db);
 	int rc = lm_db_load(&db, db_path);
+	if (rc == -ENOENT && !no_seed)
+		seed_programs(argv[0]);
 	if (rc && rc != -ENOENT)
 		LOG(0, "cannot read %s: %s\n", db_path, strerror(-rc));
 

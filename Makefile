@@ -41,7 +41,7 @@ BUILD   := build/$(ARCH)
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx output process profile control \
+CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx font_aa output process profile control \
         lcdmgr_db lcdmgr_core
 CORE_OBJ := $(addprefix $(BUILD)/,$(addsuffix .o,$(CORE)))
 
@@ -61,7 +61,7 @@ $(BUILD)/tdxlcd.pic.o: src/tdxlcd.c src/tdxlcd.h src/lcdmgr_proto.h | $(BUILD)
 $(BUILD)/libtdxlcd.so: $(BUILD)/tdxlcd.pic.o
 	$(CC) -shared -pthread -Wl,-soname,libtdxlcd.so.1 $^ -o $@
 
-$(BUILD)/tdx-lcd-demo: $(BUILD)/tdx-lcd-demo.o $(BUILD)/libtdxlcd.a $(BUILD)/gfx.o
+$(BUILD)/tdx-lcd-demo: $(BUILD)/tdx-lcd-demo.o $(BUILD)/libtdxlcd.a $(BUILD)/gfx.o $(BUILD)/font_aa.o
 	$(CC) $(LDFLAGS) -pthread $^ -o $@
 
 $(BUILD)/%.o: src/%.c src/*.h | $(BUILD)
@@ -95,6 +95,14 @@ test-gui: $(BUILD)/tdxd
 test-lcdmgr: $(BUILD)/tdx-lcdmgr $(BUILD)/tdx-lcd-demo
 	python3 tests/test_lcdmgr.py $(BUILD)
 
+# The LCD applet ports (Function Keys, RSS Feeds, Picture Viewer)
+test-lcdapplets: $(BUILD)/tdx-lcdmgr
+	python3 tests/test_lcdapplets.py $(BUILD)
+
+# Regenerate src/font_aa.c (needs python3-gi with Pango and the DejaVu fonts)
+font:
+	python3 tools/gen_font.py > src/font_aa.c
+
 # Regenerate the device table from an extracted 3DxWare Base.xml
 devices:
 	@test -n "$(BASE_XML)" || (echo "usage: make devices BASE_XML=path/to/Base.xml"; exit 1)
@@ -112,6 +120,9 @@ install: all
 	install -Dm755 $(BUILD)/tdx-lcd-demo $(DESTDIR)$(PREFIX)/bin/tdx-lcd-demo
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-lcdmanager | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-lcdmanager
 	install -Dm644 gui/tdxlcd.py $(DESTDIR)$(PREFIX)/lib/tdxd/python/tdxlcd.py
+	install -Dm644 gui/lcdapplet.py $(DESTDIR)$(PREFIX)/lib/tdxd/python/lcdapplet.py
+	for a in tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do \
+	  install -Dm755 gui/$$a $(DESTDIR)$(PREFIX)/bin/$$a; done
 	install -Dm644 $(BUILD)/libtdxlcd.a $(DESTDIR)$(PREFIX)/lib/libtdxlcd.a
 	install -Dm755 $(BUILD)/libtdxlcd.so $(DESTDIR)$(PREFIX)/lib/libtdxlcd.so.1
 	ln -sf libtdxlcd.so.1 $(DESTDIR)$(PREFIX)/lib/libtdxlcd.so
@@ -146,7 +157,8 @@ dist:
 	$(STRIP) $(DIST)/bin/tdx-lcdmgr $(DIST)/bin/tdx-lcd-demo
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-lcdmanager > $(DIST)/bin/tdx-lcdmanager
 	mkdir -p $(DIST)/lib/python $(DIST)/include
-	cp gui/tdxlcd.py $(DIST)/lib/python/
+	cp gui/tdxlcd.py gui/lcdapplet.py $(DIST)/lib/python/
+	cp gui/tdx-lcd-functionkeys gui/tdx-lcd-rss gui/tdx-lcd-pictures $(DIST)/bin/
 	cp $(BUILD)/libtdxlcd.a $(DIST)/lib/
 	cp $(BUILD)/libtdxlcd.so $(DIST)/lib/libtdxlcd.so.1
 	cp src/tdxlcd.h $(DIST)/include/
@@ -180,4 +192,4 @@ release:
 clean:
 	rm -rf build
 
-.PHONY: all test test-gui test-lcdmgr install clean devices dist release
+.PHONY: all test test-gui test-lcdmgr test-lcdapplets font install clean devices dist release

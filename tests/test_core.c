@@ -1035,12 +1035,55 @@ static void test_lcdmgr(void)
 	      (TDX_SB_DOWN | TDX_SB_MENU | TDX_SB_CANCEL));
 }
 
+static void test_lcdcfg(void)
+{
+	const char *f = "test_lcdcfg.conf";
+	write_file(f, "key_V3DK_1 = KEY_LEFTCTRL+KEY_C\nkey_V3DK_2 = KEY_LEFTCTRL+KEY_LEFTSHIFT+KEY_P\n"
+		      "key_V3DK_ESC = KEY_ESC\naction_V3DK_PLUS = speed_up\nlcd_label_3 = Render\n"
+		      "disable_translation = yes\n");
+	static struct tdx_config c;
+	tdx_config_defaults(&c);
+	CHECK(tdx_config_load(&c, f) == 0);
+	unlink(f);
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	char t[64];
+	int idx[6] = {-1, -1, -1, -1, -1, -1};
+	const char *ids[6] = {"V3DK_1", "V3DK_2", "V3DK_3", "V3DK_ESC", "V3DK_PLUS", "V3DK_TOP"};
+	for (int i = 0; i < spp->nbuttons; i++)
+		for (int k = 0; k < 6; k++)
+			if (!strcmp(spp->buttons[i].v3dk, ids[k]))
+				idx[k] = i;
+	tdx_button_text(&c, spp, idx[0], t, sizeof t);
+	CHECK(!strcmp(t, "Copy"));
+	tdx_button_text(&c, spp, idx[1], t, sizeof t);
+	CHECK(!strcmp(t, "Ctrl+Shift+P"));
+	tdx_button_text(&c, spp, idx[2], t, sizeof t);
+	CHECK(!strcmp(t, "Render"));        /* explicit lcd_label_3 */
+	tdx_button_text(&c, spp, idx[3], t, sizeof t);
+	CHECK(!strcmp(t, "Esc Key"));
+	tdx_button_text(&c, spp, idx[4], t, sizeof t);
+	CHECK(!strcmp(t, "Increase Speed"));
+	tdx_button_text(&c, spp, idx[5], t, sizeof t);
+	CHECK(!strcmp(t, "Top View"));      /* sent to the application */
+	static char xml[16384];
+	struct tdx_lcdcfg_info info = {.app = "blender & co", .pressed = "Copy", .slider = 125,
+				       .lcd_level = 2, .led = 100};
+	int n = tdx_lcdcfg_xml(xml, sizeof xml, &c, spp, 0x46d, 0xc629, &info);
+	CHECK(n > 0 && strstr(xml, "<ProductID>c629</ProductID>"));
+	CHECK(strstr(xml, "<PanZoom>false</PanZoom>") && strstr(xml, "<Rotation>true</Rotation>"));
+	CHECK(strstr(xml, "<ApplicationName>blender &amp; co</ApplicationName>") != NULL);
+	CHECK(strstr(xml, "<ButtonPressed>Copy</ButtonPressed>") && strstr(xml, "<Slider>125</Slider>"));
+	CHECK(strstr(xml, "<V3DK>V3DK_1</V3DK>\n\t\t<Text>Copy</Text>") != NULL);
+	CHECK(tdx_lcdcfg_xml(xml, 64, &c, spp, 0x46d, 0xc629, &info) == -1);
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
 	test_rezero();
 	test_actions();
 	test_lcdmgr();
+	test_lcdcfg();
 	test_profiles();
 	test_control();
 	test_enterprise_lcd();

@@ -130,3 +130,40 @@ the artwork extracted from your own installer (`tdx-extract-3dxware-ui`, which
 now also copies LCDMon's `IDR_*` images) it uses LCDMon's sidebar icons, pane
 headers and textures; without it the same layout is drawn plainly. The tray icon
 and balloon options are stored but Linux has no LCDMon tray icon yet.
+
+## The program list on the LCD
+
+LCDMon draws its own list of running programs ("Finder") and skins it from
+`FinderConfig.txt` in 3Dconnexion's LCD applet package (`BrowserArtPath`):
+`client_list_header.png` (the "SpacePilot PRO" bar with the cube),
+`client_list_background.png`, `vscroll_*.png`, Arial 10 in 204,204,204, icon and
+text offset 36, rows 40 px (LCDMon clamps them to 0-120, 7-120 and 36-72).
+Each row shows the program's icon (LCDMon took it from the .exe; Linux applets
+send it with `tdxLcdSetIcon()` / `Connection.set_icon_png()`) and its name.
+`tdx-lcdmgr` reads the same files from the extracted artwork
+(`lcdapplets/finder/`); without them it draws a plain version of the same list.
+Rows follow the Programs list order. Text uses an anti-aliased DejaVu Sans
+table (`src/font_aa.c`, `make font`) so the static daemon needs no font library.
+
+## The applets
+
+The Windows applets are native x64 programs (Visual Studio 2012, GDI+) from
+`3DxLcdApplets64.msi`; the Linux ports are Python programs on `tdxlcd.py` and
+cairo/Pango that use the original artwork when it has been extracted
+(`tdx-extract-3dxware-ui` copies their bitmaps, PNGs and icons to
+`lcdapplets/<applet>/`). Each registers itself (persistent, autostart) and
+appears in the LCD Manager's Programs list; on its first start `tdx-lcdmgr`
+registers the installed ones in the Windows order.
+
+| Windows | Linux | Notes |
+|---|---|---|
+| `3DxLCD10SPPRO.exe` "Function Keys" | `tdx-lcd-functionkeys` | Three pages: keys 1-5 with the long-press keys 6-10 in blue; the views (T/B, F/BK, R/L, ISO1/ISO2, Roll); SHIFT ESC CTRL ALT MENU, speed, Pan/Zoom, Dominant, Rotation, FIT. LEFT/RIGHT switch pages. Header: the focused application's icon and name and the filter states (green on / red off). Speed and button-press pop-ups. |
+| (3DxService writes `LCDCfg.xml`) | tdxd writes `/run/tdxd/LCDCfg.xml` (`lcd_cfg`) | The same schema: Device, Filters, InfoLine (Text, Slider, ButtonPressed, ApplicationName, Image), and a `<Button><V3DK>…<Text>…` per button. The text is the explicit `lcd_label_N`, else the driver action, else the key binding (preset name or `Ctrl+Shift+P`), else the button's own function. Button presses and speed changes show for 3 s. |
+| `LcdLabelHelper.exe` | built into tdxd | Not a 3Dconnexion applet: a helper (MIT, 2026) that restores the button texts in `LCDCfg.xml` under 3DxWare 10.8 and later. tdxd writes them itself. |
+| `zz3DxLCD50RSSReader.exe` "RSS Feeds" | `tdx-lcd-rss` | RSS 2.0, RSS 1.0 (RDF) and Atom. One item at a time (title, date, text), next item every *Display duration* seconds; UP/DOWN items, LEFT/RIGHT feeds, OK opens the link. Configure…: the feed list (URL, optional short name), display duration, feed icon. Messages: *No Feeds Found!*, *Download failed*, *Invalid Rss Feed*. `~/.config/tdxd/rss.json`. |
+| `zz3DxLCD60Picture.exe` "Picture Viewer" | `tdx-lcd-pictures` | A folder (optionally subfolders, optionally random), every *Interval* seconds, transitions None / Fade / Wipe / Circle Wipe / Scatter or random; LEFT/RIGHT previous/next, OK pause/play. Default folder: 3Dconnexion's sample pictures. `~/.config/tdxd/pictures.json`. |
+
+Configure… in the LCD Manager opens each applet's settings dialog (GTK).
+The text positions over the original page backgrounds were placed against the
+artwork (the applets' drawing code was not traced line by line); the settings,
+messages and behaviour come from their resources, dialogs and decompiled code.

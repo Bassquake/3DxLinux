@@ -211,3 +211,206 @@ void tdx_render_ent_page(struct tdx_fb *fb, const struct tdx_config *cfg, const 
 		gfx_text(fb, x + 4 * s, y + rh / 2 + s, lab, s, fg);
 	}
 }
+
+/* ---- LCDCfg.xml: what the LCD applets show for each button ---- */
+
+#include <stdarg.h>
+#include "output.h"
+
+static const struct { const char *v3dk, *text; } button_names[] = {
+	{"V3DK_MENU", "Menu"}, {"V3DK_FIT", "Fit"}, {"V3DK_TOP", "Top View"},
+	{"V3DK_LEFT", "Left View"}, {"V3DK_RIGHT", "Right View"}, {"V3DK_FRONT", "Front View"},
+	{"V3DK_BOTTOM", "Bottom View"}, {"V3DK_BACK", "Back View"}, {"V3DK_ROLL_CW", "Roll +"},
+	{"V3DK_ROLL_CCW", "Roll -"}, {"V3DK_ISO1", "ISO1"}, {"V3DK_ISO2", "ISO2"},
+	{"V3DK_ESC", "Esc"}, {"V3DK_ALT", "Alt"}, {"V3DK_SHIFT", "Shift"}, {"V3DK_CTRL", "Ctrl"},
+	{"V3DK_ROTATE", "Rotation"}, {"V3DK_PANZOOM", "Pan Zoom"}, {"V3DK_DOMINANT", "Dominant"},
+	{"V3DK_PLUS", "Plus"}, {"V3DK_MINUS", "Minus"},
+};
+
+static const char *const action_texts[TDX_ACT_COUNT] = {
+	"", "Increase Speed", "Decrease Speed", "Dominant On/Off", "Rotation On/Off",
+	"Pan Zoom On/Off", "Calibrate", "Next LCD Page",
+};
+
+/* keyboard presets the settings panel offers, by evdev code chord */
+static const struct { const char *text; int keys[3]; } key_presets[] = {
+	{"Esc Key", {1}}, {"Ctrl Key", {29}}, {"Alt Key", {56}}, {"Shift Key", {42}},
+	{"Enter Key", {28}}, {"Tab Key", {15}}, {"Delete Key", {111}}, {"Space Key", {57}},
+	{"Copy", {29, 46}}, {"Cut", {29, 45}}, {"Paste", {29, 47}}, {"Undo", {29, 44}},
+	{"Redo", {29, 42, 44}}, {"Save", {29, 31}}, {"Select All", {29, 30}}, {"Find", {29, 33}},
+	{"Align Window Left", {125, 105}}, {"Align Window Right", {125, 106}},
+	{"Cycle Apps", {56, 15}}, {"Show Desktop", {125, 32}},
+};
+
+static const char *key_short(int code)
+{
+	static const struct { int code; const char *n; } t[] = {
+		{29, "Ctrl"}, {97, "Ctrl"}, {42, "Shift"}, {54, "Shift"}, {56, "Alt"}, {100, "AltGr"},
+		{125, "Super"}, {126, "Super"}, {1, "Esc"}, {28, "Enter"}, {57, "Space"}, {15, "Tab"},
+		{14, "Backspace"}, {111, "Delete"}, {110, "Insert"}, {102, "Home"}, {107, "End"},
+		{104, "Page Up"}, {109, "Page Down"}, {103, "Up"}, {108, "Down"}, {105, "Left"},
+		{106, "Right"},
+	};
+	for (size_t i = 0; i < sizeof t / sizeof t[0]; i++)
+		if (t[i].code == code)
+			return t[i].n;
+	return NULL;
+}
+
+static void key_name(int code, char *out, size_t len)
+{
+	static const char row1[] = "QWERTYUIOP", row2[] = "ASDFGHJKL", row3[] = "ZXCVBNM";
+	const char *s = key_short(code);
+	if (s)
+		snprintf(out, len, "%s", s);
+	else if (code >= 16 && code <= 25)
+		snprintf(out, len, "%c", row1[code - 16]);
+	else if (code >= 30 && code <= 38)
+		snprintf(out, len, "%c", row2[code - 30]);
+	else if (code >= 44 && code <= 50)
+		snprintf(out, len, "%c", row3[code - 44]);
+	else if (code >= 2 && code <= 11)
+		snprintf(out, len, "%d", code == 11 ? 0 : code - 1);
+	else if (code >= 59 && code <= 68)
+		snprintf(out, len, "F%d", code - 58);
+	else if (code == 87 || code == 88)
+		snprintf(out, len, "F%d", code - 76);
+	else
+		snprintf(out, len, "Key %d", code);
+}
+
+void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *dev, int idx,
+		     char *out, size_t len)
+{
+	const char *v3dk = (dev && idx < dev->nbuttons) ? dev->buttons[idx].v3dk : NULL;
+	out[0] = 0;
+	/* 1. explicit LCD label (lcd_label_N for V3DK_N, when set in the configuration) */
+	if (v3dk && !strncmp(v3dk, "V3DK_", 5) && v3dk[5] >= '1' && v3dk[5] <= '9') {
+		int n = atoi(v3dk + 5);
+		char dflt[16];
+		snprintf(dflt, sizeof dflt, "Key %d", n);
+		if (n >= 1 && n <= TDX_MAX_LABELS && cfg->lcd_label[n - 1][0] &&
+		    strcmp(cfg->lcd_label[n - 1], dflt)) {
+			snprintf(out, len, "%s", cfg->lcd_label[n - 1]);
+			return;
+		}
+	}
+	/* 2. driver action */
+	int act = tdx_action_for(cfg, dev, idx);
+	if (act > TDX_ACT_NONE && act < TDX_ACT_COUNT) {
+		snprintf(out, len, "%s", action_texts[act]);
+		return;
+	}
+	/* 3. key binding */
+	const struct tdx_keymap *km = tdx_keymap_for(cfg, dev, idx);
+	if (km) {
+		int n = 0;
+		while (n < 4 && km->keys[n])
+			n++;
+		for (size_t p = 0; p < sizeof key_presets / sizeof key_presets[0]; p++) {
+			int m = 0;
+			while (m < 3 && key_presets[p].keys[m])
+				m++;
+			if (m != n)
+				continue;
+			int same = 1;
+			for (int k = 0; k < n; k++)
+				same &= km->keys[k] == key_presets[p].keys[k];
+			if (same) {
+				snprintf(out, len, "%s", key_presets[p].text);
+				return;
+			}
+		}
+		size_t o = 0;
+		for (int k = 0; k < n && o < len; k++) {
+			char kn[24];
+			key_name(km->keys[k], kn, sizeof kn);
+			o += (size_t)snprintf(out + o, len - o, "%s%s", k ? "+" : "", kn);
+		}
+		return;
+	}
+	/* 4. the button's own function (sent to the application) */
+	for (size_t i = 0; v3dk && i < sizeof button_names / sizeof button_names[0]; i++)
+		if (!strcmp(v3dk, button_names[i].v3dk)) {
+			snprintf(out, len, "%s", button_names[i].text);
+			return;
+		}
+	if (v3dk && !strncmp(v3dk, "V3DK_", 5))
+		snprintf(out, len, "Button %s", v3dk + 5);
+	else
+		snprintf(out, len, "Button %d", idx + 1);
+}
+
+static void xml_esc(char *out, size_t len, const char *s)
+{
+	size_t o = 0;
+	for (; s && *s && o + 7 < len; s++) {
+		const char *r = *s == '&' ? "&amp;" : *s == '<' ? "&lt;" : *s == '>' ? "&gt;"
+			      : *s == '"' ? "&quot;" : NULL;
+		if (r)
+			o += (size_t)snprintf(out + o, len - o, "%s", r);
+		else
+			out[o++] = *s;
+	}
+	out[o] = 0;
+}
+
+struct sbuf { char *b; size_t len, o; int full; };
+
+static void sb_add(struct sbuf *s, const char *fmt, ...)
+{
+	if (s->full)
+		return;
+	va_list ap;
+	va_start(ap, fmt);
+	int n = vsnprintf(s->b + s->o, s->len - s->o, fmt, ap);
+	va_end(ap);
+	if (n < 0 || (size_t)n >= s->len - s->o)
+		s->full = 1;
+	else
+		s->o += (size_t)n;
+}
+
+int tdx_lcdcfg_xml(char *buf, size_t len, const struct tdx_config *cfg,
+		   const struct tdx_device_def *dev, uint16_t vid, uint16_t pid,
+		   const struct tdx_lcdcfg_info *info)
+{
+	struct sbuf s = {buf, len, 0, 0};
+	char a[512], b[512];
+	xml_esc(a, sizeof a, dev && dev->name ? dev->name : "");
+	sb_add(&s, "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
+		   "<LCDCfg Default=\"false\" CfgFormatVersion=\"1.30\" ThisFileVersion=\"1.20\""
+		   " Generator=\"tdxd\">\n<Device>\n\t<Name>%s</Name>\n\t<VendorID>%x</VendorID>\n"
+		   "\t<ProductID>%x</ProductID>\n", a, vid, pid);
+	sb_add(&s, "\t<Layout>\n\t\t<LCDIntensity>%d</LCDIntensity>\n\t\t<LEDIntensity>%d</LEDIntensity>\n"
+		   "\t\t<ButtonStyle></ButtonStyle>\n\t\t<TextSize></TextSize>\n\t</Layout>\n",
+	       info->lcd_level, info->led);
+	sb_add(&s, "\t<Filters>\n\t\t<Rotation>%s</Rotation>\n\t\t<PanZoom>%s</PanZoom>\n"
+		   "\t\t<Dominant>%s</Dominant>\n\t</Filters>\n",
+	       cfg->disable_rotation ? "false" : "true", cfg->disable_translation ? "false" : "true",
+	       cfg->dominant ? "true" : "false");
+	xml_esc(a, sizeof a, info->app ? info->app : "");
+	sb_add(&s, "\t<InfoLine>\n\t\t<Text>%s</Text>\n", a);
+	if (info->slider >= 0)
+		sb_add(&s, "\t\t<Slider>%d</Slider>\n", info->slider);
+	else
+		sb_add(&s, "\t\t<Slider/>\n");
+	xml_esc(b, sizeof b, info->pressed ? info->pressed : "");
+	if (b[0])
+		sb_add(&s, "\t\t<ButtonPressed>%s</ButtonPressed>\n", b);
+	else
+		sb_add(&s, "\t\t<ButtonPressed/>\n");
+	sb_add(&s, "\t\t<ApplicationName>%s</ApplicationName>\n", a);
+	xml_esc(b, sizeof b, info->app_image ? info->app_image : "");
+	sb_add(&s, "\t\t<Image>\n\t\t\t<Source>%s</Source>\n\t\t</Image>\n\t</InfoLine>\n", b);
+	for (int i = 0; dev && i < dev->nbuttons; i++) {
+		if (!dev->buttons[i].v3dk)
+			continue;
+		tdx_button_text(cfg, dev, i, b, sizeof b);
+		xml_esc(a, sizeof a, b);
+		sb_add(&s, "\t<Button>\n\t\t<V3DK>%s</V3DK>\n\t\t<Text>%s</Text>\n\t</Button>\n",
+		       dev->buttons[i].v3dk, a);
+	}
+	sb_add(&s, "</Device>\n</LCDCfg>\n");
+	return s.full ? -1 : (int)s.o;
+}

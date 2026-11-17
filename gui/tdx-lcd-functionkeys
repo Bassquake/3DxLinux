@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Function Keys - Linux port of 3Dconnexion's "Function Keys" LCD applet
+(3DxLCD10SPPRO.exe) for the SpacePilot PRO.
+
+Like the original it reads LCDCfg.xml - the file the driver writes with the
+focused application, the motion filters, an info line (button just pressed,
+speed) and the text of every button - and draws it on three pages:
+
+  1. keys 1-5, with the long-press keys 6-10 in blue
+  2. the view keys (T/B, F/BK, R/L, ISO1/ISO2, Roll +/-)
+  3. SHIFT ESC CTRL ALT MENU, speed -/+, Pan/Zoom, Dominant, Rotation, FIT
+
+LEFT / RIGHT switch pages. tdxd writes the file to /run/tdxd/LCDCfg.xml
+(lcd_cfg in tdxd.conf). The artwork comes from the original applet when it has
+been extracted from the 3DxWare installer (tdx-extract-3dxware-ui).
+"""
+
+import math
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import lcdapplet as la  # noqa: E402
+import cairo  # noqa: E402
+
+WHITE = (1, 1, 1)
+BLUE = la.rgb(0x2A9BE0)
+GREY = la.rgb(0xC8C8C8)
+
+# page layouts: (V3DK, x, y, colour, width) - text positions over the original backgrounds
+PAGES = [
+    ("bitmap_112", [("V3DK_1", 27, 50, WHITE, 128), ("V3DK_6", 27, 70, BLUE, 128),
+                    ("V3DK_2", 185, 50, WHITE, 128), ("V3DK_7", 185, 70, BLUE, 128),
+                    ("V3DK_5", 108, 113, WHITE, 132), ("V3DK_10", 108, 133, BLUE, 132),
+                    ("V3DK_3", 27, 174, WHITE, 128), ("V3DK_8", 27, 194, BLUE, 128),
+                    ("V3DK_4", 185, 174, WHITE, 128), ("V3DK_9", 185, 194, BLUE, 128)]),
+    ("bitmap_122", [("V3DK_ROLL_CW", 33, 47, WHITE, 120), ("V3DK_ROLL_CCW", 33, 70, BLUE, 120),
+                    ("V3DK_TOP", 187, 47, WHITE, 126), ("V3DK_BOTTOM", 187, 70, BLUE, 126),
+                    ("V3DK_ISO1", 118, 113, WHITE, 120), ("V3DK_ISO2", 118, 133, BLUE, 120),
+                    ("V3DK_FRONT", 31, 172, WHITE, 122), ("V3DK_BACK", 31, 194, BLUE, 122),
+                    ("V3DK_RIGHT", 187, 172, WHITE, 126), ("V3DK_LEFT", 187, 194, BLUE, 126)]),
+    ("bitmap_123", [("V3DK_SHIFT", 46, 50, GREY, 122), ("V3DK_ESC", 46, 85, GREY, 122),
+                    ("V3DK_CTRL", 46, 120, GREY, 122), ("V3DK_ALT", 46, 155, GREY, 122),
+                    ("V3DK_MENU", 46, 190, GREY, 122), ("SPEED", 210, 50, GREY, 106),
+                    ("V3DK_PANZOOM", 210, 85, GREY, 106), ("V3DK_DOMINANT", 210, 120, GREY, 106),
+                    ("V3DK_ROTATE", 210, 155, GREY, 106), ("V3DK_FIT", 210, 190, GREY, 106)]),
+]
+# labels baked into the page art, drawn when there is no artwork
+FALLBACK_KEYS = {"V3DK_1": "1", "V3DK_6": "6", "V3DK_2": "2", "V3DK_7": "7", "V3DK_5": "5",
+                 "V3DK_10": "10", "V3DK_3": "3", "V3DK_8": "8", "V3DK_4": "4", "V3DK_9": "9",
+                 "V3DK_ROLL_CW": "R+", "V3DK_ROLL_CCW": "R-", "V3DK_TOP": "T", "V3DK_BOTTOM": "B",
+                 "V3DK_ISO1": "ISO1", "V3DK_ISO2": "ISO2", "V3DK_FRONT": "F", "V3DK_BACK": "BK",
+                 "V3DK_RIGHT": "R", "V3DK_LEFT": "L", "V3DK_SHIFT": "SHIFT", "V3DK_ESC": "ESC",
+                 "V3DK_CTRL": "CTRL", "V3DK_ALT": "ALT", "V3DK_MENU": "MENU", "SPEED": "-+",
+                 "V3DK_PANZOOM": "PZ", "V3DK_DOMINANT": "DOM", "V3DK_ROTATE": "ROT", "V3DK_FIT": "FIT"}
+
+
+def lcdcfg_path():
+    return os.environ.get("TDX_LCDCFG", "/run/tdxd/LCDCfg.xml")
+
+
+def app_icon(name, exe):
+    """An icon file for the focused application (freedesktop locations)."""
+    cands = []
+    for n in filter(None, [name, os.path.basename(exe or "")]):
+        n = n.lower()
+        for size in ("48x48", "32x32", "64x64", "128x128", "256x256", "scalable"):
+            cands.append("/usr/share/icons/hicolor/%s/apps/%s.png" % (size, n))
+        cands.append("/usr/share/pixmaps/%s.png" % n)
+    for c in cands:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+class FunctionKeys(la.Applet):
+    NAME = "Function Keys"
+    ART = "functionkeys"
+    CONFIG = "functionkeys.json"
+    CONFIG_DEFAULTS = {"page": 0}
+    FPS = 5
+
+    def __init__(self):
+        super().__init__()
+        self.page = int(self.cfg.get("page", 0)) % 3
+        self.info = {"buttons": {}, "app": "", "image": "", "pressed": "", "slider": None,
+                     "rotation": True, "panzoom": True, "dominant": False}
+        self.mtime = 0
+        self.icon_path = None
+        self.icon = None
+
+    def tick(self, now):
+        try:
+            m = os.stat(lcdcfg_path()).st_mtime
+        except OSError:
+            return False
+        if m == self.mtime:
+            return False
+        self.mtime = m
+        try:
+            root = ET.parse(lcdcfg_path()).getroot()
+        except (ET.ParseError, OSError):
+            return False
+        dev = root.find("Device")
+        if dev is None:
+            return False
+        tf = lambda p: (dev.findtext(p) or "").strip().lower() == "true"  # noqa: E731
+        sl = (dev.findtext("InfoLine/Slider") or "").strip()
+        self.info = {
+            "buttons": {b.findtext("V3DK"): b.findtext("Text") or "" for b in dev.findall("Button")},
+            "app": dev.findtext("InfoLine/ApplicationName") or dev.findtext("InfoLine/Text") or "",
+            "image": dev.findtext("InfoLine/Image/Source") or "",
+            "pressed": dev.findtext("InfoLine/ButtonPressed") or "",
+            "slider": int(sl) if sl.isdigit() else None,
+            "rotation": tf("Filters/Rotation"), "panzoom": tf("Filters/PanZoom"),
+            "dominant": tf("Filters/Dominant"),
+        }
+        p = app_icon(self.info["app"], self.info["image"])
+        if p != self.icon_path:
+            self.icon_path = p
+            try:
+                self.icon = cairo.ImageSurface.create_from_png(p) if p else None
+            except (cairo.Error, OSError):
+                self.icon = None
+        return True
+
+    def on_buttons(self, pressed, held):
+        if pressed & la.RIGHT and self.page < 2:
+            self.page += 1
+        elif pressed & la.LEFT and self.page > 0:
+            self.page -= 1
+        else:
+            return
+        self.cfg["page"] = self.page
+        try:
+            self.save_config()
+        except OSError:
+            pass
+
+    def label(self, key):
+        b = self.info["buttons"]
+        if key == "SPEED":
+            mi, pl = b.get("V3DK_MINUS", ""), b.get("V3DK_PLUS", "")
+            if mi == "Decrease Speed" and pl == "Increase Speed":
+                return "Speed"
+            return "%s / %s" % (mi, pl) if mi or pl else ""
+        return b.get(key, "")
+
+    def draw_header(self, cr):
+        x0 = 56
+        if self.icon:  # application icon in the 48-px slot, scaled to fit
+            s = min(32.0 / self.icon.get_width(), 32.0 / self.icon.get_height())
+            cr.save()
+            cr.translate(24 - self.icon.get_width() * s / 2, 18 - self.icon.get_height() * s / 2)
+            cr.scale(s, s)
+            cr.set_source_surface(self.icon, 0, 0)
+            cr.paint()
+            cr.restore()
+        elif self.art.paint(cr, "bitmap_113", 0, 0):  # the applet's own icon (48x35)
+            pass
+        # motion filter status (green on / red off)
+        x = la.W - 2
+        for on, off_name, on_name in ((self.info["rotation"], "bitmap_119", "bitmap_118"),
+                                      (self.info["dominant"], "bitmap_117", "bitmap_116"),
+                                      (self.info["panzoom"], "bitmap_115", "bitmap_114")):
+            s = self.art.get(on_name if on else off_name)
+            if s:
+                x -= s.get_width()
+                cr.set_source_surface(s, x, 0)
+                cr.paint()
+        la.text(cr, x0, 0, self.info["app"] or "SpacePilot PRO", 15, (0.92, 0.92, 0.92),
+                bold=True, width=max(40, x - x0 - 4), valign_h=36)
+
+    def draw(self, cr):
+        bg, items = PAGES[self.page]
+        if not self.art.paint(cr, bg):
+            cr.set_source_rgb(0.1, 0.1, 0.1)
+            cr.paint()
+            la.default_header(cr, "")
+        self.draw_header(cr)
+        for key, x, y, col, w in items:
+            if not self.art.dir:
+                la.text(cr, x - 22, y, FALLBACK_KEYS.get(key, ""), 12, col, bold=True)
+            la.text(cr, x, y, self.label(key), 13, col, width=w)
+        if not self.art.dir:
+            la.text(cr, 15, 218, "Long press buttons" if self.page < 2 else "", 12, BLUE)
+            la.text(cr, 280, 218, ["▶", "◀ ▶", "◀"][self.page], 12, GREY)
+        self.draw_popup(cr)
+
+    def draw_popup(self, cr):
+        sl, pressed = self.info["slider"], self.info["pressed"]
+        if sl is not None:  # "Speed" pop-up with the segmented bar
+            box = self.art.get("bitmap_129")
+            bx, by = (la.W - 251) // 2, 58
+            if box:
+                cr.set_source_surface(box, bx, by)
+                cr.paint()
+            else:
+                cr.set_source_rgba(0.08, 0.08, 0.08, 0.95)
+                la.rounded(cr, bx, by, 251, 131, 8)
+                cr.fill()
+                la.text(cr, bx, by + 16, "Speed", 14, WHITE, width=251, align="center")
+            frac = max(0.0, min(1.0, (math.log10(max(sl, 1) / 100.0) + 1) / 2))
+            bar = self.art.get("bitmap_130")
+            if bar:
+                cr.save()
+                cr.rectangle(bx + 33, by + 75, 184 * frac, 11)
+                cr.clip()
+                cr.set_source_surface(bar, bx + 33, by + 75)
+                cr.paint()
+                cr.restore()
+            else:
+                cr.set_source_rgb(*BLUE)
+                cr.rectangle(bx + 33, by + 75, 184 * frac, 11)
+                cr.fill()
+        elif pressed:
+            box = self.art.get("bitmap_162")
+            bx, by = (la.W - 256) // 2, 70
+            if box:
+                cr.set_source_surface(box, bx, by)
+                cr.paint()
+            else:
+                cr.set_source_rgba(0.08, 0.08, 0.08, 0.95)
+                la.rounded(cr, bx, by, 256, 100, 8)
+                cr.fill()
+            la.text(cr, bx + 10, by, pressed, 18, WHITE, bold=True, width=236, align="center",
+                    valign_h=100)
+
+
+if __name__ == "__main__":
+    sys.exit(la.main(FunctionKeys))

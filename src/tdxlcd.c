@@ -459,3 +459,12 @@ DWORD lgLcdSetAsLCDForegroundApp(int device, int yes)
 	uint32_t r[2] = {d->srv, yes ? 1u : 0u};
 	return request(c, LM_FOREGROUND, r, sizeof r, NULL, 0, NULL, 0);
 }
+
+DWORD tdxLcdSetIcon(int connection, int width, int height, const BYTE *rgba)
+{
+	struct conn *c = conn_get(connection);
+	if (!c || !rgba || width < 1 || height < 1 || width > 64 || height > 64)
+		return LM_ERROR_INVALID_PARAMETER;
+	uint32_t h[2] = {(uint32_t)width, (uint32_t)height};
+	return request(c, LM_ICON, h, sizeof h, rgba, (uint32_t)(width * height * 4), NULL, 0);
+}

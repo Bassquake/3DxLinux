@@ -77,6 +77,7 @@ struct tdx_config {
 	/* per-application profiles */
 	char profile_dir[256];        /* directory of <name>.conf overlays */
 	char control_socket[108];     /* tdxctl / tdx-focus command socket */
+	char lcd_cfg[256];            /* LCDCfg.xml for the LCD applets ("" = off) */
 	char match[256];              /* profile files: comma-separated process names */
 };
 
