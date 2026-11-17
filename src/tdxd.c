@@ -53,7 +53,25 @@ struct dev_ctx {
 	int lcd_page;
 	int lcd_dirty;
 	long long last_motion_ms;
+	/* What was last sent, so a profile switch or reload only talks to the
+	 * device when something changed: a HID SET_REPORT the device does not
+	 * answer blocks write() for the 5 s timeout (and for good over a broken
+	 * usbip link), stalling every client. 0 = nothing sent yet. */
+	uint32_t led_sent, intensity_sent, bright_sent;
 };
+
+static void lcd_brightness_apply(struct dev_ctx *d);
+
+/* FNV-1a over a report, never 0 (0 means "not sent"). */
+static uint32_t report_sig(const void *p, size_t n, uint32_t h)
+{
+	const uint8_t *b = p;
+	if (!h)
+		h = 2166136261u;
+	for (size_t i = 0; i < n; i++)
+		h = (h ^ b[i]) * 16777619u;
+	return h ? h : 1;
+}
 
 static volatile sig_atomic_t g_quit, g_reload;
 static struct tdx_config cfg;
@@ -343,8 +361,8 @@ static void lcd_attach(struct dev_ctx *d)
 	rc = tdx_lcd_wait_ready(d->lcd, 20);
 	if (rc)
 		LOG(0, "LCD did not answer ping (%s); trying anyway\n", strerror(-rc));
-	if (cfg.lcd_brightness >= 0)
-		tdx_lcd_set_brightness(d->lcd, cfg.lcd_brightness);
+	d->bright_sent = 0; /* a (re)opened LCD gets the brightness again */
+	lcd_brightness_apply(d);
 	lcd_redraw(d);
 }
 
@@ -354,10 +372,27 @@ static void lcd_intensity_apply(struct dev_ctx *d)
 	uint8_t rep[2];
 	if (!tdx_lcd_intensity_report(d->node.def, cfg.lcd_brightness, rep))
 		return;
-	if (ioctl(d->fd, HIDIOCSFEATURE(2), rep) < 0)
+	uint32_t sig = report_sig(rep, sizeof rep, 0);
+	if (sig == d->intensity_sent)
+		return;
+	if (ioctl(d->fd, HIDIOCSFEATURE(2), rep) < 0) {
 		LOG(1, "LCD intensity write failed on %s: %s\n", d->node.devnode, strerror(errno));
-	else
+	} else {
+		d->intensity_sent = sig;
 		LOG(2, "LCD intensity %d%% on %s\n", rep[1], d->node.devnode);
+	}
+}
+
+/* SpacePilot PRO LCD backlight, only when it changed (or the LCD was reopened). */
+static void lcd_brightness_apply(struct dev_ctx *d)
+{
+	if (!d->lcd || cfg.lcd_brightness < 0)
+		return;
+	uint32_t sig = (uint32_t)cfg.lcd_brightness + 1;
+	if (sig == d->bright_sent)
+		return;
+	if (tdx_lcd_set_brightness(d->lcd, cfg.lcd_brightness) == 0)
+		d->bright_sent = sig;
 }
 
 static void led_apply(struct dev_ctx *d)
@@ -365,20 +400,31 @@ static void led_apply(struct dev_ctx *d)
 	if (tdx_has_rgb_leds(d->node.def)) {
 		uint8_t reps[TDX_RGB_RING_FIRST + TDX_RGB_NUM_RING + 2][8];
 		int n = tdx_rgb_plan(&cfg, d->node.def, reps, (int)(sizeof reps / sizeof reps[0]));
+		if (n <= 0)
+			return;
+		uint32_t sig = report_sig(reps, (size_t)n * sizeof reps[0], 0);
+		if (sig == d->led_sent)
+			return;
 		for (int i = 0; i < n; i++)
 			if (ioctl(d->fd, HIDIOCSFEATURE(8), reps[i]) < 0) {
 				LOG(1, "LED colour write failed on %s: %s\n", d->node.devnode,
 				    strerror(errno));
-				break;
+				return;
 			}
+		d->led_sent = sig;
 		LOG(2, "sent %d LED colour report(s)\n", n);
 		return;
 	}
 	uint8_t rep[2];
 	if (cfg.led < 0 || !tdx_led_report(d->node.def, cfg.led, rep))
 		return;
+	uint32_t sig = report_sig(rep, sizeof rep, 0);
+	if (sig == d->led_sent)
+		return;
 	if (write(d->fd, rep, sizeof rep) != (ssize_t)sizeof rep)
 		LOG(1, "LED write failed on %s: %s\n", d->node.devnode, strerror(errno));
+	else
+		d->led_sent = sig;
 }
 
 static void dev_close(struct dev_ctx *d)
@@ -516,8 +562,7 @@ static void lcdcfg_write(void)
 static void refresh_devices(void)
 {
 	for (int i = 0; i < ndev; i++) {
-		if (devs[i].lcd && cfg.lcd_brightness >= 0)
-			tdx_lcd_set_brightness(devs[i].lcd, cfg.lcd_brightness);
+		lcd_brightness_apply(&devs[i]);
 		led_apply(&devs[i]);
 		lcd_intensity_apply(&devs[i]);
 		lcd_redraw(&devs[i]);

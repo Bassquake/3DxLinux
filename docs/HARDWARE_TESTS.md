@@ -234,6 +234,7 @@ applet ports and used the artwork extracted from the 3DxWare installer.
 | Picture Viewer | **Pass:** slideshow of the 3Dconnexion sample pictures with transitions; LEFT/RIGHT, OK pause/play. |
 | Picture Viewer mini menu | **Pass:** the MENU key (white square) opens Configure... / Cancel; OK opened the settings dialog on the PC, the back arrow closed the menu. |
 | RSS Feeds, OK on a story | **Pass** after a fix: the program list keeps three entries. |
+| Function Keys app switch | **Pass:** `tdxctl focus` blender / freecad / gedit with two profiles: LCDCfg.xml and Function Keys follow each time (application name, the profile's labels, base labels for keys it leaves alone). A switch or reload sends nothing to the device unless the LED or brightness changes (strace). |
 | Taskbar icons (WSLg) | **Pass:** the settings window shows the 3Dconnexion logo and the LCD Manager LCDMon's icon, as on Windows; window dragging still works. |
 
 **Fixed during this test:** tdxd only wrote `LCDCfg.xml` after an input event;
@@ -244,6 +245,14 @@ the error escaped in the client library's reader thread, which took it for a
 lost connection, and the applet reconnected without closing the old one, so
 RSS Feeds showed twice in the program list. Callback errors no longer end a
 connection, and a dropped connection is closed before reconnecting.
+
+**Fixed during this test:** after the usbip link dropped (Windows already
+showed the device detached, WSL still attached), `tdxctl reload` hung tdxd
+for good: every profile switch and reload re-sent the LED report, a HID
+SET_REPORT that timed out, and the kernel's cancel of it never completed
+over the dead link (`D` state in `usb_kill_urb`; freed by detaching port 0
+in `/sys/devices/platform/vhci_hcd.0/detach`). tdxd now sends the LED,
+LCD brightness and Enterprise intensity reports only when they change.
 
 **Found during this test:** WSLg gives a Wayland window a generic taskbar
 icon even when its `.desktop` entry has the right one (WSLg made Start-menu
