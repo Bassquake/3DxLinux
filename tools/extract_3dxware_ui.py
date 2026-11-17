@@ -484,29 +484,33 @@ def theme_icon_files(out):
 
 def install_theme_icons(out, theme_root, apps_dir, system_apps=("/usr/local/share", "/usr/share")):
     """Put the window icons into the hicolor icon theme as tdxd-<key> and point
-    the installed .desktop entries at them. Wayland desktops (GNOME, KDE, WSLg)
+    the installed .desktop entries at the largest one. Wayland desktops (GNOME, KDE, WSLg)
     take a window's taskbar icon from the .desktop entry named like its app id
     (tdx-settings, tdx-lcdmanager, tdx-lcd-rss, ...), never from the window."""
     n = 0
-    keys = set()
+    largest = {}  # key -> (size, installed path)
     for key, size, path in theme_icon_files(out):
         d = os.path.join(theme_root, "hicolor", "%dx%d" % (size, size), "apps")
         os.makedirs(d, exist_ok=True)
-        shutil.copyfile(path, os.path.join(d, "tdxd-%s.png" % key))
-        keys.add(key)
+        dst = os.path.join(d, "tdxd-%s.png" % key)
+        shutil.copyfile(path, dst)
+        if size > largest.get(key, (0, None))[0]:
+            largest[key] = (size, os.path.abspath(dst))
         n += 1
     if n and shutil.which("gtk-update-icon-cache") and \
             os.path.isfile(os.path.join(theme_root, "hicolor", "index.theme")):
         subprocess.call(["gtk-update-icon-cache", "-q", "-f", os.path.join(theme_root, "hicolor")])
     for entry, key in DESKTOP_ICONS.items():
-        if key not in keys:
+        if key not in largest:
             continue
         for base in system_apps:
             src = os.path.join(base, "applications", entry + ".desktop")
             if not os.path.isfile(src):
                 continue
+            # an absolute path, not the theme name: WSLg (and some docks) only
+            # search /usr/share/icons, but every desktop accepts a file here
             with open(src) as f:
-                text = re.sub(r"(?m)^Icon=.*$", "Icon=tdxd-" + key, f.read())
+                text = re.sub(r"(?m)^Icon=.*$", "Icon=" + largest[key][1], f.read())
             # as root this rewrites the installed entry; as a user it is the
             # ~/.local/share/applications override, which wins over the system one
             os.makedirs(apps_dir, exist_ok=True)

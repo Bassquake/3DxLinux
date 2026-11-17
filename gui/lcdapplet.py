@@ -21,6 +21,11 @@ import time
 import cairo
 import gi
 
+# WSLg shows a Wayland window with a generic taskbar icon (it sends none for
+# it), but passes an X11 window's own icon through - so use X11 there.
+if os.path.isdir("/mnt/wslg") and "GDK_BACKEND" not in os.environ:
+    os.environ["GDK_BACKEND"] = "x11"
+
 gi.require_version("Pango", "1.0")
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Pango, PangoCairo  # noqa: E402

@@ -234,6 +234,7 @@ applet ports and used the artwork extracted from the 3DxWare installer.
 | Picture Viewer | **Pass:** slideshow of the 3Dconnexion sample pictures with transitions; LEFT/RIGHT, OK pause/play. |
 | Picture Viewer mini menu | **Pass:** the MENU key (white square) opens Configure... / Cancel; OK opened the settings dialog on the PC, the back arrow closed the menu. |
 | RSS Feeds, OK on a story | **Pass** after a fix: the program list keeps three entries. |
+| Taskbar icons (WSLg) | **Pass:** the settings window shows the 3Dconnexion logo and the LCD Manager LCDMon's icon, as on Windows; window dragging still works. |
 
 **Fixed during this test:** tdxd only wrote `LCDCfg.xml` after an input event;
 it now also writes it on an idle poll.
@@ -243,3 +244,12 @@ the error escaped in the client library's reader thread, which took it for a
 lost connection, and the applet reconnected without closing the old one, so
 RSS Feeds showed twice in the program list. Callback errors no longer end a
 connection, and a dropped connection is closed before reconnecting.
+
+**Found during this test:** WSLg gives a Wayland window a generic taskbar
+icon even when its `.desktop` entry has the right one (WSLg made Start-menu
+shortcuts with the correct icons, but sends none for the open window), while
+an X11 window's own icon gets through. The GUIs now use X11 under WSLg unless
+`GDK_BACKEND` is set. WSLg also only watches `/usr/local/share/applications`
+if it existed when WSLg started, only searches `/usr/share/icons` for icon
+names, and skips `NoDisplay` entries - so the extractor writes absolute icon
+paths into the `.desktop` entries. Wayland on a real desktop is untested.
