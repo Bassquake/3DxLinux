@@ -227,8 +227,15 @@ class Applet:
                     tdxlcd.NOTIFICATION_APPLET_DISABLED):
             self.dev = None
             if code == tdxlcd.NOTIFICATION_CLOSE_CONNECTION:
-                self.conn = None
+                self.drop_connection()
         self.dirty = True
+
+    def drop_connection(self):
+        """Give up the connection (closing it, so the manager forgets it before
+        the reconnect - otherwise the program list shows this applet twice)."""
+        conn, self.conn, self.dev = self.conn, None, None
+        if conn is not None:
+            conn.close()
 
     def connect(self):
         try:
@@ -256,7 +263,7 @@ class Applet:
             self.dev = None
             return False
         except OSError:
-            self.conn = self.dev = None
+            self.drop_connection()
             return False
 
     def render(self):
@@ -292,7 +299,7 @@ class Applet:
                 except tdxlcd.LcdError:
                     self.dev = None
                 except OSError:
-                    self.conn = self.dev = None
+                    self.drop_connection()
             time.sleep(1.0 / self.FPS)
 
     def snapshot(self, path):

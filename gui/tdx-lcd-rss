@@ -187,8 +187,11 @@ class Rss(la.Applet):
         elif pressed & la.OK and n:
             link = st["items"][self.ii % n][3]
             if link.startswith(("http://", "https://")):
-                subprocess.Popen(["xdg-open", link], stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                try:  # no xdg-open (a bare system, WSL): nothing to open the link with
+                    subprocess.Popen(["xdg-open", link], stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, start_new_session=True)
+                except OSError:
+                    pass
         self.shown_at = time.time()
 
     # drawing

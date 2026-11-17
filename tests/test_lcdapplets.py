@@ -215,6 +215,32 @@ def main():
             time.sleep(0.3)
         check(names == ["Function Keys", "Picture Viewer", "RSS Feeds"],
               "the three applets connect: %s" % names)
+        # an applet callback that fails (RSS: no xdg-open) must not drop the
+        # connection - that made the applet reconnect and appear twice in the list
+        import contextlib
+        import io
+
+        def boom(_b):
+            raise FileNotFoundError("xdg-open")
+        c = tdxlcd.Connection("Crashy", path=sock)
+        cd = c.open(tdxlcd.DEVICE_QVGA, on_buttons=boom)
+        cd.update(bytes(320 * 240 * 4))
+        i = [q["index"] for q in tdxlcd.status(sock)["programs"] if q["name"] == "Crashy"][0]
+        tdxlcd.admin("select %d" % i, sock)
+        cd.set_foreground(True)
+        time.sleep(0.3)
+        with contextlib.redirect_stderr(io.StringIO()):
+            tdxlcd.admin("press 400 0", sock)
+            time.sleep(0.5)
+        alive = True
+        try:
+            c.enumerate()
+        except tdxlcd.LcdError:
+            alive = False
+        n = sum(q["name"] == "Crashy" for q in tdxlcd.status(sock)["programs"] if q["running"])
+        check(alive and n == 1, "a failing button callback keeps the connection (alive=%s, listed %d)"
+              % (alive, n))
+        c.close()
         for q in procs:
             q.terminate()
         mgr.terminate()

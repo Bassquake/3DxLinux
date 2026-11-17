@@ -232,6 +232,14 @@ applet ports and used the artwork extracted from the 3DxWare installer.
 | Function Keys | **Pass:** application name in the header (`tdxctl focus blender`), keys 1-5 with 6-10 in blue; LEFT/RIGHT switch the three pages; +/- show the Speed pop-up; a function key shows its text. |
 | RSS Feeds | **Pass:** "No Feeds Found!" without feeds; after adding a feed with Configure... (LCD Manager → Programs) its items appeared on the LCD. |
 | Picture Viewer | **Pass:** slideshow of the 3Dconnexion sample pictures with transitions; LEFT/RIGHT, OK pause/play. |
+| Picture Viewer mini menu | **Pass:** the MENU key (white square) opens Configure... / Cancel; OK opened the settings dialog on the PC, the back arrow closed the menu. |
+| RSS Feeds, OK on a story | **Pass** after a fix: the program list keeps three entries. |
 
 **Fixed during this test:** tdxd only wrote `LCDCfg.xml` after an input event;
 it now also writes it on an idle poll.
+
+**Fixed during this test:** OK on an RSS story ran `xdg-open`, which WSL lacks;
+the error escaped in the client library's reader thread, which took it for a
+lost connection, and the applet reconnected without closing the old one, so
+RSS Feeds showed twice in the program list. Callback errors no longer end a
+connection, and a dropped connection is closed before reconnecting.

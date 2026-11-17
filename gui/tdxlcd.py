@@ -22,6 +22,7 @@ import os
 import socket
 import struct
 import threading
+import traceback
 
 VERSION = 1
 CONNECT, DISCONNECT, ENUMERATE, OPEN, CLOSE, UPDATE, FOREGROUND, READBUTTONS, FAMILIES, ICON = range(1, 11)
@@ -90,6 +91,14 @@ class Connection:
             CONNECT, struct.pack("<III", VERSION, capabilities, flags) + name.encode()[:127])[:4])
 
     # ---- plumbing
+    @staticmethod
+    def _callback(fn, *args):
+        """Run an applet callback; its errors must not look like a lost connection."""
+        try:
+            fn(*args)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+
     def _reader(self):
         try:
             while True:
@@ -105,18 +114,22 @@ class Connection:
                     if d:
                         d.buttons = b
                         if d.on_buttons:
-                            d.on_buttons(b)
+                            self._callback(d.on_buttons, b)
                 elif t == EV_CONFIGURE and self.on_configure:
-                    self.on_configure()
+                    self._callback(self.on_configure)
                 elif t == EV_NOTIFY and self.on_notify:
-                    self.on_notify(*struct.unpack("<5I", data[:20]))
+                    self._callback(self.on_notify, *struct.unpack("<5I", data[:20]))
         except (OSError, ConnectionError, struct.error):
             pass
         with self._cv:
             self._dead = True
             self._cv.notify_all()
+        try:  # make sure the manager drops this connection too
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         if self.on_notify:
-            self.on_notify(NOTIFICATION_CLOSE_CONNECTION, 0, 0, 0, 0)
+            self._callback(self.on_notify, NOTIFICATION_CLOSE_CONNECTION, 0, 0, 0, 0)
 
     def _request(self, t, payload=b"", op=None):
         with self._lock:
