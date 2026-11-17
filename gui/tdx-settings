@@ -924,21 +924,23 @@ class Panel:
         self.updating = False
         self.lines = []
         w, h = self.size
-        self.box = Gtk.Overlay()
+        # EventBox root: clicks that no control takes bubble up here and move
+        # the (undecorated) window, like dragging 3DxWare's panel anywhere.
+        self.box = Gtk.EventBox()
         self.box.get_style_context().add_class("tdx")
         self.box.set_size_request(w, h)
+        self.box.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.box.connect("button-press-event", self.on_drag)
+        overlay = Gtk.Overlay()
+        self.box.add(overlay)
         self.bg = Gtk.DrawingArea()
         self.bg.set_size_request(w, h)
         self.bg.connect("draw", lambda _w, cr: paint_background(cr, w, h, self.header_h,
                                                                self.lines))
-        self.bg.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
-        self.bg.connect("button-press-event", self.on_drag)
-        self.box.add(self.bg)
+        overlay.add(self.bg)
         self.fix = Gtk.Fixed()
-        self.box.add_overlay(self.fix)
-        self.box.set_overlay_pass_through(self.fix, False)
-        self.fix.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
-        self.fix.connect("button-press-event", self.on_drag)
+        overlay.add_overlay(self.fix)
+        overlay.set_overlay_pass_through(self.fix, False)
         # window buttons (the windows are undecorated, like 3DxWare's)
         self.min_btn = Gtk.Button(label="" if ASSETS.ui("SmartUI_BTN_Min") else "–")
         self.min_btn.get_style_context().add_class("tdx-min")
