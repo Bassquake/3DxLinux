@@ -183,7 +183,7 @@ class FunctionKeys(la.Applet):
         for key, x, y, col, w in items:
             if not self.art.dir:
                 la.text(cr, x - 22, y, FALLBACK_KEYS.get(key, ""), 12, col, bold=True)
-            la.text(cr, x, y, self.label(key), 14, col, width=w)
+            la.text(cr, x, y, self.label(key), 16, col, width=w)
         if not self.art.dir:
             la.text(cr, 15, 218, "Long press buttons" if self.page < 2 else "", 12, BLUE)
             la.text(cr, 280, 218, ["▶", "◀ ▶", "◀"][self.page], 12, GREY)
