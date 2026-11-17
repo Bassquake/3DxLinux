@@ -139,10 +139,38 @@ attached, Windows and 3DxWare cannot use it.
 5. **Give it back.** Run `usbipd detach --busid <id>`, then
    `usbipd unbind --busid <id>` as admin. Windows reloads its drivers.
 
+## Settings panel (`tdx-settings`)
+
+`tdx-settings` is a GTK 3 port of the 3DxWare control panel: the main window
+(profile, device, Speed), **Advanced Settings**, **Buttons**, **LCD Manager** and
+**About** ("More ›"). It edits the same files as the table below, keeps their
+comments, and runs `tdxctl reload` after each change. Files in `/etc` that you
+cannot write are saved through `pkexec tdx-settings-helper` when you close a
+window (one administrator prompt). The drop-down at the top picks the profile
+being edited: the defaults or a per-application profile (and "New profile…"
+creates one for the focused application).
+
+| Main window | Advanced Settings |
+|---|---|
+| ![main](docs/screenshots/tdx-settings-main.png) | ![advanced](docs/screenshots/tdx-settings-advanced.png) |
+
+| Buttons |
+|---|
+| ![buttons](docs/screenshots/tdx-settings-buttons.png) |
+
+| LCD Manager | About |
+|---|---|
+| ![lcd](docs/screenshots/tdx-settings-lcd.png) | ![about](docs/screenshots/tdx-settings-about.png) |
+
+It needs Python 3 with PyGObject: `sudo apt install python3-gi python3-gi-cairo
+gir1.2-gtk-3.0` (Fedora: `python3-gobject gtk3`). The artwork is drawn by the
+program; no 3Dconnexion images are used. The Buttons window currently shows the
+SpacePilot Pro layout. `tdx-settings --snapshot DIR` renders every window to PNG.
+
 ## Settings (compared with 3DxWare on Windows)
 
-Everything is set in `/etc/tdxd.conf`; apply changes with `tdxctl reload` or
-`systemctl reload tdxd`.
+Everything is set in `/etc/tdxd.conf` (or with `tdx-settings`); apply changes
+with `tdxctl reload` or `systemctl reload tdxd`.
 
 | 3DxWare setting | tdxd |
 |---|---|
@@ -152,7 +180,8 @@ Everything is set in `/etc/tdxd.conf`; apply changes with `tdxctl reload` or
 | Zoom direction | `map_ty = tz` + `map_tz = ty` |
 | LEDs Active | `led` |
 | **Calibrate** | `tdxctl calibrate`, `calibrate_button`, or `calibrate_on_start` |
-| Buttons | `key_<V3DK id> = KEY [+ KEY …]` (or `none`) |
+| Buttons: keystrokes | `key_<V3DK id> = KEY [+ KEY …]` (or `none`) |
+| Buttons: Increase/Decrease Speed, Dominant/Rotation/Pan Zoom On/Off, Calibrate | `action_<V3DK id> = speed_up \| speed_down \| dominant \| rotation \| panzoom \| calibrate` (handled by tdxd, not sent to the application; the shipped config binds +, −, DOM, LOCK and PAN ZOOM like 3DxWare) |
 | LCD Manager | `lcd_brightness`, `lcd_label_N`, `lcd_image` |
 | **Per-application settings** | `/etc/tdxd.d/<name>.conf` profiles |
 
@@ -251,6 +280,7 @@ tdx-lcd bmp sp4LCD.bmp                    # Giotto: legacy 0x13 path (24 bpp BMP
 | x86_64 and arm64 builds | Compile without warnings |
 | SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, the daemon's key page with SHIFT paging, and **Blender 3.0.1** navigation and view buttons through libspnav |
 | SpaceMouse Enterprise and Giotto | Not verified on hardware (no device available) |
+| `tdx-settings` panel and `action_*` button actions | Unit-tested (`make test`, `make test-gui`: the GUI's edits are parsed by tdxd without warnings); actions not yet pressed on hardware |
 
 `docs/PROTOCOL.md` lists the open items.
 

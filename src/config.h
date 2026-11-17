@@ -10,6 +10,28 @@ struct tdx_keymap {
 	int keys[4];    /* evdev KEY_* codes, chord, 0-terminated */
 };
 
+/* Built-in button actions (3DxWare's driver actions), set with action_<V3DK> = NAME */
+enum tdx_action {
+	TDX_ACT_NONE = 0,
+	TDX_ACT_SPEED_UP,     /* "Increase Speed"   */
+	TDX_ACT_SPEED_DOWN,   /* "Decrease Speed"   */
+	TDX_ACT_DOMINANT,     /* "Dominant On/Off"  */
+	TDX_ACT_ROTATION,     /* "Rotation On/Off"  */
+	TDX_ACT_PANZOOM,      /* "Pan Zoom On/Off"  */
+	TDX_ACT_CALIBRATE,    /* "Calibrate" (Driver_RezeroDevice) */
+	TDX_ACT_LCD_NEXT,     /* Giotto: slide to the next LCD page */
+	TDX_ACT_COUNT
+};
+#define TDX_MAX_ACTIONS 64
+
+struct tdx_button_action {
+	char v3dk[32];
+	int action;
+};
+
+const char *tdx_action_name(int action);
+int tdx_action_from_name(const char *name);
+
 #define TDX_MAX_LEDCOLOR 64
 #define TDX_MAX_LABELS 48 /* 4 Giotto slide pages x 12 keys */
 
@@ -46,6 +68,8 @@ struct tdx_config {
 	char lcd_image[256];      /* optional 320x240 PPM shown instead of labels */
 	struct tdx_keymap keymap[TDX_MAX_KEYMAP];
 	int nkeymap;
+	struct tdx_button_action actions[TDX_MAX_ACTIONS];
+	int nactions;
 	int verbose;
 	/* calibration (HIDDev.dll UdDevRezero: feature report {0x07, 0x00}) */
 	int calibrate_on_start;

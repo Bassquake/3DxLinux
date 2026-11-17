@@ -545,6 +545,10 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 					    "unknown",
 #endif
 					    profile_name(active_profile), app ? app : "-", src, ndev);
+		o += (size_t)snprintf(reply + o, len - o,
+				      "speed %.3f\npanzoom %s\nrotation %s\ndominant %s\n",
+				      cfg.sensitivity, cfg.disable_translation ? "off" : "on",
+				      cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off");
 		for (int i = 0; i < ndev && o < len; i++)
 			o += (size_t)snprintf(reply + o, len - o, "  %s [%04x:%04x] %s firmware %x.%02x\n",
 					      devs[i].node.def->name, devs[i].node.vid,
@@ -600,6 +604,22 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 		int p = d->st.btn[i];
 		const char *v3dk = d->node.def->nbuttons ? d->node.def->buttons[i].v3dk : NULL;
 		LOG(2, "button %d (%s) %s\n", i + 1, v3dk ? v3dk : "-", p ? "down" : "up");
+		int act = tdx_action_for(&cfg, d->node.def, i);
+		if (act != TDX_ACT_NONE) {
+			/* driver action: consumed here, like 3DxWare (not sent to applications) */
+			if (!p)
+				continue;
+			if (tdx_apply_action(&cfg, act))
+				LOG(0, "%s: speed %.2f, pan/zoom %s, rotation %s, dominant %s\n",
+				    tdx_action_name(act), cfg.sensitivity,
+				    cfg.disable_translation ? "off" : "on",
+				    cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off");
+			else if (act == TDX_ACT_CALIBRATE)
+				device_rezero(d);
+			else if (act == TDX_ACT_LCD_NEXT && d->glcd)
+				gio_slide_next(d);
+			continue;
+		}
 		const struct tdx_keymap *km = tdx_keymap_for(&cfg, d->node.def, i);
 		if (km)
 			tdx_uinput_keys(&d->ui, km->keys, p);

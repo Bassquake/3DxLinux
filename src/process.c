@@ -43,6 +43,51 @@ const struct tdx_keymap *tdx_keymap_for(const struct tdx_config *cfg,
 	return NULL;
 }
 
+int tdx_action_for(const struct tdx_config *cfg, const struct tdx_device_def *dev, int idx)
+{
+	char generic[32];
+	snprintf(generic, sizeof generic, "BUTTON_%d", idx + 1);
+	const char *v3dk = (dev && idx < dev->nbuttons) ? dev->buttons[idx].v3dk : NULL;
+	for (int i = 0; i < cfg->nactions; i++) {
+		const char *n = cfg->actions[i].v3dk;
+		if ((v3dk && !strcasecmp(n, v3dk)) || !strcasecmp(n, generic))
+			return cfg->actions[i].action;
+	}
+	return TDX_ACT_NONE;
+}
+
+/* 3DxWare's speed buttons step the global speed; 1.25x per press, clamped. */
+#define TDX_SPEED_STEP 1.25
+#define TDX_SPEED_MIN 0.05
+#define TDX_SPEED_MAX 20.0
+
+int tdx_apply_action(struct tdx_config *cfg, int action)
+{
+	switch (action) {
+	case TDX_ACT_SPEED_UP:
+		cfg->sensitivity *= TDX_SPEED_STEP;
+		if (cfg->sensitivity > TDX_SPEED_MAX)
+			cfg->sensitivity = TDX_SPEED_MAX;
+		return 1;
+	case TDX_ACT_SPEED_DOWN:
+		cfg->sensitivity /= TDX_SPEED_STEP;
+		if (cfg->sensitivity < TDX_SPEED_MIN)
+			cfg->sensitivity = TDX_SPEED_MIN;
+		return 1;
+	case TDX_ACT_DOMINANT:
+		cfg->dominant = !cfg->dominant;
+		return 1;
+	case TDX_ACT_ROTATION:
+		cfg->disable_rotation = !cfg->disable_rotation;
+		return 1;
+	case TDX_ACT_PANZOOM:
+		cfg->disable_translation = !cfg->disable_translation;
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 /* LED index for a configured name: V3DK id via the device's <LEDNumber>, or "LED_n". */
 static int led_index_for(const struct tdx_device_def *dev, const char *name)
 {

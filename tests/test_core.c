@@ -907,10 +907,54 @@ static void test_control(void)
 	CHECK(tdx_ctl_request("no_such.sock", "status", reply, sizeof reply) < 0);
 }
 
+static void test_actions(void)
+{
+	const char *f = "test_actions.conf";
+	write_file(f, "action_V3DK_PLUS = speed_up\naction_V3DK_MINUS = Speed_Down\n"
+		      "action_V3DK_DOMINANT = dominant\naction_V3DK_ROTATE = rotation\n"
+		      "action_V3DK_PANZOOM = panzoom\naction_V3DK_MENU = calibrate\n"
+		      "action_V3DK_MENU = none\naction_BUTTON_3 = lcd_next\n"
+		      "action_V3DK_FIT = bogus\n");
+	static struct tdx_config c;
+	tdx_config_defaults(&c);
+	CHECK(tdx_config_load(&c, f) == 0);
+	unlink(f);
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	int plus = -1, minus = -1, dom = -1, menu = -1, fit = -1;
+	for (int i = 0; i < spp->nbuttons; i++) {
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_PLUS")) plus = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_MINUS")) minus = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_DOMINANT")) dom = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_MENU")) menu = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_FIT")) fit = i;
+	}
+	CHECK(tdx_action_for(&c, spp, plus) == TDX_ACT_SPEED_UP);
+	CHECK(tdx_action_for(&c, spp, minus) == TDX_ACT_SPEED_DOWN);
+	CHECK(tdx_action_for(&c, spp, menu) == TDX_ACT_NONE); /* "none" replaced calibrate */
+	CHECK(tdx_action_for(&c, spp, fit) == TDX_ACT_NONE);  /* unknown name ignored */
+	CHECK(tdx_action_for(&c, spp, 2) == TDX_ACT_LCD_NEXT); /* generic BUTTON_3 */
+	CHECK(!strcmp(tdx_action_name(TDX_ACT_PANZOOM), "panzoom"));
+	CHECK(tdx_action_from_name("ROTATION") == TDX_ACT_ROTATION && tdx_action_from_name("x") < 0);
+
+	c.sensitivity = 1.0;
+	CHECK(tdx_apply_action(&c, TDX_ACT_SPEED_UP) && c.sensitivity == 1.25);
+	CHECK(tdx_apply_action(&c, TDX_ACT_SPEED_DOWN) && c.sensitivity == 1.0);
+	for (int i = 0; i < 40; i++)
+		tdx_apply_action(&c, TDX_ACT_SPEED_DOWN);
+	CHECK(c.sensitivity == 0.05);
+	CHECK(tdx_apply_action(&c, TDX_ACT_DOMINANT) && c.dominant == 1);
+	CHECK(tdx_apply_action(&c, TDX_ACT_DOMINANT) && c.dominant == 0);
+	CHECK(tdx_apply_action(&c, TDX_ACT_ROTATION) && c.disable_rotation == 1);
+	CHECK(tdx_apply_action(&c, TDX_ACT_PANZOOM) && c.disable_translation == 1);
+	CHECK(!tdx_apply_action(&c, TDX_ACT_CALIBRATE) && !tdx_apply_action(&c, TDX_ACT_LCD_NEXT));
+	(void)dom;
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
 	test_rezero();
+	test_actions();
 	test_profiles();
 	test_control();
 	test_enterprise_lcd();

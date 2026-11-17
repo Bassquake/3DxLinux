@@ -34,6 +34,23 @@ void tdx_config_defaults(struct tdx_config *c)
 	snprintf(c->control_socket, sizeof c->control_socket, "/run/tdxd.sock");
 }
 
+static const char *const action_names[TDX_ACT_COUNT] = {
+	"none", "speed_up", "speed_down", "dominant", "rotation", "panzoom", "calibrate", "lcd_next",
+};
+
+const char *tdx_action_name(int action)
+{
+	return action > 0 && action < TDX_ACT_COUNT ? action_names[action] : "none";
+}
+
+int tdx_action_from_name(const char *name)
+{
+	for (int i = 0; i < TDX_ACT_COUNT; i++)
+		if (!strcasecmp(name, action_names[i]))
+			return i;
+	return -1;
+}
+
 int tdx_config_lcd_pages(const struct tdx_config *c)
 {
 	int p = (c->lcd_label_max + 11) / 12;
@@ -237,6 +254,22 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 				snprintf(c->lcd_label[n - 1], sizeof c->lcd_label[0], "%s", v);
 				if (n > c->lcd_label_max)
 					c->lcd_label_max = n;
+			}
+		} else if (!strncmp(k, "action_", 7)) {
+			int act = tdx_action_from_name(v);
+			if (act < 0) {
+				fprintf(stderr, "%s:%d: unknown action '%s'\n", path, ln, v);
+				continue;
+			}
+			struct tdx_button_action *a = NULL;
+			for (int i = 0; i < c->nactions; i++)
+				if (!strcasecmp(c->actions[i].v3dk, k + 7))
+					a = &c->actions[i];
+			if (!a && c->nactions < TDX_MAX_ACTIONS)
+				a = &c->actions[c->nactions++];
+			if (a) {
+				snprintf(a->v3dk, sizeof a->v3dk, "%s", k + 7);
+				a->action = act; /* "none" (0) clears a base action */
 			}
 		} else if (!strncmp(k, "key_", 4)) {
 			/* later files override earlier ones; "none" removes the binding */

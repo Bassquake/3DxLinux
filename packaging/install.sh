@@ -14,8 +14,12 @@ fi
 if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
 	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
+	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
+	      "$PREFIX/share/applications/tdx-settings.desktop" \
+	      /usr/share/polkit-1/actions/org.tdxd.settings.policy \
 	      /etc/udev/rules.d/99-3dconnexion-tdxd.rules /etc/systemd/system/tdxd.service \
 	      /etc/systemd/user/tdx-focus.service /etc/tdxd.d/blender.conf.example
+	rmdir "$PREFIX/lib/tdxd" 2>/dev/null || true
 	udevadm control --reload 2>/dev/null || true
 	systemctl daemon-reload 2>/dev/null || true
 	echo "removed (kept /etc/tdxd.conf and any profiles in /etc/tdxd.d)"
@@ -26,6 +30,12 @@ install -Dm755 bin/tdxd    "$PREFIX/bin/tdxd"
 install -Dm755 bin/tdx-lcd "$PREFIX/bin/tdx-lcd"
 install -Dm755 bin/tdxctl  "$PREFIX/bin/tdxctl"
 install -Dm755 bin/tdx-focus "$PREFIX/bin/tdx-focus"
+# settings panel (Python 3 + GTK 3: python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)
+install -Dm755 bin/tdx-settings "$PREFIX/bin/tdx-settings"
+install -Dm755 lib/tdx-settings-helper "$PREFIX/lib/tdxd/tdx-settings-helper"
+install -Dm644 tdx-settings.desktop "$PREFIX/share/applications/tdx-settings.desktop"
+sed "s#/usr/local/lib/tdxd#$PREFIX/lib/tdxd#" org.tdxd.settings.policy \
+	| install -Dm644 /dev/stdin /usr/share/polkit-1/actions/org.tdxd.settings.policy
 mkdir -p /etc/systemd/user /etc/tdxd.d
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-focus.service > /etc/systemd/user/tdx-focus.service
 chmod 644 /etc/systemd/user/tdx-focus.service
@@ -47,3 +57,4 @@ echo "  (stop spacenavd first if it is running: sudo systemctl disable --now spa
 echo "  calibrate (re-zero) the cap:   tdxctl calibrate"
 echo "  per-application profiles:      /etc/tdxd.d/*.conf (see blender.conf.example)"
 echo "  focus tracking (X11 / sway), as your user:  systemctl --user enable --now tdx-focus"
+echo "  settings panel:                tdx-settings   (needs python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)"

@@ -12,6 +12,13 @@ void tdx_process_axes(const struct tdx_config *cfg, const int16_t raw[6], int ou
 const struct tdx_keymap *tdx_keymap_for(const struct tdx_config *cfg,
 					const struct tdx_device_def *dev, int idx);
 
+/* Built-in action (action_<V3DK>) bound to logical button @idx, TDX_ACT_NONE if none. */
+int tdx_action_for(const struct tdx_config *cfg, const struct tdx_device_def *dev, int idx);
+
+/* Apply a toggle/speed action to @cfg (speed_up/down, dominant, rotation, panzoom).
+ * Returns 1 if @cfg changed, 0 for actions handled elsewhere (calibrate, lcd_next). */
+int tdx_apply_action(struct tdx_config *cfg, int action);
+
 /*
  * Build the feature reports that apply cfg->led / led_*_color to an RGB-LED
  * device, following HIDDev.dll FUN_180033cd0:

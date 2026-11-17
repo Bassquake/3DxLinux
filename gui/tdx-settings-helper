@@ -1,0 +1,38 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# tdx-settings-helper - privileged writer for tdx-settings, run through pkexec.
+#
+#   pkexec tdx-settings-helper write /etc/tdxd.conf        < new-content
+#   pkexec tdx-settings-helper write /etc/tdxd.d/NAME.conf < new-content
+#
+# Only those paths are accepted; NAME is limited to [A-Za-z0-9_.-] and may not
+# start with a dot. The file is replaced atomically with mode 0644, owner root.
+set -eu
+umask 022
+
+[ "$#" -eq 2 ] && [ "$1" = write ] || { echo "usage: $0 write PATH < content" >&2; exit 2; }
+path=$2
+
+case "$path" in
+/etc/tdxd.conf) ;;
+/etc/tdxd.d/*.conf)
+	name=${path#/etc/tdxd.d/}
+	name=${name%.conf}
+	case "$name" in
+	"" | .* | */* | *[!A-Za-z0-9_.-]*) echo "refusing profile name '$name'" >&2; exit 1 ;;
+	esac
+	mkdir -p /etc/tdxd.d
+	;;
+*) echo "refusing to write $path" >&2; exit 1 ;;
+esac
+
+dir=$(dirname "$path")
+[ ! -L "$path" ] || { echo "refusing to write through a symlink: $path" >&2; exit 1; }
+tmp=$(mktemp "$dir/.tdx-settings.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+# 1 MiB is far more than any tdxd config
+head -c 1048576 > "$tmp"
+chmod 0644 "$tmp"
+chown 0:0 "$tmp"
+mv -f "$tmp" "$path"
+trap - EXIT

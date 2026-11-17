@@ -1,0 +1,1554 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""tdx-settings - settings panel for tdxd.
+
+The window layout follows the 3DxWare 10 control panel (main window,
+Advanced Settings, Buttons, LCD Manager, About), but everything it changes is
+plain tdxd configuration: /etc/tdxd.conf and the per-application overlays in
+/etc/tdxd.d/<name>.conf. Files are edited in place (comments are kept), then
+the daemon is told to reload (`tdxctl reload`). Files that are not writable by
+the user are written through `pkexec tdx-settings-helper`.
+
+All artwork (device illustration, axis glyphs, key caps) is drawn here with
+cairo; no 3Dconnexion images are used.
+"""
+
+import argparse
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+
+APP_VERSION = "dev"  # set by make install / make dist
+PROJECT_URL = "https://github.com/Bassquake/SpacePilot-Pro-Linux"
+
+AXES = ["tx", "ty", "tz", "rx", "ry", "rz"]
+# HID axis order and names from 3DxWare's Base.xml axis master list
+AXIS_LABELS = ["Pan Left/Right", "Zoom In/Out", "Pan Up/Down", "Tilt", "Roll", "Spin"]
+
+# The C parser's key table (src/config.c keytab); other codes are written numerically.
+KEY_NAMES = """ESC TAB ENTER SPACE BACKSPACE DELETE INSERT HOME END PAGEUP PAGEDOWN UP DOWN
+LEFT RIGHT LEFTCTRL RIGHTCTRL LEFTSHIFT RIGHTSHIFT LEFTALT RIGHTALT LEFTMETA RIGHTMETA
+A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9
+F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24
+KP0 KP1 KP2 KP3 KP4 KP5 KP6 KP7 KP8 KP9 KPPLUS KPMINUS KPASTERISK KPSLASH KPENTER KPDOT
+MINUS EQUAL COMMA DOT SLASH SEMICOLON APOSTROPHE LEFTBRACE RIGHTBRACE BACKSLASH GRAVE
+PRINT PAUSE MENU VOLUMEUP VOLUMEDOWN MUTE PLAYPAUSE NEXTSONG PREVIOUSSONG UNDO REDO
+COPY PASTE CUT FIND""".split()
+# evdev codes (linux/input-event-codes.h) for the names above
+KEY_CODES = dict(
+    ESC=1, TAB=15, ENTER=28, SPACE=57, BACKSPACE=14, DELETE=111, INSERT=110, HOME=102,
+    END=107, PAGEUP=104, PAGEDOWN=109, UP=103, DOWN=108, LEFT=105, RIGHT=106,
+    LEFTCTRL=29, RIGHTCTRL=97, LEFTSHIFT=42, RIGHTSHIFT=54, LEFTALT=56, RIGHTALT=100,
+    LEFTMETA=125, RIGHTMETA=126,
+    Q=16, W=17, E=18, R=19, T=20, Y=21, U=22, I=23, O=24, P=25, A=30, S=31, D=32, F=33,
+    G=34, H=35, J=36, K=37, L=38, Z=44, X=45, C=46, V=47, B=48, N=49, M=50,
+    **{"1": 2, "2": 3, "3": 4, "4": 5, "5": 6, "6": 7, "7": 8, "8": 9, "9": 10, "0": 11},
+    F1=59, F2=60, F3=61, F4=62, F5=63, F6=64, F7=65, F8=66, F9=67, F10=68, F11=87, F12=88,
+    F13=183, F14=184, F15=185, F16=186, F17=187, F18=188, F19=189, F20=190, F21=191,
+    F22=192, F23=193, F24=194,
+    KP7=71, KP8=72, KP9=73, KPMINUS=74, KP4=75, KP5=76, KP6=77, KPPLUS=78, KP1=79, KP2=80,
+    KP3=81, KP0=82, KPDOT=83, KPASTERISK=55, KPSLASH=98, KPENTER=96,
+    MINUS=12, EQUAL=13, COMMA=51, DOT=52, SLASH=53, SEMICOLON=39, APOSTROPHE=40,
+    LEFTBRACE=26, RIGHTBRACE=27, BACKSLASH=43, GRAVE=41, PRINT=99, PAUSE=119, MENU=139,
+    VOLUMEUP=115, VOLUMEDOWN=114, MUTE=113, PLAYPAUSE=164, NEXTSONG=163, PREVIOUSSONG=165,
+    UNDO=131, REDO=182, COPY=133, PASTE=135, CUT=137, FIND=136,
+)
+CODE_NAMES = {v: k for k, v in KEY_CODES.items()}
+MODIFIERS = ("LEFTCTRL", "RIGHTCTRL", "LEFTSHIFT", "RIGHTSHIFT", "LEFTALT", "RIGHTALT",
+             "LEFTMETA", "RIGHTMETA")
+PRETTY_KEY = dict(LEFTCTRL="Ctrl", RIGHTCTRL="Ctrl", LEFTSHIFT="Shift", RIGHTSHIFT="Shift",
+                  LEFTALT="Alt", RIGHTALT="AltGr", LEFTMETA="Super", RIGHTMETA="Super",
+                  ESC="Esc", ENTER="Enter", SPACE="Space", BACKSPACE="Backspace",
+                  DELETE="Delete", PAGEUP="Page Up", PAGEDOWN="Page Down")
+
+# Driver actions (3DxWare's built-in button functions) -> tdxd action_<V3DK> names
+ACTIONS = [
+    ("speed_up", "Increase Speed"),
+    ("speed_down", "Decrease Speed"),
+    ("dominant", "Dominant On/Off"),
+    ("rotation", "Rotation On/Off"),
+    ("panzoom", "Pan Zoom On/Off"),
+    ("calibrate", "Calibrate"),
+]
+ACTION_LABEL = dict(ACTIONS)
+
+# Keyboard presets offered in the button menu (shown by name when a binding matches)
+KEY_PRESETS = [
+    ("Esc Key", "ESC"), ("Ctrl Key", "LEFTCTRL"), ("Alt Key", "LEFTALT"),
+    ("Shift Key", "LEFTSHIFT"), ("Enter Key", "ENTER"), ("Tab Key", "TAB"),
+    ("Delete Key", "DELETE"), ("Space Key", "SPACE"),
+    (None, None),
+    ("Copy", "LEFTCTRL+C"), ("Cut", "LEFTCTRL+X"), ("Paste", "LEFTCTRL+V"),
+    ("Undo", "LEFTCTRL+Z"), ("Redo", "LEFTCTRL+SHIFT+Z"), ("Save", "LEFTCTRL+S"),
+    ("Select All", "LEFTCTRL+A"), ("Find", "LEFTCTRL+F"),
+    (None, None),
+    ("Align Window Left", "LEFTMETA+LEFT"), ("Align Window Right", "LEFTMETA+RIGHT"),
+    ("Cycle Apps", "LEFTALT+TAB"), ("Show Desktop", "LEFTMETA+D"),
+]
+
+# SpacePilot Pro buttons, grouped like 3DxWare's Buttons window:
+# (V3DK id, key-cap text, function name when the button is sent to the application)
+SPP_LAYOUT = [
+    [("V3DK_%d" % i, str(i), "Button %d" % i) for i in range(1, 11)],
+    [("V3DK_MENU", "MENU", "Menu"), ("V3DK_FIT", "FIT", "Fit"),
+     ("V3DK_PLUS", "+", "Plus"), ("V3DK_MINUS", "−", "Minus"),
+     ("V3DK_DOMINANT", "DOM", "Dominant"), ("V3DK_ROTATE", "LOCK", "Rotation"),
+     ("V3DK_PANZOOM", "PAN\nZOOM", "Pan Zoom"),
+     None,
+     ("V3DK_ESC", "ESC", "Esc"), ("V3DK_CTRL", "CTRL", "Ctrl"),
+     ("V3DK_ALT", "ALT", "Alt"), ("V3DK_SHIFT", "SHIFT", "Shift")],
+    [("V3DK_TOP", "T", "Top View"), ("V3DK_LEFT", "L", "Left View"),
+     ("V3DK_RIGHT", "R", "Right View"), ("V3DK_FRONT", "F", "Front View"),
+     ("V3DK_BOTTOM", "B", "Bottom View"), ("V3DK_BACK", "BK", "Back View"),
+     ("V3DK_ISO1", "ISO1", "ISO1"), ("V3DK_ISO2", "ISO2", "ISO2"),
+     ("V3DK_ROLL_CW", "↻", "Roll +"), ("V3DK_ROLL_CCW", "↺", "Roll −")],
+]
+
+# Shipped defaults for the base file (packaging/tdxd.conf), used by "Restore Defaults"
+DEFAULT_KEYS = {"V3DK_ESC": "KEY_ESC", "V3DK_ALT": "KEY_LEFTALT",
+                "V3DK_SHIFT": "KEY_LEFTSHIFT", "V3DK_CTRL": "KEY_LEFTCTRL"}
+DEFAULT_ACTIONS = {"V3DK_PLUS": "speed_up", "V3DK_MINUS": "speed_down",
+                   "V3DK_DOMINANT": "dominant", "V3DK_ROTATE": "rotation",
+                   "V3DK_PANZOOM": "panzoom"}
+ADVANCED_KEYS = (["dominant", "disable_translation", "disable_rotation", "led",
+                  "map_ty", "map_tz"] + ["scale_" + a for a in AXES]
+                 + ["invert_" + a for a in AXES])
+DAEMON_ONLY = {"uinput", "spnav", "spnav_socket", "control_socket", "profile_dir", "lcd",
+               "lcd_bmp_dir", "verbose"}
+BRIGHTNESS = [("Low", 30), ("Medium", 60), ("High", 90)]
+
+
+def parse_bool(v):
+    v = (v or "").strip().lower()
+    if v in ("yes", "true", "on"):
+        return True
+    try:
+        return int(v, 0) != 0
+    except ValueError:
+        return False
+
+
+def fmt_num(x):
+    s = "%.3f" % x
+    return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+# --------------------------------------------------------------------------
+# configuration files
+
+class ConfFile:
+    """A tdxd config file edited line by line so comments and order survive."""
+
+    LINE = re.compile(r"^(\s*)([A-Za-z0-9_]+)(\s*=\s*)(.*)$")
+
+    def __init__(self, path):
+        self.path = path
+        self.lines = []
+        self.dirty = False
+        self.exists = False
+        self.reload()
+
+    def reload(self):
+        try:
+            with open(self.path, encoding="utf-8", errors="replace") as f:
+                self.lines = f.read().splitlines()
+            self.exists = True
+        except FileNotFoundError:
+            self.lines, self.exists = [], False
+        self.dirty = False
+
+    @staticmethod
+    def _split_comment(rest):
+        # same rule as the C parser: whitespace, '#', then whitespace/EOL
+        for i, ch in enumerate(rest):
+            if (ch == "#" and i > 0 and rest[i - 1].isspace()
+                    and (i + 1 == len(rest) or rest[i + 1].isspace())):
+                j = i
+                while j > 0 and rest[j - 1].isspace():
+                    j -= 1
+                return rest[:j], rest[j:]
+        return rest.rstrip(), ""
+
+    def _parse(self, line):
+        s = line.strip()
+        if not s or s[0] in "#;":
+            return None
+        m = self.LINE.match(line)
+        if not m:
+            return None
+        value, comment = self._split_comment(m.group(4))
+        return m.group(2), value.strip(), m, comment
+
+    @staticmethod
+    def _same(a, b):
+        # option names are case-sensitive, button ids after key_/action_ are not
+        for pre in ("key_", "action_", "led_color_"):
+            if a.startswith(pre) and b.startswith(pre):
+                return a.lower() == b.lower()
+        return a == b
+
+    def items(self):
+        for line in self.lines:
+            p = self._parse(line)
+            if p:
+                yield p[0], p[1]
+
+    def get(self, key, default=None):
+        val = default
+        for k, v in self.items():
+            if self._same(k, key):
+                val = v
+        return val
+
+    def has(self, key):
+        return any(self._same(k, key) for k, _ in self.items())
+
+    def keys_with_prefix(self, prefix):
+        return [k for k, _ in self.items() if k.lower().startswith(prefix.lower())]
+
+    def set(self, key, value):
+        value = str(value)
+        idx = [i for i, l in enumerate(self.lines)
+               if (p := self._parse(l)) and self._same(p[0], key)]
+        if idx:
+            last = idx[-1]
+            k, old, m, comment = self._parse(self.lines[last])
+            if old == value and len(idx) == 1:
+                return
+            self.lines[last] = "%s%s%s%s%s" % (m.group(1), k, m.group(3), value, comment)
+            for i in reversed(idx[:-1]):
+                del self.lines[i]
+        else:
+            new = "%s = %s" % (key, value)
+            # put it under a commented-out example of the same option, if there is one
+            pat = re.compile(r"^\s*#\s*%s\s*=" % re.escape(key), re.I)
+            at = next((i for i, l in enumerate(self.lines) if pat.match(l)), None)
+            if at is not None:
+                self.lines.insert(at + 1, new)
+            else:
+                if self.lines and self.lines[-1].strip():
+                    pass
+                self.lines.append(new)
+        self.dirty = True
+
+    def remove(self, key):
+        n = len(self.lines)
+        self.lines = [l for l in self.lines
+                      if not ((p := self._parse(l)) and self._same(p[0], key))]
+        if len(self.lines) != n:
+            self.dirty = True
+
+    def text(self):
+        return "\n".join(self.lines) + "\n"
+
+
+class Store:
+    """The base config plus one per-application profile being edited."""
+
+    def __init__(self, base_path, profile_dir=None):
+        self.base = ConfFile(base_path)
+        self.profile_dir = profile_dir or self.base.get("profile_dir", "/etc/tdxd.d")
+        self.profile = None  # ConfFile or None (= editing the base file)
+        self.listeners = []
+
+    # ---- profiles
+    def profile_names(self):
+        try:
+            names = sorted(f[:-5] for f in os.listdir(self.profile_dir)
+                           if f.endswith(".conf") and not f.startswith("."))
+        except OSError:
+            names = []
+        return names
+
+    def profile_path(self, name):
+        return os.path.join(self.profile_dir, name + ".conf")
+
+    def select(self, name):
+        self.profile = ConfFile(self.profile_path(name)) if name else None
+
+    def create_profile(self, name, match):
+        f = ConfFile(self.profile_path(name))
+        if not f.exists:
+            f.lines = ["# tdxd per-application profile, created by tdx-settings.",
+                       "# Settings here override /etc/tdxd.conf while a matching "
+                       "application is focused.",
+                       "match = %s" % match, ""]
+            f.dirty = True
+        self.profile = f
+        return f
+
+    @property
+    def target(self):
+        return self.profile or self.base
+
+    def files(self):
+        return [self.base] + ([self.profile] if self.profile else [])
+
+    # ---- effective values (profile over base over built-in default)
+    def get(self, key, default=None):
+        if self.profile and key not in DAEMON_ONLY and self.profile.has(key):
+            return self.profile.get(key)
+        return self.base.get(key, default)
+
+    def get_bool(self, key, default=False):
+        v = self.get(key)
+        return default if v is None else parse_bool(v)
+
+    def get_float(self, key, default):
+        try:
+            return float(self.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def inherited(self, key, default=None):
+        """Value the edited file would fall back to without its own setting."""
+        if self.profile:
+            return self.base.get(key, default)
+        return default
+
+    def set(self, key, value):
+        f = self.base if key in DAEMON_ONLY else self.target
+        f.set(key, value)
+        self.changed()
+
+    def reset(self, key):
+        """Drop the edited file's own value (back to the base / built-in default)."""
+        f = self.base if key in DAEMON_ONLY else self.target
+        f.remove(key)
+        self.changed()
+
+    def changed(self):
+        for cb in self.listeners:
+            cb()
+
+    def dirty(self):
+        return any(f.dirty for f in self.files())
+
+
+# --------------------------------------------------------------------------
+# talking to the system
+
+def find_program(name):
+    here = os.path.dirname(os.path.realpath(__file__))
+    for cand in (os.path.join(here, name),
+                 os.path.join(here, "..", "build", os.uname().machine, name),
+                 os.path.join(here, "..", "lib", "tdxd", name),
+                 "/usr/local/lib/tdxd/" + name, "/usr/lib/tdxd/" + name):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return os.path.realpath(cand)
+    return shutil.which(name)
+
+
+class Daemon:
+    def __init__(self, socket_path, status_file=None):
+        self.socket = socket_path
+        self.status_file = status_file
+        self.tdxctl = find_program("tdxctl")
+
+    def request(self, *args):
+        if self.status_file and args == ("status",):
+            with open(self.status_file) as f:
+                return 0, f.read()
+        if self.status_file:
+            return 1, "demo mode: tdxd not contacted\n"
+        if not self.tdxctl:
+            return 127, "tdxctl not found\n"
+        try:
+            p = subprocess.run([self.tdxctl, "-s", self.socket] + list(args),
+                               capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return 1, str(e) + "\n"
+        return p.returncode, p.stdout + p.stderr
+
+    def status(self):
+        rc, out = self.request("status")
+        st = {"running": rc == 0, "devices": [], "raw": out}
+        if rc:
+            return st
+        for line in out.splitlines():
+            if line.startswith("tdxd "):
+                st["version"] = line[5:].strip()
+            elif line.startswith("profile "):
+                st["profile"] = line[8:].strip()
+            elif line.startswith("application "):
+                m = re.match(r"application (\S+) \(via (\S+)\)", line)
+                if m:
+                    st["app"], st["via"] = m.group(1), m.group(2)
+            elif line.startswith("  "):
+                m = re.match(r"\s+(.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] (\S+) firmware (\S+)",
+                             line)
+                if m:
+                    st["devices"].append({"name": m.group(1), "vid": m.group(2),
+                                          "pid": m.group(3), "node": m.group(4),
+                                          "firmware": m.group(5)})
+            else:
+                parts = line.split(None, 1)
+                if len(parts) == 2 and parts[0] in ("speed", "panzoom", "rotation", "dominant"):
+                    st[parts[0]] = parts[1]
+        return st
+
+
+def write_file(conf, parent=None):
+    """Write @conf, falling back to the pkexec helper. Returns an error string or None."""
+    data = conf.text()
+    d = os.path.dirname(conf.path) or "."
+    try:
+        if not os.path.isdir(d):
+            os.makedirs(d, exist_ok=True)
+        tmp = conf.path + ".tdx-settings.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(data)
+        if conf.exists:
+            shutil.copymode(conf.path, tmp)
+        else:
+            os.chmod(tmp, 0o644)
+        os.replace(tmp, conf.path)
+    except PermissionError:
+        helper = find_program("tdx-settings-helper")
+        pkexec = shutil.which("pkexec")
+        if not helper or not pkexec:
+            return "%s is not writable (and pkexec / tdx-settings-helper is missing)" % conf.path
+        try:
+            p = subprocess.run([pkexec, helper, "write", conf.path], input=data, text=True,
+                               capture_output=True, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return str(e)
+        if p.returncode:
+            return (p.stderr or p.stdout or "pkexec failed (%d)" % p.returncode).strip()
+    except OSError as e:
+        return "%s: %s" % (conf.path, e.strerror)
+    conf.dirty = False
+    conf.exists = True
+    return None
+
+
+def writable(path):
+    if os.path.exists(path):
+        return os.access(path, os.W_OK) and os.access(os.path.dirname(path) or ".", os.W_OK)
+    d = os.path.dirname(path) or "."
+    while not os.path.exists(d):
+        d = os.path.dirname(d)
+    return os.access(d, os.W_OK)
+
+
+# --------------------------------------------------------------------------
+# drawing (original artwork, cairo)
+
+def rounded_rect(cr, x, y, w, h, r):
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+    cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+    cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+    cr.close_path()
+
+
+def fg_color(widget):
+    c = widget.get_style_context().get_color(Gtk.StateFlags.NORMAL)
+    return c.red, c.green, c.blue
+
+
+def draw_device(widget, cr, has_lcd=True):
+    """A stylised six-axis controller: wedge base, keypad, LCD, round cap."""
+    w, h = widget.get_allocated_width(), widget.get_allocated_height()
+    s = min(w / 360.0, h / 200.0)
+    cr.translate((w - 360 * s) / 2, (h - 200 * s) / 2)
+    cr.scale(s, s)
+    # shadow
+    cr.save()
+    cr.translate(180, 182)
+    cr.scale(1, 0.12)
+    cr.arc(0, 0, 160, 0, 2 * math.pi)
+    cr.restore()
+    cr.set_source_rgba(0, 0, 0, 0.18)
+    cr.fill()
+    # base body
+    cr.move_to(30, 170)
+    cr.curve_to(20, 120, 60, 70, 120, 64)
+    cr.line_to(250, 58)
+    cr.curve_to(310, 56, 345, 110, 335, 168)
+    cr.curve_to(330, 180, 40, 182, 30, 170)
+    cr.close_path()
+    cr.set_source_rgb(0.20, 0.21, 0.23)
+    cr.fill_preserve()
+    cr.set_source_rgb(0.08, 0.08, 0.09)
+    cr.set_line_width(2)
+    cr.stroke()
+    # top face highlight
+    cr.move_to(52, 150)
+    cr.curve_to(50, 110, 82, 82, 126, 78)
+    cr.line_to(246, 72)
+    cr.curve_to(296, 70, 320, 110, 316, 150)
+    cr.close_path()
+    cr.set_source_rgb(0.29, 0.30, 0.33)
+    cr.fill()
+    # LCD
+    if has_lcd:
+        rounded_rect(cr, 66, 90, 74, 52, 4)
+        cr.set_source_rgb(0.05, 0.07, 0.09)
+        cr.fill()
+        rounded_rect(cr, 70, 94, 66, 44, 2)
+        cr.set_source_rgb(0.12, 0.43, 0.70)
+        cr.fill()
+        cr.set_source_rgba(1, 1, 1, 0.75)
+        for i in range(4):
+            cr.rectangle(76, 101 + i * 9, 10 + (i * 7) % 30 + 14, 3)
+        cr.fill()
+    # key rows
+    cr.set_source_rgb(0.14, 0.14, 0.16)
+    for r in range(2):
+        for c in range(5):
+            rounded_rect(cr, 152 + c * 13, 96 + r * 26, 10, 18, 2)
+    cr.fill()
+    cr.set_source_rgb(0.14, 0.14, 0.16)
+    for r in range(4):
+        rounded_rect(cr, 292, 88 + r * 15, 16, 11, 2)
+    cr.fill()
+    # cap
+    cx, cy = 236, 104
+    cr.save()
+    cr.translate(cx, cy + 22)
+    cr.scale(1, 0.32)
+    cr.arc(0, 0, 44, 0, 2 * math.pi)
+    cr.restore()
+    cr.set_source_rgb(0.10, 0.10, 0.11)
+    cr.fill()
+    cr.rectangle(cx - 44, cy - 6, 88, 28)
+    cr.set_source_rgb(0.17, 0.18, 0.19)
+    cr.fill()
+    cr.save()
+    cr.translate(cx, cy - 6)
+    cr.scale(1, 0.32)
+    cr.arc(0, 0, 44, 0, 2 * math.pi)
+    cr.restore()
+    cr.set_source_rgb(0.36, 0.37, 0.40)
+    cr.fill()
+    # accent ring
+    cr.save()
+    cr.translate(cx, cy + 22)
+    cr.scale(1, 0.32)
+    cr.arc(0, 0, 47, 0.1, math.pi - 0.1)
+    cr.restore()
+    cr.set_source_rgb(0.25, 0.55, 0.95)
+    cr.set_line_width(2.5)
+    cr.stroke()
+
+
+def arrow_head(cr, x, y, ang, size=5):
+    cr.move_to(x, y)
+    cr.line_to(x - size * math.cos(ang - 0.5), y - size * math.sin(ang - 0.5))
+    cr.line_to(x - size * math.cos(ang + 0.5), y - size * math.sin(ang + 0.5))
+    cr.close_path()
+    cr.fill()
+
+
+def draw_axis_glyph(widget, cr, axis):
+    """Puck plus arrow for one of the six axes (original drawing)."""
+    w, h = widget.get_allocated_width(), widget.get_allocated_height()
+    cr.translate(w / 2, h / 2)
+    r, g, b = fg_color(widget)
+    # puck
+    cr.save()
+    cr.scale(1, 0.4)
+    cr.arc(0, 4 / 0.4, 10, 0, 2 * math.pi)
+    cr.restore()
+    cr.set_source_rgba(r, g, b, 0.30)
+    cr.fill()
+    cr.set_source_rgb(0.20, 0.50, 0.90)
+    cr.set_line_width(2)
+    if axis == 0:  # pan left/right
+        cr.move_to(-14, -4); cr.line_to(14, -4); cr.stroke()
+        arrow_head(cr, 16, -4, 0); arrow_head(cr, -16, -4, math.pi)
+    elif axis == 1:  # zoom in/out (toward / away from the user)
+        cr.move_to(-9, 6); cr.line_to(9, -12); cr.stroke()
+        arrow_head(cr, 11, -14, -math.pi / 4); arrow_head(cr, -11, 8, 3 * math.pi / 4)
+    elif axis == 2:  # pan up/down
+        cr.move_to(0, -15); cr.line_to(0, 6); cr.stroke()
+        arrow_head(cr, 0, -17, -math.pi / 2); arrow_head(cr, 0, 8, math.pi / 2)
+    elif axis == 3:  # tilt: rotate about the left/right axis
+        cr.save(); cr.scale(0.45, 1); cr.arc(0, -4, 12, -2.4, 2.4); cr.restore(); cr.stroke()
+        arrow_head(cr, -4, 5, 2.6)
+    elif axis == 4:  # roll: rotate about the front/back axis
+        cr.arc(0, -4, 12, math.pi + 0.5, 2 * math.pi - 0.5); cr.stroke()
+        arrow_head(cr, 10.5, -9.8, 0.75)
+    else:  # spin: rotate about the vertical axis
+        cr.save(); cr.scale(1, 0.4); cr.arc(0, -16 / 0.4 * 0.4, 13, 0.3, math.pi * 1.7)
+        cr.restore(); cr.stroke()
+        arrow_head(cr, 12, -2, 0.2)
+
+
+def draw_keycap(widget, cr, text):
+    w, h = widget.get_allocated_width(), widget.get_allocated_height()
+    rounded_rect(cr, 1.5, 1.5, w - 3, h - 3, 5)
+    cr.set_source_rgb(0.22, 0.23, 0.25)
+    cr.fill_preserve()
+    cr.set_source_rgb(0.10, 0.10, 0.11)
+    cr.set_line_width(1)
+    cr.stroke()
+    layout = widget.create_pango_layout(text)
+    layout.set_alignment(Pango.Alignment.CENTER)
+    size = 7 if "\n" in text or len(text) > 4 else 8 if len(text) > 2 else 10
+    layout.set_font_description(Pango.FontDescription("Sans Bold %d" % size))
+    tw, th = layout.get_pixel_size()
+    cr.move_to((w - tw) / 2, (h - th) / 2)
+    cr.set_source_rgb(0.93, 0.93, 0.95)
+
+    PangoCairo.show_layout(cr, layout)
+
+
+def draw_lcd_preview(widget, cr, labels, title, page):
+    """Mirror of tdx_render_keys_page() (src/process.c): 320x240, 5 keys per page."""
+
+    w, h = widget.get_allocated_width(), widget.get_allocated_height()
+    s = min(w / 320.0, h / 240.0)
+    cr.translate((w - 320 * s) / 2, (h - 240 * s) / 2)
+    cr.scale(s, s)
+
+    def rgb(v):
+        cr.set_source_rgb(((v >> 16) & 255) / 255.0, ((v >> 8) & 255) / 255.0,
+                          (v & 255) / 255.0)
+
+    def text(x, y, t, px, col):
+        lay = widget.create_pango_layout(t)
+        lay.set_font_description(Pango.FontDescription("Monospace Bold %dpx" % px))
+        rgb(col)
+        cr.move_to(x, y)
+        PangoCairo.show_layout(cr, lay)
+
+    rgb(0x101418); cr.rectangle(0, 0, 320, 240); cr.fill()
+    rgb(0x1F6FB2); cr.rectangle(0, 0, 320, 28); cr.fill()
+    text(8, 4, title.upper(), 16, 0xFFFFFF)
+    for r in range(5):
+        k = page * 5 + r
+        y = 38 + r * 40
+        rgb(0x2A3038); cr.rectangle(6, y, 36, 32); cr.fill()
+        n = str(k + 1)
+        text(24 - 6 * len(n), y + 3, n, 22, 0xFFC040)
+        text(52, y + 3, labels[k].upper()[:15], 22, 0xE6E6E6)
+
+
+# --------------------------------------------------------------------------
+# widgets
+
+def log_scale(lo=-1.0, hi=1.0):
+    """Slider over log10(value); 0 = 1.0x."""
+    sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, 0.01)
+    sc.set_draw_value(False)
+    sc.add_mark(0, Gtk.PositionType.BOTTOM, None)
+    sc.set_hexpand(True)
+    return sc
+
+
+def frame(title, child):
+    fr = Gtk.Frame(label=title)
+    fr.get_label_widget().set_markup("<b>%s</b>" % GLib.markup_escape_text(title))
+    child.set_margin_start(10)
+    child.set_margin_end(10)
+    child.set_margin_top(6)
+    child.set_margin_bottom(8)
+    fr.add(child)
+    return fr
+
+
+def drawing(width, height, func, *args):
+    da = Gtk.DrawingArea()
+    da.set_size_request(width, height)
+    da.connect("draw", lambda w, cr: func(w, cr, *args) or False)
+    return da
+
+
+class Panel:
+    """Base for the windows: builds its content into a Box (so it can be snapshotted)."""
+
+    title = ""
+
+    def __init__(self, app):
+        self.app = app
+        self.store = app.store
+        self.updating = False
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        for side in ("start", "end", "top", "bottom"):
+            getattr(self.box, "set_margin_" + side)(14)
+        self.build()
+        self.refresh()
+        app.panels.append(self)
+
+    def build(self):
+        raise NotImplementedError
+
+    def refresh(self):
+        pass
+
+    def guard(self, fn):
+        """Wrap a signal handler so it does not fire while refresh() sets widgets."""
+        def h(*a):
+            if not self.updating:
+                fn(*a)
+        return h
+
+
+class MainPanel(Panel):
+    title = "tdxd Settings"
+
+    def build(self):
+        # header: which settings are being edited (3DxWare shows the focused application)
+        head = Gtk.Box(spacing=8)
+        self.app_label = Gtk.Label(xalign=0)
+        self.app_label.set_hexpand(True)
+        self.app_label.set_ellipsize(Pango.EllipsizeMode.END)
+        head.pack_start(self.app_label, True, True, 0)
+        self.profile_combo = Gtk.ComboBoxText()
+        self.profile_combo.set_tooltip_text(
+            "Settings shown below apply to this profile.\n"
+            "Default applies to every application without its own profile.")
+        self.profile_combo.connect("changed", self.guard(self.on_profile))
+        head.pack_end(self.profile_combo, False, False, 0)
+        self.box.pack_start(head, False, False, 0)
+        self.box.pack_start(Gtk.Separator(), False, False, 0)
+
+        self.dev_label = Gtk.Label(xalign=0.5)
+        self.box.pack_start(self.dev_label, False, False, 0)
+        self.box.pack_start(drawing(360, 200, lambda w, cr: draw_device(w, cr, self.has_lcd())),
+                            False, False, 0)
+        self.state_label = Gtk.Label(xalign=0.5)
+        self.state_label.get_style_context().add_class("dim-label")
+        self.box.pack_start(self.state_label, False, False, 0)
+
+        sp = Gtk.Box(spacing=10)
+        lab = Gtk.Label(label="Speed")
+        lab.set_markup("<b>Speed</b>")
+        sp.pack_start(lab, False, False, 0)
+        sp.pack_start(Gtk.Label(label="Low"), False, False, 0)
+        self.speed = log_scale()
+        self.speed.connect("value-changed", self.guard(self.on_speed))
+        sp.pack_start(self.speed, True, True, 0)
+        sp.pack_start(Gtk.Label(label="High"), False, False, 0)
+        self.box.pack_start(sp, False, False, 4)
+
+        row = Gtk.Box(spacing=8, homogeneous=True)
+        for label, cb in (("Advanced Settings", self.app.show_advanced),
+                          ("Buttons", self.app.show_buttons),
+                          ("LCD Manager", self.app.show_lcd)):
+            b = Gtk.Button(label=label)
+            b.connect("clicked", lambda _b, f=cb: f())
+            row.pack_start(b, True, True, 0)
+            if label == "LCD Manager":
+                self.lcd_button = b
+        self.box.pack_start(row, False, False, 0)
+
+        foot = Gtk.Box(spacing=8)
+        more = Gtk.LinkButton.new_with_label("", "More ›")
+        more.connect("activate-link", lambda *_: (self.app.show_about(), True)[1])
+        foot.pack_start(more, False, False, 0)
+        self.save_label = Gtk.Label(xalign=0)
+        self.save_label.get_style_context().add_class("dim-label")
+        self.save_label.set_ellipsize(Pango.EllipsizeMode.END)
+        foot.pack_start(self.save_label, True, True, 0)
+        close = Gtk.Button(label="Close")
+        close.connect("clicked", lambda *_: self.app.quit())
+        foot.pack_end(close, False, False, 0)
+        self.box.pack_end(foot, False, False, 0)
+
+    def has_lcd(self):
+        devs = self.app.status.get("devices", [])
+        return not devs or any(d["name"] in ("SpacePilot Pro", "SpacePilot PRO")
+                               or "Enterprise" in d["name"] or "Giotto" in d["name"]
+                               for d in devs)
+
+    def refresh(self):
+        self.updating = True
+        st = self.app.status
+        names = self.store.profile_names()
+        self.profile_combo.remove_all()
+        self.profile_combo.append("", "Default (all applications)")
+        for n in names:
+            self.profile_combo.append(n, "Profile: " + n)
+        self.profile_combo.append("+new", "New profile…")
+        cur = os.path.basename(self.store.profile.path)[:-5] if self.store.profile else ""
+        if cur and cur not in names:  # created but not saved yet
+            self.profile_combo.insert(1, cur, "Profile: " + cur)
+        self.profile_combo.set_active_id(cur)
+
+        if self.store.profile:
+            match = self.store.profile.get("match") or cur
+            head = "%s" % cur
+            sub = "applications: %s" % match
+        else:
+            head, sub = "All applications", "default settings"
+        app = st.get("app")
+        if app and app != "-":
+            sub += "  ·  focused: %s" % app
+        self.app_label.set_markup("<span size='x-large' weight='bold'>%s</span>\n"
+                                  "<small>%s</small>" % (GLib.markup_escape_text(head),
+                                                         GLib.markup_escape_text(sub)))
+        devs = st.get("devices", [])
+        name = devs[0]["name"] if devs else "No device connected"
+        self.dev_label.set_markup("<span size='large' weight='bold'>%s</span>"
+                                  % GLib.markup_escape_text(name))
+        if not st.get("running"):
+            state = "tdxd is not running – settings are saved for its next start"
+        elif devs:
+            state = "Connected · firmware %s · %s" % (devs[0]["firmware"],
+                                                                 devs[0]["node"])
+        else:
+            state = "tdxd is running; plug in a device"
+        self.state_label.set_text(state)
+        self.speed.set_value(math.log10(max(0.05, self.store.get_float("sensitivity", 1.0))))
+        self.speed.set_tooltip_text("Speed %sx" % fmt_num(self.store.get_float("sensitivity",
+                                                                               1.0)))
+        self.lcd_button.set_sensitive(self.has_lcd())
+        self.save_label.set_text(self.app.save_state)
+        self.updating = False
+
+    def on_speed(self, sc):
+        v = 10 ** sc.get_value()
+        if abs(sc.get_value()) < 0.02:
+            v = 1.0
+        self.store.set("sensitivity", fmt_num(v))
+
+    def on_profile(self, combo):
+        pid = combo.get_active_id()
+        if pid == "+new":
+            self.app.new_profile()
+            return
+        self.app.switch_profile(pid or None)
+
+
+class AdvancedPanel(Panel):
+    title = "Advanced Settings"
+
+    def build(self):
+        grid = Gtk.Box(spacing=14)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+
+        nav = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.panzoom = Gtk.CheckButton(label="Pan/Zoom")
+        self.rotation = Gtk.CheckButton(label="Rotation")
+        self.dominant = Gtk.CheckButton(label="Dominant")
+        self.dominant.set_tooltip_text("Only the strongest axis is passed on")
+        self.panzoom.connect("toggled", self.guard(
+            lambda b: self.store.set("disable_translation", "no" if b.get_active() else "yes")))
+        self.rotation.connect("toggled", self.guard(
+            lambda b: self.store.set("disable_rotation", "no" if b.get_active() else "yes")))
+        self.dominant.connect("toggled", self.guard(
+            lambda b: self.store.set("dominant", "yes" if b.get_active() else "no")))
+        for w in (self.panzoom, self.rotation, self.dominant):
+            nav.pack_start(w, False, False, 0)
+        left.pack_start(frame("Navigation", nav), False, False, 0)
+
+        zd = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.zoom_fb = Gtk.RadioButton.new_with_label(None, "Forward/Backward")
+        self.zoom_ud = Gtk.RadioButton.new_with_label_from_widget(self.zoom_fb, "Up/Down")
+        self.zoom_ud.set_tooltip_text("Push/pull the cap up and down to zoom "
+                                      "(swaps the zoom and pan up/down axes)")
+        self.zoom_ud.connect("toggled", self.guard(self.on_zoom))
+        zd.pack_start(self.zoom_fb, False, False, 0)
+        zd.pack_start(self.zoom_ud, False, False, 0)
+        left.pack_start(frame("Zoom Direction", zd), False, False, 0)
+
+        ds = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.led = Gtk.CheckButton(label="LEDs Active")
+        self.led.connect("toggled", self.guard(
+            lambda b: self.store.set("led", "yes" if b.get_active() else "no")))
+        ds.pack_start(self.led, False, False, 0)
+        cal = Gtk.Button(label="Calibrate")
+        cal.set_tooltip_text("Re-zero the cap's rest position. Do not touch the cap.")
+        cal.connect("clicked", self.on_calibrate)
+        cal.set_halign(Gtk.Align.START)
+        ds.pack_start(cal, False, False, 0)
+        left.pack_start(frame("Device Settings", ds), False, False, 0)
+        grid.pack_start(left, False, False, 0)
+
+        rows = Gtk.Grid(column_spacing=10, row_spacing=4)
+        self.axis = []
+        for i, a in enumerate(AXES):
+            glyph = drawing(36, 32, draw_axis_glyph, i)
+            glyph.set_tooltip_text(AXIS_LABELS[i])
+            rows.attach(glyph, 0, i, 1, 1)
+            lab = Gtk.Label(label=AXIS_LABELS[i], xalign=0)
+            lab.set_width_chars(13)
+            rows.attach(lab, 1, i, 1, 1)
+            act = Gtk.CheckButton(label="Active")
+            sc = log_scale()
+            sc.set_size_request(170, -1)
+            rev = Gtk.CheckButton(label="Reverse")
+            act.connect("toggled", self.guard(lambda b, i=i: self.on_active(i)))
+            sc.connect("value-changed", self.guard(lambda s, i=i: self.on_scale(i)))
+            rev.connect("toggled", self.guard(
+                lambda b, a=a: self.store.set("invert_" + a, "yes" if b.get_active() else "no")))
+            rows.attach(act, 2, i, 1, 1)
+            rows.attach(sc, 3, i, 1, 1)
+            rows.attach(rev, 4, i, 1, 1)
+            self.axis.append((act, sc, rev))
+        grid.pack_start(frame("Speed", rows), True, True, 0)
+        self.box.pack_start(grid, True, True, 0)
+
+        self.msg = Gtk.Label(xalign=0)
+        self.msg.get_style_context().add_class("dim-label")
+        self.box.pack_start(self.msg, False, False, 0)
+
+        foot = Gtk.Box(spacing=8)
+        rd = Gtk.Button(label="Restore Defaults")
+        rd.connect("clicked", self.on_restore)
+        foot.pack_start(rd, False, False, 0)
+        self.close = Gtk.Button(label="Close")
+        foot.pack_end(self.close, False, False, 0)
+        self.box.pack_end(foot, False, False, 0)
+        self.last_scale = [1.0] * 6
+
+    def refresh(self):
+        self.updating = True
+        st = self.store
+        self.panzoom.set_active(not st.get_bool("disable_translation"))
+        self.rotation.set_active(not st.get_bool("disable_rotation"))
+        self.dominant.set_active(st.get_bool("dominant"))
+        ud = (st.get("map_ty") or "ty").lower() == "tz" and (st.get("map_tz") or "tz").lower() == "ty"
+        (self.zoom_ud if ud else self.zoom_fb).set_active(True)
+        self.led.set_active(st.get_bool("led", True))
+        for i, a in enumerate(AXES):
+            act, sc, rev = self.axis[i]
+            v = st.get_float("scale_" + a, 1.0)
+            act.set_active(v != 0)
+            sc.set_sensitive(v != 0)
+            if v != 0:
+                self.last_scale[i] = abs(v)
+                sc.set_value(math.log10(max(0.1, min(10, abs(v)))))
+            sc.set_tooltip_text("%s speed %sx" % (AXIS_LABELS[i], fmt_num(abs(v))))
+            rev.set_active(st.get_bool("invert_" + a))
+        self.updating = False
+
+    def on_zoom(self, b):
+        if self.zoom_ud.get_active():
+            self.store.set("map_ty", "tz")
+            self.store.set("map_tz", "ty")
+        elif self.store.profile and self.store.base.get("map_ty"):
+            self.store.set("map_ty", "ty")
+            self.store.set("map_tz", "tz")
+        else:
+            self.store.target.remove("map_ty")
+            self.store.reset("map_tz")
+
+    def on_active(self, i):
+        act, sc, _ = self.axis[i]
+        self.store.set("scale_" + AXES[i], fmt_num(self.last_scale[i]) if act.get_active() else "0")
+
+    def on_scale(self, i):
+        v = 10 ** self.axis[i][1].get_value()
+        if abs(self.axis[i][1].get_value()) < 0.02:
+            v = 1.0
+        self.last_scale[i] = v
+        self.store.set("scale_" + AXES[i], fmt_num(v))
+
+    def on_calibrate(self, _b):
+        rc, out = self.app.daemon.request("calibrate")
+        self.msg.set_text(out.strip().splitlines()[0] if out.strip() else
+                          ("calibrated" if rc == 0 else "calibrate failed"))
+
+    def on_restore(self, _b):
+        for k in ADVANCED_KEYS:
+            self.store.target.remove(k)
+        self.store.changed()
+        self.msg.set_text("Advanced settings restored to %s" %
+                          ("the default profile" if self.store.profile else "defaults"))
+
+
+class KeyCaptureDialog(Gtk.Dialog):
+    """Press a key combination; records evdev key names (hardware keycode - 8)."""
+
+    def __init__(self, parent, button_name):
+        super().__init__(title="Keystroke for " + button_name, transient_for=parent, modal=True)
+        self.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+        self.set_response_sensitive(Gtk.ResponseType.OK, False)
+        self.keys = []
+        box = self.get_content_area()
+        box.set_border_width(14)
+        box.set_spacing(8)
+        box.add(Gtk.Label(label="Press the key combination to send:"))
+        self.shown = Gtk.Label()
+        self.shown.set_markup("<span size='x-large'>…</span>")
+        box.add(self.shown)
+        self.connect("key-press-event", self.on_key)
+        self.show_all()
+
+    def on_key(self, _w, ev):
+        code = ev.hardware_keycode - 8  # X11/Wayland keycodes are evdev + 8
+        name = CODE_NAMES.get(code, str(code))
+        mods = []
+        st = ev.state
+        if st & Gdk.ModifierType.CONTROL_MASK:
+            mods.append("LEFTCTRL")
+        if st & Gdk.ModifierType.SHIFT_MASK:
+            mods.append("LEFTSHIFT")
+        if st & Gdk.ModifierType.MOD1_MASK:
+            mods.append("LEFTALT")
+        if st & (Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.MOD4_MASK):
+            mods.append("LEFTMETA")
+        keys = mods + ([name] if name not in mods else [])
+        self.keys = keys[:4]
+        self.shown.set_markup("<span size='x-large'>%s</span>"
+                              % GLib.markup_escape_text(pretty_chord(self.keys)))
+        self.set_response_sensitive(Gtk.ResponseType.OK, True)
+        return True
+
+
+def chord_names(value):
+    """'KEY_LEFTCTRL + KEY_C' -> ['LEFTCTRL', 'C']; 'none' -> []."""
+    if not value or value.strip().lower() == "none":
+        return []
+    out = []
+    for t in value.split("+"):
+        t = t.strip().upper()
+        if t.startswith("KEY_"):
+            t = t[4:]
+        if t:
+            out.append(t)
+    return out
+
+
+def pretty_chord(names):
+    return "+".join(PRETTY_KEY.get(n, n.title() if len(n) > 1 else n) for n in names)
+
+
+def chord_value(names):
+    return "+".join("KEY_" + n if not n.isdigit() or n in KEY_CODES else n for n in names)
+
+
+class ButtonsPanel(Panel):
+    title = "Buttons"
+
+    def build(self):
+        cols = Gtk.Box(spacing=18, homogeneous=True)
+        self.rows = {}
+        for col in SPP_LAYOUT:
+            g = Gtk.Grid(column_spacing=8, row_spacing=4)
+            r = 0
+            for item in col:
+                if item is None:
+                    g.attach(Gtk.Separator(margin_top=4, margin_bottom=4), 0, r, 2, 1)
+                    r += 1
+                    continue
+                v3dk, cap, fn = item
+                capw = drawing(46, 26, draw_keycap, cap)
+                capw.set_tooltip_text(v3dk)
+                g.attach(capw, 0, r, 1, 1)
+                btn = Gtk.Button()
+                lab = Gtk.Label(xalign=0)
+                lab.set_ellipsize(Pango.EllipsizeMode.END)
+                lab.set_width_chars(21)
+                hb = Gtk.Box(spacing=4)
+                hb.pack_start(lab, True, True, 0)
+                hb.pack_end(Gtk.Image.new_from_icon_name("pan-down-symbolic",
+                                                         Gtk.IconSize.MENU), False, False, 0)
+                btn.add(hb)
+                btn.set_hexpand(True)
+                btn.connect("clicked", lambda b, it=item: self.popup(b, it))
+                g.attach(btn, 1, r, 1, 1)
+                self.rows[v3dk] = (lab, fn)
+                r += 1
+            cols.pack_start(g, True, True, 0)
+        self.box.pack_start(cols, True, True, 0)
+        note = Gtk.Label(xalign=0)
+        note.set_markup("<small>Buttons left at their default are sent to the application "
+                        "(spacenavd button events / evdev BTN_*).</small>")
+        note.get_style_context().add_class("dim-label")
+        self.box.pack_start(note, False, False, 0)
+        foot = Gtk.Box(spacing=8)
+        rd = Gtk.Button(label="Restore Defaults")
+        rd.connect("clicked", self.on_restore)
+        foot.pack_start(rd, False, False, 0)
+        self.close = Gtk.Button(label="Close")
+        foot.pack_end(self.close, False, False, 0)
+        self.box.pack_end(foot, False, False, 0)
+
+    def assignment(self, v3dk):
+        """(kind, value): ('action', name) | ('keys', [names]) | ('app', None)"""
+        a = self.store.get("action_" + v3dk)
+        if a and a.lower() != "none":
+            return "action", a.lower()
+        k = chord_names(self.store.get("key_" + v3dk))
+        if k:
+            return "keys", k
+        return "app", None
+
+    def describe(self, v3dk, fn):
+        kind, val = self.assignment(v3dk)
+        if kind == "action":
+            return ACTION_LABEL.get(val, val)
+        if kind == "keys":
+            joined = "+".join(val)
+            for name, preset in KEY_PRESETS:
+                if preset and chord_names(preset) == val:
+                    return name
+            return pretty_chord(val) if joined else fn
+        return fn
+
+    def refresh(self):
+        for v3dk, (lab, fn) in self.rows.items():
+            kind, _ = self.assignment(v3dk)
+            text = self.describe(v3dk, fn)
+            if kind == "app":
+                lab.set_markup("%s <span alpha='60%%'>(application)</span>"
+                               % GLib.markup_escape_text(text))
+            else:
+                lab.set_text(text)
+
+    def popup(self, widget, item):
+        v3dk, _cap, fn = item
+        menu = Gtk.Menu()
+
+        def add(m, label, cb):
+            mi = Gtk.MenuItem(label=label)
+            mi.connect("activate", lambda *_: cb())
+            m.append(mi)
+            return mi
+
+        add(menu, "%s (send to application)" % fn, lambda: self.assign(v3dk, "app", None))
+        menu.append(Gtk.SeparatorMenuItem())
+        drv = Gtk.Menu()
+        for name, label in ACTIONS:
+            add(drv, label, lambda n=name: self.assign(v3dk, "action", n))
+        mi = Gtk.MenuItem(label="Driver")
+        mi.set_submenu(drv)
+        menu.append(mi)
+        kb = Gtk.Menu()
+        for label, chord in KEY_PRESETS:
+            if label is None:
+                kb.append(Gtk.SeparatorMenuItem())
+                continue
+            add(kb, "%s  (%s)" % (label, pretty_chord(chord_names(chord))),
+                lambda c=chord: self.assign(v3dk, "keys", chord_names(c)))
+        mi = Gtk.MenuItem(label="Keyboard")
+        mi.set_submenu(kb)
+        menu.append(mi)
+        add(menu, "Custom keystroke…", lambda: self.capture(v3dk, fn))
+        menu.show_all()
+        menu.popup_at_widget(widget, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+
+    def capture(self, v3dk, fn):
+        dlg = KeyCaptureDialog(self.box.get_toplevel(), fn)
+        if dlg.run() == Gtk.ResponseType.OK and dlg.keys:
+            self.assign(v3dk, "keys", dlg.keys)
+        dlg.destroy()
+
+    def assign(self, v3dk, kind, val):
+        st = self.store
+        t = st.target
+        akey, kkey = "action_" + v3dk, "key_" + v3dk
+        in_profile = st.profile is not None
+        # the daemon checks action_ first, then key_
+        if kind == "action":
+            t.set(akey, val)
+            t.remove(kkey)
+        elif kind == "keys":
+            t.set(kkey, chord_value(val))
+            if in_profile and (st.base.get(akey) or "none").lower() != "none":
+                t.set(akey, "none")
+            else:
+                t.remove(akey)
+        else:
+            for key in (akey, kkey):
+                if in_profile and (st.base.get(key) or "none").lower() != "none":
+                    t.set(key, "none")
+                else:
+                    t.remove(key)
+        st.changed()
+
+    def on_restore(self, _b):
+        t = self.store.target
+        for k in t.keys_with_prefix("key_") + t.keys_with_prefix("action_"):
+            t.remove(k)
+        if not self.store.profile:
+            for k, v in DEFAULT_KEYS.items():
+                t.set("key_" + k, v)
+            for k, v in DEFAULT_ACTIONS.items():
+                t.set("action_" + k, v)
+        self.store.changed()
+
+
+class LcdPanel(Panel):
+    title = "LCD Manager"
+
+    def build(self):
+        top = Gtk.Box(spacing=14)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.preview = drawing(320, 240, self.draw_preview)
+        left.pack_start(self.preview, False, False, 0)
+        self.page2 = Gtk.CheckButton(label="Show keys 6–10 (as while SHIFT is held)")
+        self.page2.connect("toggled", lambda *_: self.preview.queue_draw())
+        left.pack_start(self.page2, False, False, 0)
+        top.pack_start(left, False, False, 0)
+
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.enable = Gtk.CheckButton(label="Use the LCD")
+        self.enable.set_tooltip_text("Daemon-wide (stored in the default settings)")
+        self.enable.connect("toggled", self.guard(
+            lambda b: self.store.set("lcd", "yes" if b.get_active() else "no")))
+        right.pack_start(self.enable, False, False, 0)
+
+        br = Gtk.Box(spacing=8)
+        self.bright = {}
+        first = None
+        for name, val in [("Device", None)] + BRIGHTNESS:
+            rb = Gtk.RadioButton.new_with_label_from_widget(first, name)
+            first = first or rb
+            rb.connect("toggled", self.guard(lambda b, v=val: b.get_active() and self.on_bright(v)))
+            br.pack_start(rb, False, False, 0)
+            self.bright[val] = rb
+        self.bright[None].set_tooltip_text("Leave the brightness as the device has it")
+        right.pack_start(frame("Brightness", br), False, False, 0)
+
+        g = Gtk.Grid(column_spacing=8, row_spacing=4)
+        self.labels = []
+        for i in range(10):
+            lab = Gtk.Label(label=str(i + 1), xalign=1)
+            e = Gtk.Entry()
+            e.set_max_length(23)
+            e.set_width_chars(12)
+            e.connect("changed", self.guard(lambda w, i=i: self.on_label(i)))
+            c, r = divmod(i, 5)
+            g.attach(lab, c * 2, r, 1, 1)
+            g.attach(e, c * 2 + 1, r, 1, 1)
+            self.labels.append(e)
+        right.pack_start(frame("Key labels", g), False, False, 0)
+
+        img = Gtk.Box(spacing=6)
+        self.image = Gtk.FileChooserButton(title="LCD image (320×240 PPM)")
+        flt = Gtk.FileFilter()
+        flt.set_name("PPM images")
+        flt.add_pattern("*.ppm")
+        self.image.add_filter(flt)
+        self.image.connect("file-set", self.guard(self.on_image))
+        img.pack_start(self.image, True, True, 0)
+        clr = Gtk.Button(label="Clear")
+        clr.connect("clicked", lambda *_: self.store.reset("lcd_image"))
+        img.pack_start(clr, False, False, 0)
+        right.pack_start(frame("Image instead of labels", img), False, False, 0)
+        top.pack_start(right, True, True, 0)
+        self.box.pack_start(top, True, True, 0)
+
+        foot = Gtk.Box(spacing=8)
+        self.close = Gtk.Button(label="Close")
+        foot.pack_end(self.close, False, False, 0)
+        self.box.pack_end(foot, False, False, 0)
+
+    def label_values(self):
+        return [self.store.get("lcd_label_%d" % (i + 1)) or "Key %d" % (i + 1)
+                for i in range(10)]
+
+    def draw_preview(self, w, cr):
+        devs = self.app.status.get("devices", [])
+        draw_lcd_preview(w, cr, self.label_values(),
+                         devs[0]["name"] if devs else "SpacePilot Pro",
+                         1 if self.page2.get_active() else 0)
+
+    def refresh(self):
+        self.updating = True
+        self.enable.set_active(parse_bool(self.store.base.get("lcd", "yes")))
+        b = self.store.get("lcd_brightness")
+        try:
+            b = int(b) if b is not None else None
+        except ValueError:
+            b = None
+        if b is None or b < 0:
+            self.bright[None].set_active(True)
+        else:
+            near = min(BRIGHTNESS, key=lambda nv: abs(nv[1] - b))[1]
+            self.bright[near].set_active(True)
+        for i, e in enumerate(self.labels):
+            v = self.store.get("lcd_label_%d" % (i + 1)) or ""
+            if e.get_text() != v:
+                e.set_text(v)
+            e.set_placeholder_text("Key %d" % (i + 1))
+        path = self.store.get("lcd_image")
+        if path:
+            self.image.set_filename(path)
+        else:
+            self.image.unselect_all()
+        self.preview.queue_draw()
+        self.updating = False
+
+    def on_bright(self, v):
+        if v is None:
+            self.store.reset("lcd_brightness")
+        else:
+            self.store.set("lcd_brightness", v)
+
+    def on_label(self, i):
+        t = self.labels[i].get_text().strip()
+        if t:
+            self.store.set("lcd_label_%d" % (i + 1), t)
+        else:
+            self.store.reset("lcd_label_%d" % (i + 1))
+        self.preview.queue_draw()
+
+    def on_image(self, fc):
+        p = fc.get_filename()
+        if p:
+            self.store.set("lcd_image", p)
+
+
+class AboutPanel(Panel):
+    title = "About tdxd"
+
+    def build(self):
+        head = Gtk.Box(spacing=12)
+        head.pack_start(drawing(96, 60, lambda w, cr: draw_device(w, cr, True)), False, False, 0)
+        t = Gtk.Label(xalign=0)
+        t.set_markup("<span size='x-large' weight='bold'>tdxd</span>\n"
+                     "Linux driver for 3Dconnexion six-axis devices")
+        head.pack_start(t, True, True, 0)
+        self.box.pack_start(head, False, False, 0)
+
+        self.versions = Gtk.Grid(column_spacing=16, row_spacing=2)
+        self.box.pack_start(frame("Versions", self.versions), False, False, 0)
+        self.devices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.box.pack_start(frame("Devices", self.devices), False, False, 0)
+        self.files = Gtk.Grid(column_spacing=16, row_spacing=2)
+        self.box.pack_start(frame("Configuration", self.files), False, False, 0)
+
+        link = Gtk.LinkButton.new_with_label(PROJECT_URL, "Project page")
+        link.set_halign(Gtk.Align.START)
+        self.box.pack_start(link, False, False, 0)
+        foot = Gtk.Box(spacing=8)
+        self.close = Gtk.Button(label="Close")
+        foot.pack_end(self.close, False, False, 0)
+        self.box.pack_end(foot, False, False, 0)
+
+    @staticmethod
+    def fill(grid, rows):
+        for c in grid.get_children():
+            grid.remove(c)
+        for r, (k, v) in enumerate(rows):
+            a = Gtk.Label(label=k, xalign=0)
+            a.get_style_context().add_class("dim-label")
+            b = Gtk.Label(label=v, xalign=0)
+            grid.attach(a, 0, r, 1, 1)
+            grid.attach(b, 1, r, 1, 1)
+        grid.show_all()
+
+    def refresh(self):
+        st = self.app.status
+        self.fill(self.versions, [
+            ("tdxd", st.get("version", "not running")),
+            ("tdx-settings", APP_VERSION),
+            ("GTK", "%d.%d.%d" % (Gtk.get_major_version(), Gtk.get_minor_version(),
+                                  Gtk.get_micro_version())),
+        ])
+        for c in self.devices.get_children():
+            self.devices.remove(c)
+        devs = st.get("devices", [])
+        if not devs:
+            self.devices.add(Gtk.Label(label="none connected", xalign=0))
+        for d in devs:
+            l = Gtk.Label(xalign=0)
+            l.set_markup("<b>%s</b>   FW: %s   [%s:%s]   %s" % (
+                GLib.markup_escape_text(d["name"]), d["firmware"], d["vid"], d["pid"], d["node"]))
+            self.devices.add(l)
+        self.devices.show_all()
+        self.fill(self.files, [
+            ("Settings", self.store.base.path),
+            ("Profiles", self.store.profile_dir),
+            ("Control socket", self.app.daemon.socket),
+        ])
+
+
+# --------------------------------------------------------------------------
+# application
+
+class App:
+    def __init__(self, args):
+        self.args = args
+        self.store = Store(args.config, args.profile_dir)
+        sock = args.socket or self.store.base.get("control_socket", "/run/tdxd.sock")
+        self.daemon = Daemon(sock, args.status_file)
+        self.status = self.daemon.status()
+        self.panels = []
+        self.windows = {}
+        self.save_state = ""
+        self.save_timer = None
+        self.main = self.win = None
+        prof = args.profile
+        if prof is None and self.status.get("profile") not in (None, "default"):
+            prof = self.status["profile"]
+        if prof:
+            self.store.select(prof)
+        self.store.listeners.append(self.on_changed)
+
+    # ---- saving
+    def on_changed(self):
+        for p in self.panels:
+            p.refresh()
+        if all(writable(f.path) for f in self.store.files() if f.dirty):
+            if self.save_timer:
+                GLib.source_remove(self.save_timer)
+            self.save_timer = GLib.timeout_add(600, self.flush)
+            self.set_save_state("")
+        else:
+            self.set_save_state("Unsaved – saved when you close (administrator password)")
+
+    def set_save_state(self, text):
+        self.save_state = text
+        if self.main:
+            self.main.save_label.set_text(text)
+
+    def flush(self, *_):
+        self.save_timer = None
+        if self.args.no_save:
+            return False
+        errors = [e for e in (write_file(f) for f in self.store.files() if f.dirty) if e]
+        if errors:
+            self.set_save_state("Not saved: " + errors[0])
+            return False
+        rc, out = self.daemon.request("reload")
+        self.set_save_state("Saved" + ("" if rc == 0 else
+                                       " – tdxd not reloaded (%s)" % out.strip()[:60]))
+        GLib.timeout_add(800, self.poll_status)
+        return False
+
+    def poll_status(self):
+        self.status = self.daemon.status()
+        for p in self.panels:
+            p.refresh()
+        return False
+
+    # ---- profiles
+    def switch_profile(self, name):
+        if self.store.dirty():
+            self.flush()
+        self.store.select(name)
+        self.poll_status()
+
+    def new_profile(self):
+        dlg = Gtk.Dialog(title="New application profile", transient_for=self.win, modal=True)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Create", Gtk.ResponseType.OK)
+        box = dlg.get_content_area()
+        box.set_border_width(12)
+        box.set_spacing(6)
+        box.add(Gtk.Label(label="Application (process name, glob patterns allowed):", xalign=0))
+        e = Gtk.Entry()
+        app = self.status.get("app")
+        e.set_text(app if app and app != "-" else "")
+        e.set_activates_default(True)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        box.add(e)
+        dlg.show_all()
+        ok = dlg.run() == Gtk.ResponseType.OK
+        match = e.get_text().strip()
+        dlg.destroy()
+        name = re.sub(r"[^A-Za-z0-9_.-]+", "-", match.split(",")[0].replace("*", "")).strip("-.")
+        if ok and name:
+            if self.store.dirty():
+                self.flush()
+            self.store.create_profile(name, match)
+            self.on_changed()
+        else:
+            self.main.refresh()
+
+    # ---- windows
+    def window(self, cls):
+        if cls in self.windows:
+            self.windows[cls].present()
+            return
+        panel = cls(self)
+        w = Gtk.Window(title=panel.title, transient_for=self.win)
+        w.set_resizable(False)
+        w.add(panel.box)
+        panel.close.connect("clicked", lambda *_: w.destroy())
+        w.connect("destroy", lambda *_: self.closed(cls, panel))
+        w.show_all()
+        self.windows[cls] = w
+
+    def closed(self, cls, panel):
+        self.windows.pop(cls, None)
+        self.panels.remove(panel)
+        if self.store.dirty():
+            self.flush()
+
+    def show_advanced(self):
+        self.window(AdvancedPanel)
+
+    def show_buttons(self):
+        self.window(ButtonsPanel)
+
+    def show_lcd(self):
+        self.window(LcdPanel)
+
+    def show_about(self):
+        self.window(AboutPanel)
+
+    def quit(self):
+        if self.store.dirty():
+            self.flush()
+        Gtk.main_quit()
+
+    def run(self):
+        self.main = MainPanel(self)
+        self.win = Gtk.Window(title=MainPanel.title)
+        self.win.set_resizable(False)
+        self.win.set_default_size(440, -1)
+        self.win.add(self.main.box)
+        self.win.connect("delete-event", lambda *_: (self.quit(), True)[1])
+        self.win.show_all()
+        Gtk.main()
+
+    # ---- --snapshot
+    def snapshot(self, outdir):
+        os.makedirs(outdir, exist_ok=True)
+        self.main = MainPanel(self)
+        self.win = None
+        shots = [("main", self.main)] + [(n, c(self)) for n, c in (
+            ("advanced", AdvancedPanel), ("buttons", ButtonsPanel),
+            ("lcd", LcdPanel), ("about", AboutPanel))]
+        for name, panel in shots:
+            off = Gtk.OffscreenWindow()
+            off.add(panel.box)
+            off.show_all()
+            for _ in range(50):
+                while Gtk.events_pending():
+                    Gtk.main_iteration()
+            # paint the theme background ourselves (OffscreenWindow leaves the margins bare)
+            import cairo
+            w, h = off.get_allocated_width(), off.get_allocated_height()
+            surf = cairo.ImageSurface(cairo.FORMAT_RGB24, w, h)
+            cr = cairo.Context(surf)
+            Gtk.render_background(off.get_style_context(), cr, 0, 0, w, h)
+            a = panel.box.get_allocation()
+            cr.translate(a.x, a.y)
+            panel.box.draw(cr)
+            path = os.path.join(outdir, "tdx-settings-%s.png" % name)
+            surf.write_to_png(path)
+            print(path, "%dx%d" % (w, h))
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Settings panel for the tdxd 3Dconnexion driver")
+    ap.add_argument("-c", "--config", default="/etc/tdxd.conf", help="base configuration file")
+    ap.add_argument("--profile-dir", help="per-application profiles (default: profile_dir)")
+    ap.add_argument("-p", "--profile", help="edit this profile instead of the active one "
+                                            "('' for the default settings)")
+    ap.add_argument("-s", "--socket", help="tdxd control socket (default: control_socket)")
+    ap.add_argument("--snapshot", metavar="DIR", help="render every window to DIR/*.png and exit")
+    ap.add_argument("--status-file", help=argparse.SUPPRESS)  # canned `tdxctl status` (tests)
+    ap.add_argument("--no-save", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("-V", "--version", action="version", version="tdx-settings " + APP_VERSION)
+    args = ap.parse_args()
+    app = App(args)
+    if args.snapshot:
+        app.snapshot(args.snapshot)
+        return 0
+    app.run()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

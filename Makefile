@@ -69,6 +69,10 @@ test: $(BUILD)/test_core
 	$(BUILD)/test_core $(BUILD)/vectors
 	@if command -v python3 >/dev/null; then python3 tests/check_deflate.py $(BUILD)/vectors; 	 else echo "python3 not found: skipping independent deflate check"; fi
 
+# Settings panel (needs python3-gi, gir1.2-gtk-3.0, python3-gi-cairo and a display)
+test-gui: $(BUILD)/tdxd
+	python3 tests/test_settings.py $(BUILD)/tdxd
+
 # Regenerate the device table from an extracted 3DxWare Base.xml
 devices:
 	@test -n "$(BASE_XML)" || (echo "usage: make devices BASE_XML=path/to/Base.xml"; exit 1)
@@ -79,6 +83,10 @@ install: all
 	install -Dm755 $(BUILD)/tdx-lcd  $(DESTDIR)$(PREFIX)/bin/tdx-lcd
 	install -Dm755 $(BUILD)/tdxctl   $(DESTDIR)$(PREFIX)/bin/tdxctl
 	install -Dm755 packaging/tdx-focus $(DESTDIR)$(PREFIX)/bin/tdx-focus
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-settings
+	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
+	install -Dm644 gui/tdx-settings.desktop $(DESTDIR)$(PREFIX)/share/applications/tdx-settings.desktop
+	sed 's#/usr/local/lib/tdxd#$(PREFIX)/lib/tdxd#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
 	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/tdxd.d/blender.conf.example
 	install -Dm644 packaging/99-3dconnexion-tdxd.rules $(DESTDIR)/etc/udev/rules.d/99-3dconnexion-tdxd.rules
@@ -97,12 +105,15 @@ STAGE   := $(or $(TMPDIR),/tmp)/tdxd-dist-$(ARCH)
 dist:
 	rm -rf $(BUILD)   # rebuild everything so the embedded version is current
 	$(MAKE) STATIC=1 ARCH=$(ARCH) VERSION=$(VERSION) all
-	rm -rf $(DIST) && mkdir -p $(DIST)/bin
+	rm -rf $(DIST) && mkdir -p $(DIST)/bin $(DIST)/lib
 	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl packaging/tdx-focus $(DIST)/bin/
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings > $(DIST)/bin/tdx-settings
+	cp gui/tdx-settings-helper $(DIST)/lib/
 	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
 	cp packaging/99-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
 	   packaging/tdx-focus.service packaging/profiles/blender.conf.example \
-	   packaging/install.sh README.md docs/PROTOCOL.md $(DIST)/
+	   packaging/install.sh gui/tdx-settings.desktop gui/org.tdxd.settings.policy \
+	   README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
 	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION
 	# Archive from a staging copy on a Linux filesystem so file modes are real:
@@ -110,7 +121,8 @@ dist:
 	# /mnt drives reports 0777 for everything, and root's tar restores archived modes.)
 	rm -rf $(STAGE) && mkdir -p $(STAGE) && cp -r $(DIST) $(STAGE)/
 	find $(STAGE) -type d -exec chmod 755 {} + && find $(STAGE) -type f -exec chmod 644 {} +
-	chmod 755 $(STAGE)/$(notdir $(DIST))/bin/* $(STAGE)/$(notdir $(DIST))/install.sh
+	chmod 755 $(STAGE)/$(notdir $(DIST))/bin/* $(STAGE)/$(notdir $(DIST))/lib/* \
+	   $(STAGE)/$(notdir $(DIST))/install.sh
 	tar -C $(STAGE) --owner=0 --group=0 --numeric-owner -czf $(DIST).tar.gz $(notdir $(DIST))
 	rm -rf $(STAGE)
 	@echo "wrote $(DIST).tar.gz"
@@ -125,4 +137,4 @@ release:
 clean:
 	rm -rf build
 
-.PHONY: all test install clean devices dist release
+.PHONY: all test test-gui install clean devices dist release
