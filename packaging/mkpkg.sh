@@ -109,6 +109,10 @@ POST_REMOVE='if [ -d /run/systemd/system ]; then systemctl daemon-reload || true
 if command -v udevadm >/dev/null 2>&1; then udevadm control --reload-rules 2>/dev/null || true; fi'
 
 # ---- .deb ---------------------------------------------------------------------
+# Recommends are installed by default, and so are theirs: xdg-utils (RSS "open
+# in browser") and x11-utils (xprop, for tdx-focus) pulled in ~60 packages -
+# Perl libraries and a terminal emulator - on a minimal system, so they are
+# only Suggests. Every desktop has them anyway.
 build_deb() {
 	stage "/usr/lib/$TRIPLET"
 	local R=$STAGE/root D=$STAGE/root/DEBIAN
@@ -120,7 +124,8 @@ Architecture: $DEB_ARCH
 Maintainer: tdxd project <$HOMEPAGE/issues>
 Installed-Size: $(du -sk --exclude=DEBIAN "$R" | cut -f1)
 Depends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, pkexec | policykit-1
-Recommends: p7zip-full, x11-utils, xdg-utils, librsvg2-common
+Recommends: p7zip-full, librsvg2-common
+Suggests: xdg-utils, x11-utils
 Conflicts: spacenavd
 Section: utils
 Priority: optional
@@ -155,7 +160,8 @@ Summary: $SUMMARY
 License: MIT
 URL: $HOMEPAGE
 Requires: python3, python3-gobject, python3-cairo, gtk3, polkit
-Recommends: p7zip, xprop, xdg-utils, librsvg2
+Recommends: p7zip, librsvg2
+Suggests: xdg-utils, xprop
 Conflicts: spacenavd
 AutoReqProv: no
 # prebuilt static binaries: nothing to strip or split out
