@@ -76,6 +76,24 @@ def main():
 
     feed = os.path.join(d, "feed.xml")
     open(feed, "wb").write(RSS2)
+    # every applet must start from a saved settings file (Configure... wrote one)
+    import json
+    os.makedirs(os.path.join(d, "tdxd"), exist_ok=True)
+    saved = {"rss.json": {"feeds": [{"name": "", "url": "file://" + feed}], "duration": 7},
+             "pictures.json": {"interval": 3}, "functionkeys.json": {"page": 1}}
+    for name, data in saved.items():
+        json.dump(data, open(os.path.join(d, "tdxd", name), "w"))
+    started = []
+    for mod, cls in ((rss, "Rss"), (load("tdx-lcd-pictures"), "Pictures"),
+                     (load("tdx-lcd-functionkeys"), "FunctionKeys")):
+        try:
+            started.append(getattr(mod, cls)().cfg)
+        except Exception as e:  # noqa: BLE001
+            print("  %s: %r" % (cls, e))
+    check(len(started) == 3 and started[0]["duration"] == 7 and started[1]["interval"] == 3,
+          "applets start with a saved settings file")
+    for name in saved:
+        os.unlink(os.path.join(d, "tdxd", name))
     a = rss.Rss()
     a.cfg["feeds"] = [{"name": "", "url": "file://" + feed},
                       {"name": "Broken", "url": "file://" + os.path.join(d, "missing.xml")}]

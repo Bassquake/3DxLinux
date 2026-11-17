@@ -109,20 +109,20 @@ class Rss(la.Applet):
     FPS = 4
 
     def __init__(self):
-        super().__init__()
+        # set before the base class loads a saved config (it calls config_changed)
         self.feeds = {}        # url -> {"title", "items", "error", "time"}
         self.fi = 0            # feed index
         self.ii = 0            # item index
         self.shown_at = time.time()
         self.fetching = set()
         self.wake = threading.Event()
+        super().__init__()
         threading.Thread(target=self.fetcher, daemon=True).start()
 
     def config_changed(self):
         super().config_changed()
         self.fi = min(self.fi, max(0, len(self.cfg.get("feeds", [])) - 1))
-        if hasattr(self, "wake"):
-            self.wake.set()
+        self.wake.set()
 
     # downloads
     def fetcher(self):
