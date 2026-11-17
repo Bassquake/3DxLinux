@@ -276,6 +276,7 @@ on), then tested with the SpacePilot PRO attached.
 | LCD Manager | **Pass:** `/usr/bin/tdx-lcdmgr` registered and started the three applets from `/usr/bin`; all connected (0.3.0's applets failed here). Started by hand: WSL's root has no desktop session to start the user unit. |
 | Upgrade (reinstall) | **Pass:** tdxd restarted, an edit to `/etc/tdxd.conf` kept. |
 | Purge | **Pass:** service, user unit, programs, config, udev rule removed; no tdxd left running. |
+| 3DxWare look | **Pass:** `sudo tdx-extract-3dxware-ui <installer>` from the package filled `/usr/local/share/tdxd/3dxware-ui` and the icon theme; after restarting tdx-lcdmgr the device showed the Windows look (program list and applets). |
 
 **Fixed during this test:**
 
