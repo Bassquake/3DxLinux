@@ -87,6 +87,7 @@ static struct lm_menu menu;
 static uint32_t fbpx[NPIX];
 static volatile sig_atomic_t g_quit;
 static uint64_t spawned_at[LM_MAX_PROG];
+static pid_t spawned_pid[LM_MAX_PROG]; /* applets we started: stopped when we exit */
 
 static uint64_t now_ms(void)
 {
@@ -851,9 +852,12 @@ static void spawn(int prog)
 			if (!verbose)
 				dup2(nul, 2);
 		}
+		setenv("TDX_LCD_SOCKET", sock_path, 1); /* our socket, also when not the default */
 		execl(p->path, p->path, (char *)NULL);
 		_exit(127);
 	}
+	if (pid > 0)
+		spawned_pid[prog] = pid;
 	LOG(0, "started %s (%s), pid %d\n", p->name, p->path, (int)pid);
 }
 
@@ -1226,6 +1230,15 @@ int main(int argc, char **argv)
 	}
 	for (int i = 0; i < MAX_CLIENTS; i++)
 		if (cl[i].fd >= 0) {
+			/* an applet we started goes with us (as under systemd, where
+			 * stopping the unit ends its cgroup); one still connected is
+			 * certainly that process, never a reused pid */
+			int p = cl[i].prog;
+			if (cl[i].connected && p >= 0 && p < LM_MAX_PROG && spawned_pid[p] > 0 &&
+			    cl[i].pid == spawned_pid[p]) {
+				LOG(1, "stopping %s (pid %d)\n", db.prog[p].name, cl[i].pid);
+				kill(cl[i].pid, SIGTERM);
+			}
 			notify(&cl[i], LGLCD_NOTIFICATION_CLOSE_CONNECTION_, 0);
 			client_close(&cl[i]);
 		}

@@ -285,6 +285,41 @@ def main():
         check(alive and n == 1, "a failing button callback keeps the connection (alive=%s, listed %d)"
               % (alive, n))
         c.close()
+
+        # first run: tdx-lcdmgr registers and starts the applets itself (on its
+        # own socket), and stops them again when it exits
+        d2 = os.path.join(d, "autostart")
+        os.makedirs(d2)
+        sock2 = os.path.join(d2, "lcd.sock")
+        mgr2 = subprocess.Popen([mgr_bin, "-v", "-s", sock2, "-d", os.path.join(d2, "db.ini"),
+                                 "-F", os.path.join(d2, "lcd.ppm"), "-t", os.path.join(d2, "none")],
+                                stderr=subprocess.PIPE, text=True,
+                                env=dict(os.environ, XDG_CONFIG_HOME=d2))
+        end = time.time() + 20
+        pids = []
+        while time.time() < end:
+            try:
+                st = tdxlcd.status(sock2)["programs"]
+                if sum(q["running"] for q in st) == 3:
+                    break
+            except OSError:
+                pass
+            time.sleep(0.3)
+        check(sum(q["running"] for q in st) == 3, "autostarted applets connect to tdx-lcdmgr's socket")
+        mgr2.terminate()
+        log = mgr2.communicate(timeout=10)[1]
+        import re
+        pids = [int(x) for x in re.findall(r"started .*, pid (\d+)", log)]
+        time.sleep(1)
+        gone = []
+        for p in pids:
+            try:
+                os.kill(p, 0)
+                os.kill(p, 15)  # do not leave it behind
+            except OSError:
+                gone.append(p)
+        check(len(pids) == 3 and gone == pids, "tdx-lcdmgr stops the applets it started: %s of %s"
+              % (gone, pids))
         for q in procs:
             q.terminate()
         mgr.terminate()
