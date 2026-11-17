@@ -263,3 +263,31 @@ an X11 window's own icon gets through. The GUIs now use X11 under WSLg unless
 if it existed when WSLg started, only searches `/usr/share/icons` for icon
 names, and skips `NoDisplay` entries - so the extractor writes absolute icon
 paths into the `.desktop` entries. Wayland on a real desktop is untested.
+
+## 2026-11-17: the 0.3.1 `.deb` package
+
+`tdxd_0.3.1-1_amd64.deb` installed with apt on the Ubuntu 22.04 WSL (systemd
+on), then tested with the SpacePilot PRO attached.
+
+| Test | Result |
+|---|---|
+| Install | **Pass:** only `tdxd` itself is added (Python 3/GTK 3 were present); `tdxd.service` enabled and running, `uinput` loaded, `/dev/hidraw0`, the LCD's USB node and `/dev/uinput` group `input`; the LCD Manager user unit enabled globally. |
+| Device | **Pass:** the installed tdxd found the SpacePilot PRO (firmware 4.11) on attach. |
+| LCD Manager | **Pass:** `/usr/bin/tdx-lcdmgr` registered and started the three applets from `/usr/bin`; all connected (0.3.0's applets failed here). Started by hand: WSL's root has no desktop session to start the user unit. |
+| Upgrade (reinstall) | **Pass:** tdxd restarted, an edit to `/etc/tdxd.conf` kept. |
+| Purge | **Pass:** service, user unit, programs, config, udev rule removed; no tdxd left running. |
+
+**Fixed during this test:**
+
+- The applets didn't find `lcdapplet.py` when installed (also in 0.3.0's
+  `.tar.gz`).
+- `xdg-utils` and `x11-utils` as *Recommends* pulled in 60 packages on a
+  minimal system (Perl libraries, the tilix terminal); now *Suggests*. The 60
+  were removed again.
+- tdx-lcdmgr didn't pass its socket to applets it started (they missed a
+  manager on `-s`), and left them running when it exited.
+- Entries for applets that moved (`/usr/local/bin` → `/usr/bin`) now follow
+  them.
+
+Not tested: the `.rpm` (no Fedora system), the arm64 packages, and a
+double-click install on a real desktop.
