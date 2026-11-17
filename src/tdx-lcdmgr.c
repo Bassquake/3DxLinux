@@ -861,15 +861,16 @@ static void spawn(int prog)
 	LOG(0, "started %s (%s), pid %d\n", p->name, p->path, (int)pid);
 }
 
-/* First run: register the installed 3Dconnexion applet ports like the Windows
- * installer does (Function Keys, RSS Feeds, Picture Viewer; autostart). */
-static void seed_programs(const char *argv0)
+static const struct { const char *exe, *name; } builtin_apps[] = {
+	{"tdx-lcd-functionkeys", "Function Keys"},
+	{"tdx-lcd-rss", "RSS Feeds"},
+	{"tdx-lcd-pictures", "Picture Viewer"},
+};
+
+/* Where an applet port is installed: next to us, the source tree's gui/ when
+ * run from build/<arch>/, /usr/local/bin, /usr/bin. 0 and *real, or -1. */
+static int builtin_path(const char *argv0, const char *exe, char real[PATH_MAX])
 {
-	static const struct { const char *exe, *name; } apps[] = {
-		{"tdx-lcd-functionkeys", "Function Keys"},
-		{"tdx-lcd-rss", "RSS Feeds"},
-		{"tdx-lcd-pictures", "Picture Viewer"},
-	};
 	char self[PATH_MAX], dirs[4][PATH_MAX];
 	int nd = 0;
 	if (realpath(argv0, self) || realpath("/proc/self/exe", self)) {
@@ -877,27 +878,63 @@ static void seed_programs(const char *argv0)
 		if (s) {
 			*s = 0;
 			snprintf(dirs[nd++], PATH_MAX, "%s", self);
-			/* running from the source tree: build/<arch>/ -> gui/ */
 			snprintf(dirs[nd++], PATH_MAX, "%.*s/../../gui", PATH_MAX - 16, self);
 		}
 	}
 	snprintf(dirs[nd++], PATH_MAX, "/usr/local/bin");
 	snprintf(dirs[nd++], PATH_MAX, "/usr/bin");
-	for (size_t a = 0; a < sizeof apps / sizeof apps[0]; a++)
-		for (int d = 0; d < nd; d++) {
-			char p[PATH_MAX + 64], real[PATH_MAX];
-			snprintf(p, sizeof p, "%.*s/%s", PATH_MAX - 64, dirs[d], apps[a].exe);
-			if (access(p, X_OK) || !realpath(p, real))
-				continue;
-			int i = lm_db_add(&db, real, apps[a].name, LGLCD_APPLET_CAP_QVGA_, 1, 1);
-			if (i == 0 && !db.manual_name[0] && strlen(real) < sizeof db.manual_path) {
-				memcpy(db.manual_path, real, strlen(real) + 1);
-				snprintf(db.manual_name, sizeof db.manual_name, "%s", apps[a].name);
-			}
-			LOG(0, "registered %s (%s)\n", apps[a].name, real);
-			break;
+	for (int d = 0; d < nd; d++) {
+		char p[PATH_MAX + 64];
+		snprintf(p, sizeof p, "%.*s/%s", PATH_MAX - 64, dirs[d], exe);
+		if (!access(p, X_OK) && realpath(p, real))
+			return 0;
+	}
+	return -1;
+}
+
+/* First run: register the installed 3Dconnexion applet ports like the Windows
+ * installer does (Function Keys, RSS Feeds, Picture Viewer; autostart). */
+static void seed_programs(const char *argv0)
+{
+	for (size_t a = 0; a < sizeof builtin_apps / sizeof builtin_apps[0]; a++) {
+		char real[PATH_MAX];
+		if (builtin_path(argv0, builtin_apps[a].exe, real))
+			continue;
+		int i = lm_db_add(&db, real, builtin_apps[a].name, LGLCD_APPLET_CAP_QVGA_, 1, 1);
+		if (i == 0 && !db.manual_name[0] && strlen(real) < sizeof db.manual_path) {
+			memcpy(db.manual_path, real, strlen(real) + 1);
+			snprintf(db.manual_name, sizeof db.manual_name, "%s", builtin_apps[a].name);
 		}
+		LOG(0, "registered %s (%s)\n", builtin_apps[a].name, real);
+	}
 	if (db.nprog)
+		save_db();
+}
+
+/* An applet port whose file is gone was moved (install.sh's /usr/local/bin ->
+ * a package's /usr/bin): point its entry at where it is now, keeping the
+ * user's settings for it, instead of listing a program that can't start. */
+static void relocate_builtins(const char *argv0)
+{
+	int changed = 0;
+	for (int i = 0; i < db.nprog; i++) {
+		struct lm_program *p = &db.prog[i];
+		const char *base = strrchr(p->path, '/');
+		base = base ? base + 1 : p->path;
+		for (size_t a = 0; a < sizeof builtin_apps / sizeof builtin_apps[0]; a++) {
+			char real[PATH_MAX];
+			if (strcmp(base, builtin_apps[a].exe) || !access(p->path, F_OK) ||
+			    builtin_path(argv0, builtin_apps[a].exe, real) ||
+			    lm_db_find(&db, real, p->name) >= 0 || strlen(real) >= sizeof p->path)
+				continue;
+			LOG(0, "%s moved: %s -> %s\n", p->name, p->path, real);
+			if (!strcmp(db.manual_path, p->path) && strlen(real) < sizeof db.manual_path)
+				memcpy(db.manual_path, real, strlen(real) + 1);
+			memcpy(p->path, real, strlen(real) + 1);
+			changed = 1;
+		}
+	}
+	if (changed)
 		save_db();
 }
 
@@ -1136,6 +1173,8 @@ int main(int argc, char **argv)
 	int rc = lm_db_load(&db, db_path);
 	if (rc == -ENOENT && !no_seed)
 		seed_programs(argv[0]);
+	else if (!rc && !no_seed)
+		relocate_builtins(argv[0]);
 	if (rc && rc != -ENOENT)
 		LOG(0, "cannot read %s: %s\n", db_path, strerror(-rc));
 

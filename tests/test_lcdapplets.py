@@ -320,6 +320,29 @@ def main():
                 gone.append(p)
         check(len(pids) == 3 and gone == pids, "tdx-lcdmgr stops the applets it started: %s of %s"
               % (gone, pids))
+
+        # an applet port that moved (install.sh's /usr/local/bin -> a package's
+        # /usr/bin): its entry follows it instead of listing a dead program
+        d3 = os.path.join(d, "moved")
+        os.makedirs(d3)
+        old = os.path.join(d3, "gone", "tdx-lcd-rss")
+        with open(os.path.join(d3, "db.ini"), "w") as fh:
+            fh.write('[ClientApplications]\n0="%s","RSS Feeds",E1,A0,S1,L1,C2\n' % old)
+        mgr3 = subprocess.Popen([mgr_bin, "-s", os.path.join(d3, "lcd.sock"),
+                                 "-d", os.path.join(d3, "db.ini"), "-F", os.path.join(d3, "lcd.ppm"),
+                                 "-t", os.path.join(d3, "none")], stderr=subprocess.DEVNULL)
+        end = time.time() + 10
+        progs = []
+        while time.time() < end and not progs:
+            try:
+                progs = tdxlcd.status(os.path.join(d3, "lcd.sock"))["programs"]
+            except OSError:
+                time.sleep(0.2)
+        mgr3.terminate()
+        mgr3.wait(timeout=10)
+        want = os.path.realpath(os.path.join(ROOT, "gui", "tdx-lcd-rss"))
+        check([(q["name"], q["path"]) for q in progs] == [("RSS Feeds", want)],
+              "a moved applet's entry follows it: %s" % [(q["name"], q["path"]) for q in progs])
         for q in procs:
             q.terminate()
         mgr.terminate()
