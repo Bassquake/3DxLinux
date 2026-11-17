@@ -328,28 +328,57 @@ class LcdManager:
             cr.arc(x + 300, y + 174, 70, 0, 2 * math.pi)
             cr.fill()
 
+    # LCDMon's pane pieces carry their own shadow margins: the header's solid
+    # part starts 8 px right (after a 4-px shadow ramp) and 4 px down in IDR_PANE_HEADER_*_L
+    # and ends 7 px before the right edge of *_R; the side shadows (IDR_PANE_SHADOW_L/R, 7 px)
+    # sit just outside the panel and the bottom corners (BL/BR, 15 px) meet them.
+    HEADER_H = 23
+
     def draw_pane(self, cr, x, y, w, expanded, height):
+        hh = self.HEADER_H
         if expanded:
-            self.draw_shadow(cr, x, y + 10, w, height - 10)
             cr.set_source_rgb(1, 1, 1)
-            cr.rectangle(x, y + 27, w, height - 27)
+            cr.rectangle(x, y + hh, w, height - hh)
             cr.fill()
-            if not three_slice(cr, "PANE_HEADER_EXPANDED", x, y, w):
-                g = cairo.LinearGradient(0, y, 0, y + 27)
+            self.pane_shadow(cr, x, y + hh, w, height - hh)
+            if not three_slice(cr, "PANE_HEADER_EXPANDED", x - 8, y - 4, w + 15):
+                g = cairo.LinearGradient(0, y, 0, y + hh)
                 g.add_color_stop_rgb(0, 0.30, 0.66, 0.74)
                 g.add_color_stop_rgb(1, *TEAL)
                 cr.set_source(g)
-                cr.rectangle(x, y, w, 27)
+                rounded(cr, x, y, w, hh + 4, 4)
                 cr.fill()
         else:
-            if not three_slice(cr, "PANE_HEADER_COLLAPSED", x, y, w):
-                self.draw_shadow(cr, x, y, w, 27)
-                g = cairo.LinearGradient(0, y, 0, y + 27)
+            if not three_slice(cr, "PANE_HEADER_COLLAPSED", x - 8, y - 4, w + 15):
+                self.draw_shadow(cr, x, y, w, hh)
+                g = cairo.LinearGradient(0, y, 0, y + hh)
                 g.add_color_stop_rgb(0, 0.30, 0.66, 0.74)
                 g.add_color_stop_rgb(1, *TEAL)
                 cr.set_source(g)
-                rounded(cr, x, y, w, 27, 4)
+                rounded(cr, x, y, w, hh, 4)
                 cr.fill()
+
+    def pane_shadow(self, cr, x, y, w, h):
+        """Shadow around a pane body (below its header) from LCDMon's pieces."""
+        sl, sr = ART.surface("PANE_SHADOW_L"), ART.surface("PANE_SHADOW_R")
+        if not (sl and sr and ART.surface("PANE_SHADOW_BOTTOM")):
+            self.draw_shadow(cr, x, y - 4, w, h + 4)
+            cr.set_source_rgb(1, 1, 1)
+            cr.rectangle(x, y, w, h)
+            cr.fill()
+            return
+        for name, sx in (("PANE_SHADOW_L", x - 7), ("PANE_SHADOW_R", x + w)):
+            s = ART.surface(name)
+            cr.save()
+            cr.rectangle(sx, y, 7, h)
+            cr.clip()
+            for yy in range(y, y + h, s.get_height()):
+                cr.set_source_surface(s, sx, yy)
+                cr.paint()
+            cr.restore()
+        paint(cr, "PANE_SHADOW_BOTTOM", x + 8, y + h, w - 16, 10)
+        paint(cr, "PANE_SHADOW_BL", x - 7, y + h)
+        paint(cr, "PANE_SHADOW_BR", x + w - 8, y + h)
 
     # ---- layout
     def put(self, widget, x, y):
@@ -446,12 +475,13 @@ class LcdManager:
 
     # ---- device page
     def page_device(self):
-        x, y, w, _h = PANEL
+        x, _y, w, _h = PANEL
+        y = 24  # pane header tops as in LCDMon (screenshot: 24 and 664)
         if self.config_open:
-            self.panes.append((y, "Configuration", True, 624))
+            self.panes.append((y, "Configuration", True, 622))
             self.pane_header("Configuration", y, True, "config")
             self.device_config(x, y)
-            ry = y + 624 + 18
+            ry = y + 622 + 18
         else:
             self.panes.append((y, "Configuration", False, 0))
             self.pane_header("Configuration", y, False, "config")
@@ -463,14 +493,14 @@ class LcdManager:
 
     def pane_header(self, title, y, expanded, which):
         x, _y, w, _h = PANEL
-        self.put(lab(title, "pane"), x + 12, y + 6)
+        self.put(lab(title, "pane"), x + 12, y + 3)
         icon = ART.image("PANE_CONTROL_CLOSE" if expanded else "PANE_CONTROL_OPEN")
         b = Gtk.Button()
         b.get_style_context().add_class("flat")
         b.set_can_focus(False)
         b.add(icon or lab("⌃" if expanded else "⌄", "pane"))
         b.connect("clicked", lambda *_: self.toggle_pane(which))
-        self.put(b, x + w - 30, y + 6)
+        self.put(b, x + w - 26, y + 4)
 
     def toggle_pane(self, which):
         if which == "config":
@@ -575,8 +605,9 @@ class LcdManager:
 
     # ---- programs page
     def page_programs(self):
-        x, y, w, _h = PANEL
-        self.panes.append((y, "Programs on This System", True, 466))
+        x, _y, w, _h = PANEL
+        y = 24
+        self.panes.append((y, "Programs on This System", True, 464))
         self.pane_header("Programs on This System", y, True, "none")
         progs = (self.st or {}).get("programs", [])
         dev = (self.st or {}).get("device") or "3Dconnexion SpacePilot PRO"
