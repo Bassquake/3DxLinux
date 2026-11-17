@@ -186,3 +186,35 @@ moved under `/tmp`), which binds +, −, DOM, LOCK and PAN ZOOM to actions.
 - Whether action buttons are kept away from applications was checked in the
   code path and logs, not with a client listening.
 - A per-application profile edited from the panel on real hardware.
+
+## 2026-11-17: LCD Manager (tdx-lcdmgr) and the LCD soft buttons
+
+Same SpacePilot PRO (firmware 4.11), WSL2 + usbipd, build of commit `a8a3af0`
+plus the soft-button read-length fix below. tdxd ran as before; `tdx-lcdmgr -v -v`
+and two `tdx-lcd-demo -a` applets ran beside it; `tdx-lcdmanager` ran through WSLg.
+
+| Test | Result |
+|---|---|
+| Handover from tdxd | **Pass:** `tdxd released the LCD`; tdxd logged `LCD handed to the LCD manager (1 released)` and `tdxctl status` showed `lcd lcdmgr`. |
+| Handover back | **Pass:** stopping tdx-lcdmgr made tdxd log `LCD manager disconnected; tdxd drives the LCD again` and re-open the LCD. |
+| Applet frames | **Pass:** "Demo One" (libtdxlcd, `LGLCD_SYNC_UPDATE`) shown on the LCD with its counter running. |
+| Soft buttons (interrupt IN `0x81`) | **Pass after a fix:** all eight LCD keys report, mapped as EDMBTDD.dll does: UP `0x1000`, DOWN `0x2000`, OK `0x400`, LEFT `0x100`, RIGHT `0x200`, MENU `0x4000`, CANCEL `0x800`, and the LCD key `0x80000000`; each release reports 0. |
+| Buttons to the applet | **Pass:** with the list closed, UP/DOWN/OK went to the shown applet (its BUTTONS value changed). |
+| Program list on the LCD | **Pass:** the LCD key opened the list, DOWN moved the selection, OK switched to "Demo Two"; the list closes after 2 s without input. |
+| Autostart | **Pass:** persistent autostart programs in the database were started by the manager. |
+| `tdx-lcdmanager` window | **Pass:** Identify (device name on the LCD for 3 s), Brightness (LCD dims and returns), Programs page (both demos Running; Enable unticked and ticked again), Global Settings and About pages. |
+
+**Bug found and fixed in this test.** The first soft-button read asked for 8 bytes;
+the endpoint's packets are 2 bytes (wMaxPacketSize), and a full-size packet does
+not end an interrupt transfer, so presses never completed the read. LGPBTDD.sys
+(`FUN_00012434`) reads exactly one packet; `lcd.c` now uses the endpoint's
+wMaxPacketSize too.
+
+### Not covered by this test
+
+- The Windows applets themselves (Function Keys, RSS Feeds, Picture Viewer):
+  they are ported next.
+- Rotation, alerts and foreground requests on hardware (covered by
+  `make test-lcdmgr` with the virtual LCD).
+- The user service (`systemctl --user`) and the `pkexec`-less user access
+  through the udev `uaccess` rule on a real desktop (WSL runs as root).

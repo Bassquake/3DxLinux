@@ -27,6 +27,7 @@ struct tdx_lcd {
 	int iface;        /* vendor interface (0)   */
 	unsigned ep_out;  /* bulk OUT endpoint      */
 	unsigned ep_in;   /* interrupt IN endpoint (soft buttons), 0 if none */
+	unsigned in_len;  /* its wMaxPacketSize (2 on the SpacePilot PRO) */
 	char path[64];
 	struct usbdevfs_urb in_urb; /* pending soft-button read */
 	int in_pending;

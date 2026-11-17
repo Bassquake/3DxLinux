@@ -37,6 +37,9 @@ the lglcd button bits:
 | 5 | LEFT `0x0100` | | 1 | CANCEL `0x0800` |
 | 4 | RIGHT `0x0200` | | 0 | `0x80000000` (the LCD key, kept by LCDMon) |
 
+Read exactly one packet (wMaxPacketSize, 2 bytes) per transfer, as LGPBTDD.sys
+`FUN_00012434` does: a longer read waits for several full packets. All eight
+keys were verified on the SpacePilot PRO (docs/HARDWARE_TESTS.md).
 `tdx-lcd buttons` prints them live.
 
 **Program list on the LCD** (LCDMon `FUN_14007fadc`, `FUN_140084a10`,

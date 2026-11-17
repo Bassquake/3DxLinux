@@ -203,6 +203,7 @@ int tdx_lcd_open(struct tdx_lcd *lcd, uint16_t vid, uint16_t pid)
 	lcd->fd = -1;
 	lcd->iface = 0;
 	lcd->ep_in = 0;
+	lcd->in_len = 0;
 	lcd->in_pending = 0;
 	int rc = tdx_usb_find_node(vid, pid, lcd->path, sizeof lcd->path);
 	if (rc)
@@ -243,8 +244,8 @@ uint32_t tdx_lcd_softbuttons(uint8_t b)
 	return m;
 }
 
-/* First interrupt IN endpoint of @iface. */
-static int find_int_in(int fd, int iface, unsigned *ep)
+/* First interrupt IN endpoint of @iface and its wMaxPacketSize. */
+static int find_int_in(int fd, int iface, unsigned *ep, unsigned *maxpkt)
 {
 	uint8_t buf[4096];
 	ssize_t n = pread(fd, buf, sizeof buf, 0);
@@ -255,6 +256,7 @@ static int find_int_in(int fd, int iface, unsigned *ep)
 		else if (buf[i + 1] == 5 && buf[i] >= 7 && cur == iface && (buf[i + 2] & 0x80) &&
 			 (buf[i + 3] & 3) == 3) {
 			*ep = buf[i + 2];
+			*maxpkt = (unsigned)(buf[i + 4] | buf[i + 5] << 8) & 0x7FF;
 			return 0;
 		}
 	}
@@ -267,13 +269,17 @@ int tdx_lcd_buttons_start(struct tdx_lcd *lcd)
 		return -EBADF;
 	if (lcd->in_pending)
 		return 0;
-	if (!lcd->ep_in && find_int_in(lcd->fd, lcd->iface, &lcd->ep_in))
+	if (!lcd->ep_in && find_int_in(lcd->fd, lcd->iface, &lcd->ep_in, &lcd->in_len))
 		return -ENOENT;
+	/* exactly one packet, as LGPBTDD.sys FUN_00012434 reads (length = wMaxPacketSize):
+	 * a longer request would wait for several full 2-byte packets */
+	if (!lcd->in_len || lcd->in_len > sizeof lcd->in_buf)
+		lcd->in_len = 2;
 	memset(&lcd->in_urb, 0, sizeof lcd->in_urb);
 	lcd->in_urb.type = USBDEVFS_URB_TYPE_INTERRUPT;
 	lcd->in_urb.endpoint = (unsigned char)lcd->ep_in;
 	lcd->in_urb.buffer = lcd->in_buf;
-	lcd->in_urb.buffer_length = sizeof lcd->in_buf;
+	lcd->in_urb.buffer_length = (int)lcd->in_len;
 	if (ioctl(lcd->fd, USBDEVFS_SUBMITURB, &lcd->in_urb) < 0)
 		return -errno;
 	lcd->in_pending = 1;
