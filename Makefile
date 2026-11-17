@@ -183,14 +183,20 @@ dist:
 	rm -rf $(STAGE)
 	@echo "wrote $(DIST).tar.gz"
 
+# .deb and .rpm from the dist tree (double-click installs; needs dpkg-deb, rpmbuild)
+packages: dist
+	bash packaging/mkpkg.sh $(DIST) $(VERSION) $(ARCH) build/dist
+
 release:
-	$(MAKE) dist ARCH=x86_64 VERSION=$(VERSION)
-	$(MAKE) dist ARCH=arm64 VERSION=$(VERSION)
+	$(MAKE) packages ARCH=x86_64 VERSION=$(VERSION)
+	$(MAKE) packages ARCH=arm64 VERSION=$(VERSION)
 	cd build/dist && sha256sum tdxd-$(VERSION)-linux-x86_64.tar.gz \
-	   tdxd-$(VERSION)-linux-arm64.tar.gz > tdxd-$(VERSION)-SHA256SUMS
+	   tdxd-$(VERSION)-linux-arm64.tar.gz \
+	   tdxd_$(VERSION)-1_amd64.deb tdxd_$(VERSION)-1_arm64.deb \
+	   tdxd-$(VERSION)-1.x86_64.rpm tdxd-$(VERSION)-1.aarch64.rpm > tdxd-$(VERSION)-SHA256SUMS
 	@cat build/dist/tdxd-$(VERSION)-SHA256SUMS
 
 clean:
 	rm -rf build
 
-.PHONY: all test test-gui test-lcdmgr test-lcdapplets font install clean devices dist release
+.PHONY: all test test-gui test-lcdmgr test-lcdapplets font install clean devices dist packages release
