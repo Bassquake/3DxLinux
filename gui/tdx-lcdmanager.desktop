@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=LCD Manager (tdxd)
+GenericName=3D Mouse LCD Manager
+Comment=Programs, brightness and contrast for the SpacePilot PRO LCD
+Exec=tdx-lcdmanager
+Icon=input-mouse
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=3Dconnexion;SpacePilot;LCD;applet;

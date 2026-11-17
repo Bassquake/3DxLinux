@@ -22,6 +22,10 @@ if [ "${1:-}" = "--remove" ]; then
 	      "$PREFIX/lib/libtdxlcd.a" "$PREFIX/lib/libtdxlcd.so" \
 	      "$PREFIX/lib/libtdxlcd.so.1" "$PREFIX/include/tdxlcd.h" /etc/systemd/user/tdx-lcdmgr.service \
 	      "$PREFIX/share/applications/tdx-settings.desktop" \
+	      "$PREFIX/share/applications/tdx-lcdmanager.desktop" \
+	      "$PREFIX/share/applications/tdx-lcd-functionkeys.desktop" \
+	      "$PREFIX/share/applications/tdx-lcd-rss.desktop" \
+	      "$PREFIX/share/applications/tdx-lcd-pictures.desktop" \
 	      /usr/share/polkit-1/actions/org.tdxd.settings.policy \
 	      /etc/udev/rules.d/99-3dconnexion-tdxd.rules /etc/systemd/system/tdxd.service \
 	      /etc/systemd/user/tdx-focus.service /etc/tdxd.d/blender.conf.example
@@ -56,7 +60,9 @@ install -Dm644 include/tdxlcd.h "$PREFIX/include/tdxlcd.h"
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-lcdmgr.service > /etc/systemd/user/tdx-lcdmgr.service
 chmod 644 /etc/systemd/user/tdx-lcdmgr.service
 ldconfig 2>/dev/null || true
-install -Dm644 tdx-settings.desktop "$PREFIX/share/applications/tdx-settings.desktop"
+for d in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+	install -Dm644 "$d.desktop" "$PREFIX/share/applications/$d.desktop"
+done
 sed "s#/usr/local/lib/tdxd#$PREFIX/lib/tdxd#" org.tdxd.settings.policy \
 	| install -Dm644 /dev/stdin /usr/share/polkit-1/actions/org.tdxd.settings.policy
 mkdir -p /etc/systemd/user /etc/tdxd.d

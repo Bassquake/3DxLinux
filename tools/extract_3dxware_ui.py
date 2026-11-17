@@ -10,6 +10,10 @@ copies it out of the installer you downloaded, for use on your own machine.
 
 OUTDIR defaults to ~/.local/share/tdxd/3dxware-ui (or, as root,
 /usr/local/share/tdxd/3dxware-ui). Needs 7z (p7zip-full / p7zip-plugins).
+With the default OUTDIR the programs' window icons (the 3Dconnexion logo, the
+LCD Manager's) also go into the hicolor icon theme as tdxd-3dxware and
+tdxd-lcdmanager, and tdx-settings.desktop is pointed at the logo, so the
+desktop's taskbar shows them like Windows does.
 
 What it does, without running any installer code:
   installer.exe --7z--> 3DxWinCore64.msi --7z--> Data1.cab + MSI tables
@@ -404,21 +408,111 @@ def applet_art(exe, outdir):
                 groups.append((name, data))
         except (ValueError, struct.error, zlib.error, KeyError):
             pass
-    # the executable's icon = first icon group (lowest id), its 32x32 entry
-    if groups:
-        groups.sort(key=lambda g: (isinstance(g[0], str), g[0]))
-        gdata = groups[0][1]
-        cnt, = struct.unpack_from("<H", gdata, 4)
-        best = None
-        for i in range(cnt):
-            w, h, _c, _r, _p, bpp, _sz, iid = struct.unpack_from("<BBBBHHIH", gdata, 6 + i * 14)
-            score = (w or 256) == 32, bpp
-            if best is None or score > best[0]:
-                best = (score, iid)
-        d = icons.get(best[1]) if best else None
-        if d:
-            img = png_read(d) if d[:8] == b"\x89PNG\r\n\x1a\n" else dib_read(d, icon=True)
-            save_both(os.path.join(outdir, "icon"), *img)
+    # the executable's icon: 32x32 for the program list, every size for windows
+    sizes = exe_icon_sizes(icons, groups)
+    if 32 in sizes:
+        save_both(os.path.join(outdir, "icon"), *sizes[32])
+    for size, img in sizes.items():
+        png_write(os.path.join(outdir, "icon_%d.png" % size), *img)
+    return n
+
+
+PNG_SIG = b"\x89PNG\r\n\x1a\n"
+
+
+def exe_icon_sizes(icons, groups):
+    """The executable's icon (first icon group, lowest id) -> {size: (w, h, rgba)},
+    the deepest colour entry of each size."""
+    if not groups:
+        return {}
+    groups.sort(key=lambda g: (isinstance(g[0], str), g[0]))
+    gdata = groups[0][1]
+    cnt, = struct.unpack_from("<H", gdata, 4)
+    best = {}
+    for i in range(cnt):
+        w, _h, _c, _r, _p, bpp, _sz, iid = struct.unpack_from("<BBBBHHIH", gdata, 6 + i * 14)
+        size = w or 256
+        if iid in icons and (size not in best or bpp > best[size][0]):
+            best[size] = (bpp, iid)
+    out = {}
+    for size, (_bpp, iid) in best.items():
+        d = icons.get(iid)
+        try:
+            out[size] = png_read(d) if d[:8] == PNG_SIG else dib_read(d, icon=True)
+        except (TypeError, ValueError, struct.error, zlib.error, KeyError):
+            pass
+    return out
+
+
+def app_icons(exe, outdir, key):
+    """A program's window icon in every size -> outdir/<key>_<size>.png."""
+    icons, groups = {}, []
+    for typ, name, data in pe_resources(exe):
+        if typ == 3:
+            icons[name] = data
+        elif typ == 14:
+            groups.append((name, data))
+    sizes = exe_icon_sizes(icons, groups)
+    os.makedirs(outdir, exist_ok=True)
+    for size, img in sizes.items():
+        png_write(os.path.join(outdir, "%s_%d.png" % (key, size)), *img)
+    return sorted(sizes)
+
+
+# .desktop entry -> its icon (icon-theme name tdxd-<key>)
+DESKTOP_ICONS = {"tdx-settings": "3dxware", "tdx-lcdmanager": "lcdmanager",
+                 "tdx-lcd-functionkeys": "functionkeys", "tdx-lcd-rss": "rss",
+                 "tdx-lcd-pictures": "pictures"}
+
+
+def theme_icon_files(out):
+    """(key, size, path) of every window icon extracted to out."""
+    found = []
+    appicons = os.path.join(out, "appicons")
+    for f in sorted(os.listdir(appicons)) if os.path.isdir(appicons) else []:
+        m = re.match(r"(\w+)_(\d+)\.png$", f)
+        if m:
+            found.append((m.group(1), int(m.group(2)), os.path.join(appicons, f)))
+    for key in ("functionkeys", "rss", "pictures"):
+        d = os.path.join(out, "lcdapplets", key)
+        for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            m = re.match(r"icon_(\d+)\.png$", f)
+            if m:
+                found.append((key, int(m.group(1)), os.path.join(d, f)))
+    return found
+
+
+def install_theme_icons(out, theme_root, apps_dir, system_apps=("/usr/local/share", "/usr/share")):
+    """Put the window icons into the hicolor icon theme as tdxd-<key> and point
+    the installed .desktop entries at them. Wayland desktops (GNOME, KDE, WSLg)
+    take a window's taskbar icon from the .desktop entry named like its app id
+    (tdx-settings, tdx-lcdmanager, tdx-lcd-rss, ...), never from the window."""
+    n = 0
+    keys = set()
+    for key, size, path in theme_icon_files(out):
+        d = os.path.join(theme_root, "hicolor", "%dx%d" % (size, size), "apps")
+        os.makedirs(d, exist_ok=True)
+        shutil.copyfile(path, os.path.join(d, "tdxd-%s.png" % key))
+        keys.add(key)
+        n += 1
+    if n and shutil.which("gtk-update-icon-cache") and \
+            os.path.isfile(os.path.join(theme_root, "hicolor", "index.theme")):
+        subprocess.call(["gtk-update-icon-cache", "-q", "-f", os.path.join(theme_root, "hicolor")])
+    for entry, key in DESKTOP_ICONS.items():
+        if key not in keys:
+            continue
+        for base in system_apps:
+            src = os.path.join(base, "applications", entry + ".desktop")
+            if not os.path.isfile(src):
+                continue
+            with open(src) as f:
+                text = re.sub(r"(?m)^Icon=.*$", "Icon=tdxd-" + key, f.read())
+            # as root this rewrites the installed entry; as a user it is the
+            # ~/.local/share/applications override, which wins over the system one
+            os.makedirs(apps_dir, exist_ok=True)
+            with open(os.path.join(apps_dir, entry + ".desktop"), "w") as f:
+                f.write(text)
+            break
     return n
 
 
@@ -442,7 +536,8 @@ def main():
         print(__doc__)
         return 2
     installer = os.path.abspath(sys.argv[1])
-    if len(sys.argv) > 2:
+    default_out = len(sys.argv) <= 2
+    if not default_out:
         out = sys.argv[2]
     elif os.geteuid() == 0:
         out = "/usr/local/share/tdxd/3dxware-ui"
@@ -471,6 +566,8 @@ def main():
             with open(os.path.join(out, "ui", name + ".png"), "wb") as f:
                 f.write(blob)
         print("%d control-panel images from 3DxSmartUi.exe" % len(imgs))
+        print("window icon sizes %s from 3DxSmartUi.exe"
+              % app_icons(smartui, os.path.join(out, "appicons"), "3dxware"))
 
         apps = unpack_msi(installer, "3DxLcdApplets64.msi", t) or {}
         appdir = os.path.join(out, "lcdapplets")
@@ -494,6 +591,7 @@ def main():
         if lcdmon:
             print("%d LCD Manager images from LCDMon.exe"
                   % lcdmon_images(lcdmon, os.path.join(out, "lcdmon")))
+            app_icons(lcdmon, os.path.join(out, "appicons"), "lcdmanager")
         else:
             print("LADPInst.msi / LCDMon.exe not found: LCD Manager artwork skipped")
 
@@ -504,6 +602,14 @@ def main():
         with open(os.path.join(out, "SOURCE"), "w") as f:
             f.write("Extracted from %s for local use by tdx-settings.\n"
                     "Artwork (c) 3Dconnexion; do not redistribute.\n" % os.path.basename(installer))
+    if default_out:  # the taskbar icons for the desktop's icon theme
+        if os.geteuid() == 0:
+            theme, apps = "/usr/local/share/icons", "/usr/local/share/applications"
+        else:
+            theme = os.path.expanduser("~/.local/share/icons")
+            apps = os.path.expanduser("~/.local/share/applications")
+        print("%d taskbar icons in %s" % (install_theme_icons(out, theme, apps),
+                                          theme))
     print("wrote", out)
     return 0
 

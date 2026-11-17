@@ -128,7 +128,8 @@ install: all
 	ln -sf libtdxlcd.so.1 $(DESTDIR)$(PREFIX)/lib/libtdxlcd.so
 	install -Dm644 src/tdxlcd.h $(DESTDIR)$(PREFIX)/include/tdxlcd.h
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-lcdmgr.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-lcdmgr.service
-	install -Dm644 gui/tdx-settings.desktop $(DESTDIR)$(PREFIX)/share/applications/tdx-settings.desktop
+	for d in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do \
+	  install -Dm644 gui/$$d.desktop $(DESTDIR)$(PREFIX)/share/applications/$$d.desktop; done
 	sed 's#/usr/local/lib/tdxd#$(PREFIX)/lib/tdxd#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
 	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/tdxd.d/blender.conf.example
@@ -165,7 +166,7 @@ dist:
 	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
 	cp packaging/99-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
 	   packaging/tdx-focus.service packaging/profiles/blender.conf.example \
-	   packaging/install.sh packaging/tdx-lcdmgr.service gui/tdx-settings.desktop gui/org.tdxd.settings.policy \
+	   packaging/install.sh packaging/tdx-lcdmgr.service gui/*.desktop gui/org.tdxd.settings.policy \
 	   README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
 	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION

@@ -701,6 +701,39 @@ class Assets:
         return self.devices.get((pid or "").lower(), {})
 
 
+def window_icon_files(folder, prefix):
+    """<folder>/<prefix>_<size>.png, smallest first (extract_3dxware_ui.py
+    takes them from the Windows program's icon)."""
+    try:
+        names = os.listdir(folder) if folder else []
+    except OSError:
+        return []
+    found = []
+    for n in names:
+        m = re.match(re.escape(prefix) + r"_(\d+)\.png$", n)
+        if m:
+            found.append((int(m.group(1)), os.path.join(folder, n)))
+    return [p for _s, p in sorted(found)]
+
+
+def set_window_icons(files, theme_name):
+    """Taskbar / title-bar icon for every window of this program, like the
+    Windows version's; the generic input-mouse icon without the artwork."""
+    from gi.repository import GdkPixbuf
+    pbs = []
+    for p in files:
+        try:
+            pbs.append(GdkPixbuf.Pixbuf.new_from_file(p))
+        except GLib.Error:
+            pass
+    if pbs:
+        Gtk.Window.set_default_icon_list(pbs)
+    else:
+        theme = Gtk.IconTheme.get_default()
+        Gtk.Window.set_default_icon_name(theme_name if theme and theme.has_icon(theme_name)
+                                         else "input-mouse")
+
+
 ASSETS = Assets(None)
 
 
@@ -1858,9 +1891,10 @@ class App:
         Gtk.main_quit()
 
     def run(self):
+        set_window_icons(window_icon_files(ASSETS.dir and os.path.join(ASSETS.dir, "appicons"),
+                                           "3dxware"), "tdxd-3dxware")
         self.main = MainPanel(self)
         self.win = self.make_window(self.main)
-        self.win.set_icon_name("input-mouse")
         self.win.connect("delete-event", lambda *_: (self.quit(), True)[1])
         self.win.show_all()
         self.main.refresh()
@@ -1892,6 +1926,7 @@ class App:
 
 def main():
     global ASSETS
+    GLib.set_prgname("tdx-settings")  # Wayland app id = tdx-settings.desktop (taskbar icon)
     ap = argparse.ArgumentParser(description="Settings panel for the tdxd 3Dconnexion driver")
     ap.add_argument("-c", "--config", default="/etc/tdxd.conf", help="base configuration file")
     ap.add_argument("--profile-dir", help="per-application profiles (default: profile_dir)")

@@ -12,6 +12,7 @@ runs "Configure..." (LCD Manager) as a GTK dialog in a separate process.
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -209,6 +210,33 @@ class Applet:
     def configure_dialog(self):
         """Run the Configure... dialog (GTK, separate process)."""
 
+    def window_icon_files(self):
+        """The Windows applet's icon in every size (icon_<size>.png, smallest first)."""
+        found = []
+        for n in os.listdir(self.art.dir) if self.art.dir else []:
+            m = re.match(r"icon_(\d+)\.png$", n)
+            if m:
+                found.append((int(m.group(1)), os.path.join(self.art.dir, n)))
+        return [p for _s, p in sorted(found)]
+
+    def set_window_icons(self):
+        """Taskbar icon of the Configure... dialog: the applet's own, as on Windows."""
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf, GLib, Gtk
+        # Wayland app id = tdx-lcd-<applet>.desktop, where the taskbar icon comes from
+        GLib.set_prgname(os.path.basename(os.path.realpath(sys.argv[0])))
+        pbs = []
+        for p in self.window_icon_files():
+            try:
+                pbs.append(GdkPixbuf.Pixbuf.new_from_file(p))
+            except GLib.Error:
+                pass
+        if pbs:
+            Gtk.Window.set_default_icon_list(pbs)
+        else:
+            Gtk.Window.set_default_icon_name("input-mouse")
+
     # plumbing
     def _on_buttons(self, b):
         with self.lock:
@@ -314,6 +342,7 @@ def main(cls):
     args = ap.parse_args()
     app = cls()
     if args.configure:
+        app.set_window_icons()
         app.configure_dialog()
         return 0
     if args.snapshot:
