@@ -26,7 +26,8 @@ import time
 import urllib.request
 import xml.etree.ElementTree as ET
 
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/tdxd/python
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
 import lcdapplet as la  # noqa: E402
 
 UA = "Mozilla/5.0 (compatible; tdxd RSS Feeds applet for Linux)"

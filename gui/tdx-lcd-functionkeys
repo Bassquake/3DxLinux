@@ -22,7 +22,8 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/tdxd/python
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
 import lcdapplet as la  # noqa: E402
 import cairo  # noqa: E402
 

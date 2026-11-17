@@ -209,6 +209,25 @@ def main():
     p.snapshot(os.path.join(d, "none.png"))
     check(p.files == [], "empty folder: 'No pictures found' screen")
 
+    # installed layout (make install, install.sh, .deb/.rpm): programs in bin/,
+    # the Python modules in lib/tdxd/python/ - every program must start from there
+    import shutil
+    inst = os.path.join(d, "installed")
+    os.makedirs(os.path.join(inst, "bin"))
+    os.makedirs(os.path.join(inst, "lib", "tdxd", "python"))
+    for m in ("tdxlcd.py", "lcdapplet.py"):
+        shutil.copy(os.path.join(ROOT, "gui", m), os.path.join(inst, "lib", "tdxd", "python", m))
+    progs = ("tdx-lcd-functionkeys", "tdx-lcd-rss", "tdx-lcd-pictures", "tdx-lcdmanager", "tdx-settings")
+    for p in progs:
+        shutil.copy(os.path.join(ROOT, "gui", p), os.path.join(inst, "bin", p))
+    for p in progs:
+        args = (["--snapshot", os.path.join(d, p + "-inst.png")] if p.startswith("tdx-lcd-")
+                else ["--version"])
+        r = subprocess.run([sys.executable, "-B", os.path.join(inst, "bin", p)] + args,
+                           capture_output=True, text=True, timeout=60)
+        check(r.returncode == 0, "%s starts in the installed layout: %s"
+              % (p, (r.stderr.strip().splitlines() or [""])[-1]))
+
     if real_assets:  # same with the 3DxWare artwork
         os.environ["TDX_UI_ASSETS"] = real_assets
         for mod, cls in ((rss, "Rss"), (fk, "FunctionKeys"), (pv, "Pictures")):
