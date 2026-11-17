@@ -65,6 +65,7 @@ class Pictures(la.Applet):
         self.t_start = 0
         self.t_kind = "None"
         self.paused = False
+        self.menu_open = False   # the device mini menu (MENU key): Configure... / Cancel
         self.overlay_until = 0
         self.shown_at = time.time()
         self.scatter = None
@@ -146,6 +147,19 @@ class Pictures(la.Applet):
         self.FPS = 20 if self.prev is not None else 4
 
     def on_buttons(self, pressed, held):
+        # The original's mini menu (icons 0x802D OK / 0x802E back, strings 0x802F
+        # "Configure..." / 136 "Cancel"): the MENU key (white square) opens it, OK runs
+        # Configure... (the settings dialog on the PC), the back-arrow key cancels.
+        if self.menu_open:
+            if pressed & la.OK:
+                self.menu_open = False
+                self._on_configure()
+            elif pressed & la.CANCEL:
+                self.menu_open = False
+            return
+        if pressed & la.MENU:
+            self.menu_open = True
+            return
         if pressed & la.RIGHT:
             self.go(1)
         elif pressed & la.LEFT:
@@ -207,6 +221,22 @@ class Pictures(la.Applet):
                 cr.fill()
                 la.text(cr, 116, 76, "II" if self.paused else "▶", 36, (0.2, 0.2, 0.2),
                         width=88, align="center", valign_h=88)
+        if self.menu_open:
+            self.draw_menu(cr)
+
+    def draw_menu(self, cr):
+        """Mini menu as on the device: dark rounded panel, OK / back icons."""
+        bx, by, bw, bh = 94, 80, 132, 80
+        cr.set_source_rgba(0.10, 0.10, 0.10, 0.92)
+        la.rounded(cr, bx, by, bw, bh, 7)
+        cr.fill()
+        for i, (icon, label, fallback) in enumerate((("png_32813", "Configure...", "OK"),
+                                                     ("png_32814", "Cancel", "←"))):
+            y = by + 10 + i * 31
+            if not self.art.paint(cr, icon, bx + 10, y):
+                la.text(cr, bx + 10, y, fallback, 11, (0.85, 0.15, 0.15), bold=True,
+                        width=20, align="center", valign_h=20)
+            la.text(cr, bx + 40, y, label, 14, (0.95, 0.95, 0.95), valign_h=20)
 
     # Configure... (the original's "PictureViewer Config" dialog)
     def configure_dialog(self):

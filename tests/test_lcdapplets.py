@@ -165,6 +165,19 @@ def main():
     check(True, "all transitions render")
     p.on_buttons(pv.la.OK, pv.la.OK)
     check(p.paused and p.overlay_until, "OK pauses")
+    # device mini menu: MENU opens, back cancels, OK runs Configure...
+    calls = []
+    p._on_configure = lambda: calls.append(1)
+    idx = p.idx
+    p.on_buttons(pv.la.MENU, pv.la.MENU)
+    p.on_buttons(pv.la.RIGHT, pv.la.RIGHT)
+    check(p.menu_open and p.idx == idx, "MENU opens the mini menu; other keys wait")
+    p.snapshot(os.path.join(d, "menu.png"))
+    p.on_buttons(pv.la.CANCEL, pv.la.CANCEL)
+    check(not p.menu_open and not calls, "back arrow cancels")
+    p.on_buttons(pv.la.MENU, pv.la.MENU)
+    p.on_buttons(pv.la.OK, pv.la.OK)
+    check(not p.menu_open and calls == [1] and p.paused, "OK runs Configure... (not pause)")
     p.cfg.update({"folder": os.path.join(d, "empty"), "subfolders": False})
     os.makedirs(os.path.join(d, "empty"))
     p.scan()
