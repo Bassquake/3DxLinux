@@ -60,6 +60,26 @@ The outputs are `build/<arch>/tdxd` (the daemon) and `build/<arch>/tdx-lcd`
 
 ## Install
 
+### Packages (double-click)
+
+Each release has `.deb` packages (Ubuntu, Debian, Mint, Pop!_OS) and `.rpm`
+packages (Fedora, openSUSE) for x86_64 and arm64. Double-click the one for your
+system, click **Install** and enter your password. That's all: the package
+pulls in Python 3 and GTK 3, loads `uinput`, sets up the udev rule, starts
+`tdxd`, and starts the LCD Manager in your session. It replaces `spacenavd` if
+that is installed. Uninstall it from the same software app.
+
+| File | For |
+|---|---|
+| `tdxd_<version>-1_amd64.deb` / `tdxd_<version>-1_arm64.deb` | Debian-based systems |
+| `tdxd-<version>-1.x86_64.rpm` / `tdxd-<version>-1.aarch64.rpm` | Fedora, openSUSE |
+
+The packages install under `/usr`. If you used `install.sh` before, remove that
+copy first with `sudo ./install.sh --remove` from its folder. `make packages`
+builds the packages for one architecture (needs `dpkg-deb` and `rpmbuild`).
+
+### From source
+
 ```bash
 sudo make install
 ```
