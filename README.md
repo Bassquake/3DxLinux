@@ -280,7 +280,7 @@ tdx-lcd bmp sp4LCD.bmp                    # Giotto: legacy 0x13 path (24 bpp BMP
 | x86_64 and arm64 builds | Compile without warnings |
 | SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, the daemon's key page with SHIFT paging, and **Blender 3.0.1** navigation and view buttons through libspnav |
 | SpaceMouse Enterprise and Giotto | Not verified on hardware (no device available) |
-| `tdx-settings` panel and `action_*` button actions | Unit-tested (`make test`, `make test-gui`: the GUI's edits are parsed by tdxd without warnings); actions not yet pressed on hardware |
+| `tdx-settings` panel and `action_*` button actions | **Verified** on the SpacePilot Pro (2026-11-17): speed ±, Dominant/Rotation/Pan Zoom toggles, and the panel's Speed, LEDs, Calibrate, button binding, LCD brightness and labels. Also unit-tested (`make test-gui`) |
 
 `docs/PROTOCOL.md` lists the open items.
 

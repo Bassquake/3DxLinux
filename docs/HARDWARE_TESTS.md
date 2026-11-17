@@ -160,3 +160,29 @@ Same day, same device and WSL setup, with the development build after commit
 - Whether the LCD *requires* the ping before frames. The ping was always sent
   first in these tests.
 - The SpaceMouse Enterprise and Giotto code paths (no such devices available).
+
+## 2026-11-17: button actions and the `tdx-settings` panel
+
+Same SpacePilot Pro (firmware 4.11) on WSL2 + usbipd, with the build of commit
+`0eb8998`. `tdxd` ran with the shipped `tdxd.conf` (sockets and `profile_dir`
+moved under `/tmp`), which binds +, −, DOM, LOCK and PAN ZOOM to actions.
+`tdx-settings` ran on the Windows desktop through WSLg.
+
+| Test | Result |
+|---|---|
+| `action_V3DK_PLUS = speed_up` / `action_V3DK_MINUS = speed_down` | **Pass:** each press stepped the speed by ×1.25 (1.00 → 1.25 → 1.56 → 1.25, …); overlapping + and − presses were each handled once. |
+| `dominant`, `rotation`, `panzoom` toggles | **Pass:** DOM turned dominant on, LOCK turned rotation off, PAN ZOOM turned pan/zoom off; `tdxctl status` then showed `speed 1.250`, `panzoom off`, `rotation off`, `dominant on`. |
+| Main window | **Pass:** showed SpacePilot PRO, firmware 4.11, `/dev/hidraw0`. Moving Speed saved `sensitivity` and reloaded tdxd. |
+| Advanced Settings: LEDs Active | **Pass:** unticking turned the LED off, ticking turned it back on. |
+| Advanced Settings: Calibrate | **Pass:** tdxd logged `re-zeroed (rest position calibrated)`. |
+| Buttons: button 1 → Keyboard › Copy | **Pass:** saved `key_V3DK_1 = KEY_LEFTCTRL+KEY_C`. |
+| LCD Manager: brightness | **Pass:** Low dimmed the LCD; High restored it (saved as `lcd_brightness = 90`). |
+| LCD Manager: label 1 = "Hello" | **Pass:** the LCD key page showed Hello after the reload. |
+| Saving | **Pass:** every change triggered `configuration reloaded`; comments and layout of `tdxd.conf` were kept (only the changed lines differ). |
+
+### Not covered by this test
+
+- The `pkexec` path (WSL runs as root, so files were written directly).
+- Whether action buttons are kept away from applications was checked in the
+  code path and logs, not with a client listening.
+- A per-application profile edited from the panel on real hardware.
