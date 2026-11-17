@@ -15,6 +15,7 @@ if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
 	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
 	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
+	      "$PREFIX/bin/tdx-extract-3dxware-ui" \
 	      "$PREFIX/share/applications/tdx-settings.desktop" \
 	      /usr/share/polkit-1/actions/org.tdxd.settings.policy \
 	      /etc/udev/rules.d/99-3dconnexion-tdxd.rules /etc/systemd/system/tdxd.service \
@@ -33,6 +34,7 @@ install -Dm755 bin/tdx-focus "$PREFIX/bin/tdx-focus"
 # settings panel (Python 3 + GTK 3: python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)
 install -Dm755 bin/tdx-settings "$PREFIX/bin/tdx-settings"
 install -Dm755 lib/tdx-settings-helper "$PREFIX/lib/tdxd/tdx-settings-helper"
+install -Dm755 bin/tdx-extract-3dxware-ui "$PREFIX/bin/tdx-extract-3dxware-ui"
 install -Dm644 tdx-settings.desktop "$PREFIX/share/applications/tdx-settings.desktop"
 sed "s#/usr/local/lib/tdxd#$PREFIX/lib/tdxd#" org.tdxd.settings.policy \
 	| install -Dm644 /dev/stdin /usr/share/polkit-1/actions/org.tdxd.settings.policy
@@ -58,3 +60,4 @@ echo "  calibrate (re-zero) the cap:   tdxctl calibrate"
 echo "  per-application profiles:      /etc/tdxd.d/*.conf (see blender.conf.example)"
 echo "  focus tracking (X11 / sway), as your user:  systemctl --user enable --now tdx-focus"
 echo "  settings panel:                tdx-settings   (needs python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)"
+echo "  3DxWare look for the panel:    sudo tdx-extract-3dxware-ui 3DxWare64_v10-9-14_b745.exe   (needs 7z)"

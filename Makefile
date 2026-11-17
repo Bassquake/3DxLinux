@@ -85,6 +85,7 @@ install: all
 	install -Dm755 packaging/tdx-focus $(DESTDIR)$(PREFIX)/bin/tdx-focus
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-settings
 	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
+	install -Dm755 tools/extract_3dxware_ui.py $(DESTDIR)$(PREFIX)/bin/tdx-extract-3dxware-ui
 	install -Dm644 gui/tdx-settings.desktop $(DESTDIR)$(PREFIX)/share/applications/tdx-settings.desktop
 	sed 's#/usr/local/lib/tdxd#$(PREFIX)/lib/tdxd#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
@@ -109,6 +110,7 @@ dist:
 	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl packaging/tdx-focus $(DIST)/bin/
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings > $(DIST)/bin/tdx-settings
 	cp gui/tdx-settings-helper $(DIST)/lib/
+	cp tools/extract_3dxware_ui.py $(DIST)/bin/tdx-extract-3dxware-ui
 	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
 	cp packaging/99-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
 	   packaging/tdx-focus.service packaging/profiles/blender.conf.example \

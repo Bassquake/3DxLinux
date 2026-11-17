@@ -587,25 +587,6 @@ def draw_axis_glyph(widget, cr, axis):
         arrow_head(cr, 12, -2, 0.2)
 
 
-def draw_keycap(widget, cr, text):
-    w, h = widget.get_allocated_width(), widget.get_allocated_height()
-    rounded_rect(cr, 1.5, 1.5, w - 3, h - 3, 5)
-    cr.set_source_rgb(0.22, 0.23, 0.25)
-    cr.fill_preserve()
-    cr.set_source_rgb(0.10, 0.10, 0.11)
-    cr.set_line_width(1)
-    cr.stroke()
-    layout = widget.create_pango_layout(text)
-    layout.set_alignment(Pango.Alignment.CENTER)
-    size = 7 if "\n" in text or len(text) > 4 else 8 if len(text) > 2 else 10
-    layout.set_font_description(Pango.FontDescription("Sans Bold %d" % size))
-    tw, th = layout.get_pixel_size()
-    cr.move_to((w - tw) / 2, (h - th) / 2)
-    cr.set_source_rgb(0.93, 0.93, 0.95)
-
-    PangoCairo.show_layout(cr, layout)
-
-
 def draw_lcd_preview(widget, cr, labels, title, page):
     """Mirror of tdx_render_keys_page() (src/process.c): 320x240, 5 keys per page."""
 
@@ -637,27 +618,264 @@ def draw_lcd_preview(widget, cr, labels, title, page):
         text(52, y + 3, labels[k].upper()[:15], 22, 0xE6E6E6)
 
 
-# --------------------------------------------------------------------------
-# widgets
 
-def log_scale(lo=-1.0, hi=1.0):
+def draw_keycap(widget, cr, text):
+    """Fallback key cap in the 3DxWare style (flat light-grey tile)."""
+    w, h = widget.get_allocated_width(), widget.get_allocated_height()
+    cr.rectangle(0, 0, w, h)
+    cr.set_source_rgb(0xde / 255.0, 0xde / 255.0, 0xde / 255.0)
+    cr.fill()
+    layout = widget.create_pango_layout(text)
+    layout.set_alignment(Pango.Alignment.CENTER)
+    px = 8 if "\n" in text else 10 if len(text) > 3 else 12
+    layout.set_font_description(Pango.FontDescription("%s %dpx" % (FONT, px)))
+    tw, th = layout.get_pixel_size()
+    cr.move_to((w - tw) / 2, (h - th) / 2)
+    cr.set_source_rgb(0.2, 0.2, 0.2)
+    PangoCairo.show_layout(cr, layout)
+
+
+# --------------------------------------------------------------------------
+# 3DxWare look. The artwork is optional: tools/extract_3dxware_ui.py copies it
+# out of the user's own 3DxWare installer (it is not distributed with tdxd).
+# Without it the same layout is drawn with plain shapes.
+
+import cairo  # noqa: E402  (python3-gi-cairo)
+
+FONT = "Segoe UI, Selawik, Ubuntu, Noto Sans, DejaVu Sans, sans-serif"
+BLUE_LINE = (0x00 / 255.0, 0xAA / 255.0, 0xE6 / 255.0)
+BODY = (0xFA / 255.0, 0xFA / 255.0, 0xFA / 255.0)
+FOOT_LINE = (0xD9 / 255.0, 0xD9 / 255.0, 0xD9 / 255.0)
+SECTION_LINE = (0xDC / 255.0, 0xDC / 255.0, 0xDC / 255.0)
+FOOTER_H = 61
+SUPPORT_TEXT = {"Discontinued": "In extended support", "Prerelease": "Prerelease"}
+
+
+def asset_dirs():
+    env = os.environ.get("TDX_UI_ASSETS")
+    here = os.path.dirname(os.path.realpath(__file__))
+    return ([env] if env else []) + [
+        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
+        os.path.join(here, "..", "share", "tdxd", "3dxware-ui"),
+        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+
+
+class Assets:
+    def __init__(self, path=None):
+        self.dir = None
+        for d in ([path] if path else asset_dirs()):
+            if d and os.path.isdir(os.path.join(d, "ui")):
+                self.dir = os.path.realpath(d)
+                break
+        self.devices = {}
+        if self.dir:
+            try:
+                import json
+                with open(os.path.join(self.dir, "devices.json")) as f:
+                    self.devices = json.load(f)
+            except (OSError, ValueError):
+                pass
+        self._surf = {}
+
+    def ui(self, name):
+        if not self.dir:
+            return None
+        p = os.path.join(self.dir, "ui", name + ".png")
+        return p if os.path.isfile(p) else None
+
+    def icon(self, name):
+        if not self.dir or not name:
+            return None
+        p = os.path.join(self.dir, "icons", name)
+        return p if os.path.isfile(p) else None
+
+    def surface(self, path):
+        if path and path not in self._surf:
+            try:
+                self._surf[path] = cairo.ImageSurface.create_from_png(path)
+            except (cairo.Error, OSError):
+                self._surf[path] = None
+        return self._surf.get(path)
+
+    def device(self, pid):
+        return self.devices.get((pid or "").lower(), {})
+
+
+ASSETS = Assets(None)
+
+
+def css_for(assets):
+    def url(name, fallback=None):
+        p = assets.ui(name)
+        return "url('file://%s')" % p if p else fallback
+
+    css = """
+.tdx, .tdx label, .tdx button, .tdx entry, .tdx checkbutton, .tdx radiobutton {
+  font-family: %(font)s; font-size: 12px; color: #000000; text-shadow: none; }
+.tdx label.tdx-title { font-size: 18px; }
+.tdx label.tdx-status { color: #8c8c8c; }
+.tdx label.tdx-sub { font-size: 13px; color: #8a8a8a; }
+.tdx label.tdx-section { font-size: 14px; color: #2b2b2b; }
+.tdx label.tdx-dim { color: #6d6d6d; }
+.tdx label.tdx-more { color: #9a9a9a; }
+.tdx label.tdx-small { font-size: 11px; color: #8a8a8a; }
+.tdx button.tdx-btn {
+  background-color: #ffffff; background-image: none; border: 1px solid #dddddd;
+  border-radius: 0; box-shadow: none; padding: 0 6px; min-height: 0; min-width: 0;
+  -gtk-icon-shadow: none; }
+.tdx button.tdx-btn:hover { background-color: #e5f1fb; border-color: #0078d7; }
+.tdx button.tdx-btn:active { background-color: #cce4f7; border-color: #005499; }
+.tdx button.tdx-btn:disabled label { color: #a0a0a0; }
+.tdx button.tdx-link { background: none; border: none; box-shadow: none; padding: 0;
+  min-height: 0; }
+.tdx button.tdx-link label { color: #9a9a9a; }
+.tdx button.tdx-link:hover label { color: #0078d7; }
+.tdx button.tdx-title-btn { background: none; border: none; box-shadow: none;
+  padding: 0; min-height: 0; }
+.tdx button.tdx-title-btn:hover { background-color: #f0f0f0; }
+.tdx entry { background-color: #ffffff; background-image: none; border: 1px solid #dddddd;
+  border-radius: 0; box-shadow: none; min-height: 22px; padding: 0 4px; }
+.tdx entry:focus { border-color: #0078d7; }
+.tdx scale { padding: 0; margin: 0; }
+.tdx scale trough { background-color: #ebebeb; background-image: none; border: none;
+  border-radius: 0; min-height: 2px; box-shadow: none; }
+.tdx scale highlight { background: none; border: none; box-shadow: none; }
+.tdx scale mark indicator { color: #b4b4b4; min-height: 5px; min-width: 1px; }
+.tdx scale marks { margin-top: 2px; }
+""" % {"font": FONT}
+    thumb = url("ThumbEnabled")
+    if thumb:
+        css += """
+.tdx scale slider { background-color: transparent; background-image: %s;
+  background-repeat: no-repeat; background-position: center; border: none;
+  border-radius: 0; box-shadow: none; min-width: 11px; min-height: 19px;
+  margin: -9px -5px; outline: none; }
+.tdx scale slider:hover, .tdx scale slider:active { background-image: %s; }
+.tdx scale:disabled slider { background-image: %s; }
+""" % (thumb, url("ThumbPressedBlue", thumb), url("ThumbDisabled", thumb))
+    box = url("SmartUI_Box_unchecked")
+    if box:
+        css += """
+.tdx check { -gtk-icon-source: %s; background: none; border: none; box-shadow: none;
+  min-width: 14px; min-height: 14px; margin: 0 8px 0 0; -gtk-icon-shadow: none; }
+.tdx check:checked { -gtk-icon-source: %s; }
+.tdx check:disabled { -gtk-icon-source: %s; opacity: 0.55; }
+.tdx check:checked:disabled { -gtk-icon-source: %s; opacity: 1; }
+.tdx radio { -gtk-icon-source: %s; background: none; border: none; box-shadow: none;
+  min-width: 14px; min-height: 14px; margin: 0 8px 0 0; -gtk-icon-shadow: none; }
+.tdx radio:checked { -gtk-icon-source: %s; }
+.tdx checkbutton:disabled label, .tdx radiobutton:disabled label { color: #a0a0a0; }
+""" % (box, url("SmartUI_Box_checked"), box, url("SmartUI_Box_checked_inactive"),
+       url("SmartUI_Radio_unselected"), url("SmartUI_Radio_selected"))
+    close = url("SmartUI_BTN_Close")
+    if close:
+        css += """
+.tdx button.tdx-close, .tdx button.tdx-min { background-color: transparent;
+  background-repeat: no-repeat; border: none; box-shadow: none; border-radius: 0;
+  min-width: 29px; min-height: 22px; padding: 0; }
+.tdx button.tdx-close { background-image: %s; }
+.tdx button.tdx-close:hover { background-image: %s; }
+.tdx button.tdx-min { background-image: %s; }
+.tdx button.tdx-min:hover { background-image: %s; }
+""" % (close, url("SmartUI_BTN_Close_hover", close), url("SmartUI_BTN_Min"),
+       url("SmartUI_BTN_Min_hover", url("SmartUI_BTN_Min")))
+    else:
+        css += """
+.tdx button.tdx-close, .tdx button.tdx-min { background: none; border: none;
+  box-shadow: none; min-width: 29px; min-height: 22px; padding: 0; color: #666666; }
+.tdx button.tdx-close:hover { background-color: #e81123; }
+.tdx button.tdx-min:hover { background-color: #e5e5e5; }
+"""
+    return css
+
+
+def install_css(assets):
+    prov = Gtk.CssProvider()
+    prov.load_from_data(css_for(assets).encode())
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), prov,
+                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+
+
+def paint_background(cr, w, h, header_h, lines=()):
+    """White header, blue rule, light body, footer with the logo strip."""
+    cr.set_source_rgb(1, 1, 1)
+    cr.paint()
+    cr.set_source_rgb(*BODY)
+    cr.rectangle(0, header_h, w, h - header_h - FOOTER_H)
+    cr.fill()
+    cr.set_source_rgb(*BLUE_LINE)
+    cr.rectangle(0, header_h, w, 1)
+    cr.fill()
+    for (x0, x1, y) in lines:  # section rules
+        cr.set_source_rgb(*SECTION_LINE)
+        cr.rectangle(x0, y, x1 - x0, 1)
+        cr.fill()
+    foot = ASSETS.surface(ASSETS.ui("ButtonConfigBottom"))
+    if foot:
+        cr.save()
+        cr.rectangle(0, h - FOOTER_H, w, FOOTER_H)
+        cr.clip()
+        cr.set_source_surface(foot, 0, h - FOOTER_H)
+        cr.paint()
+        cr.restore()
+    else:
+        cr.set_source_rgb(*FOOT_LINE)
+        cr.rectangle(0, h - FOOTER_H, w, 1)
+        cr.fill()
+        cr.set_source_rgb(0.45, 0.45, 0.45)
+        cr.select_font_face("sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        cr.set_font_size(17)
+        cr.move_to(30, h - FOOTER_H + 37)
+        cr.show_text("tdxd")
+    cr.set_source_rgb(0.62, 0.62, 0.62)  # 1px window frame
+    cr.set_line_width(1)
+    cr.rectangle(0.5, 0.5, w - 1, h - 1)
+    cr.stroke()
+
+
+def image_widget(path, size=None):
+    """Gtk.Image of a PNG, optionally scaled to fit size x size."""
+    from gi.repository import GdkPixbuf
+    if not path:
+        return None
+    try:
+        if size:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, size, size, True)
+        else:
+            pb = GdkPixbuf.Pixbuf.new_from_file(path)
+    except GLib.Error:
+        return None
+    return Gtk.Image.new_from_pixbuf(pb)
+
+
+def lab(text, cls=None, xalign=0.0, markup=False):
+    l = Gtk.Label(xalign=xalign)
+    if markup:
+        l.set_markup(text)
+    else:
+        l.set_text(text)
+    if cls:
+        for c in cls.split():
+            l.get_style_context().add_class(c)
+    return l
+
+
+def flat_button(text, w, h=27):
+    b = Gtk.Button(label=text)
+    b.get_style_context().add_class("tdx-btn")
+    b.set_size_request(w, h)
+    b.set_can_focus(False)
+    return b
+
+
+def log_scale(width, lo=-1.0, hi=1.0):
     """Slider over log10(value); 0 = 1.0x."""
     sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, 0.01)
     sc.set_draw_value(False)
+    sc.set_size_request(width, 20)
     sc.add_mark(0, Gtk.PositionType.BOTTOM, None)
-    sc.set_hexpand(True)
+    sc.set_can_focus(False)
     return sc
-
-
-def frame(title, child):
-    fr = Gtk.Frame(label=title)
-    fr.get_label_widget().set_markup("<b>%s</b>" % GLib.markup_escape_text(title))
-    child.set_margin_start(10)
-    child.set_margin_end(10)
-    child.set_margin_top(6)
-    child.set_margin_bottom(8)
-    fr.add(child)
-    return fr
 
 
 def drawing(width, height, func, *args):
@@ -667,21 +885,115 @@ def drawing(width, height, func, *args):
     return da
 
 
+def app_icon(app, size=16):
+    """Icon of the focused application from the icon theme, else the 3Dx glyph."""
+    theme = Gtk.IconTheme.get_default()
+    for n in ([app.lower(), app] if app else []):
+        try:
+            if theme.has_icon(n):
+                return Gtk.Image.new_from_pixbuf(theme.load_icon(n, size, 0))
+        except GLib.Error:
+            pass
+    img = image_widget(ASSETS.ui("Install_3dxicon"), size)
+    return img or Gtk.Image.new_from_icon_name("input-mouse", Gtk.IconSize.MENU)
+
+
+def device_image(dev, w=200, h=120):
+    """The device photo from the installer (Base.xml <Image>), else a drawing."""
+    info = ASSETS.device(dev.get("pid")) if dev else {}
+    path = ASSETS.icon(info.get("image")) if info else None
+    if not path and not dev:
+        path = ASSETS.icon("SPP_Head.png")
+    img = image_widget(path)
+    return img or drawing(w, h, lambda wd, cr: draw_device(wd, cr, True))
+
+
 class Panel:
-    """Base for the windows: builds its content into a Box (so it can be snapshotted)."""
+    """A 3DxWare-style window body: painted background + absolutely placed widgets.
+
+    `self.box` is the root widget (also used by --snapshot)."""
 
     title = ""
+    subtitle = None
+    size = (470, 430)
+    header_h = 67
 
     def __init__(self, app):
         self.app = app
         self.store = app.store
         self.updating = False
-        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("start", "end", "top", "bottom"):
-            getattr(self.box, "set_margin_" + side)(14)
+        self.lines = []
+        w, h = self.size
+        self.box = Gtk.Overlay()
+        self.box.get_style_context().add_class("tdx")
+        self.box.set_size_request(w, h)
+        self.bg = Gtk.DrawingArea()
+        self.bg.set_size_request(w, h)
+        self.bg.connect("draw", lambda _w, cr: paint_background(cr, w, h, self.header_h,
+                                                               self.lines))
+        self.bg.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.bg.connect("button-press-event", self.on_drag)
+        self.box.add(self.bg)
+        self.fix = Gtk.Fixed()
+        self.box.add_overlay(self.fix)
+        self.box.set_overlay_pass_through(self.fix, False)
+        self.fix.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.fix.connect("button-press-event", self.on_drag)
+        # window buttons (the windows are undecorated, like 3DxWare's)
+        self.min_btn = Gtk.Button(label="" if ASSETS.ui("SmartUI_BTN_Min") else "–")
+        self.min_btn.get_style_context().add_class("tdx-min")
+        self.close_btn = Gtk.Button(label="" if ASSETS.ui("SmartUI_BTN_Close") else "✕")
+        self.close_btn.get_style_context().add_class("tdx-close")
+        for b in (self.min_btn, self.close_btn):
+            b.set_can_focus(False)
+            b.set_size_request(29, 22)
+        self.put(self.min_btn, w - 58, 5)
+        self.put(self.close_btn, w - 29, 5)
+        self.min_btn.connect("clicked", lambda *_: self.box.get_toplevel().iconify())
+        self.header()
         self.build()
         self.refresh()
         app.panels.append(self)
+
+    def put(self, widget, x, y):
+        self.fix.put(widget, int(x), int(y))
+        return widget
+
+    def on_drag(self, _w, ev):
+        if ev.button == 1 and ev.type == Gdk.EventType.BUTTON_PRESS:
+            win = self.box.get_toplevel()
+            if isinstance(win, Gtk.Window) and not isinstance(win, Gtk.OffscreenWindow):
+                win.begin_move_drag(ev.button, int(ev.x_root), int(ev.y_root), ev.time)
+        return False
+
+    # ---- header: [subtitle] / app icon + profile title (click: choose profile)
+    def header(self):
+        ty = 41 if self.subtitle is None else 59
+        if self.subtitle is not None:
+            self.put(lab(self.subtitle, "tdx-sub"), 34, 37)
+        self.icon_slot = Gtk.Box()
+        self.put(self.icon_slot, 30, ty + 3)
+        self.title_btn = Gtk.Button()
+        self.title_btn.get_style_context().add_class("tdx-title-btn")
+        self.title_btn.set_can_focus(False)
+        self.title_label = lab("", "tdx-title")
+        self.title_btn.add(self.title_label)
+        self.title_btn.set_tooltip_text("Settings for this profile – click to choose another")
+        self.title_btn.connect("clicked", lambda b: self.app.profile_menu(b))
+        self.put(self.title_btn, 52, ty - 3)
+
+    def refresh_header(self):
+        st = self.store
+        if st.profile:
+            name = os.path.basename(st.profile.path)[:-5]
+            icon_app = (st.profile.get("match") or name).split(",")[0].strip().strip("*")
+        else:
+            name, icon_app = "All Applications", None
+        self.title_label.set_text(name)
+        for c in self.icon_slot.get_children():
+            self.icon_slot.remove(c)
+        self.icon_slot.add(app_icon(icon_app))
+        self.icon_slot.show_all()
 
     def build(self):
         raise NotImplementedError
@@ -696,113 +1008,90 @@ class Panel:
                 fn(*a)
         return h
 
+    def section(self, text, x0, x1, y):
+        """Section caption with the grey rule under it (rule at y)."""
+        self.put(lab(text, "tdx-section"), x0 + 4, y - 22)
+        self.lines.append((x0, x1, y))
+
 
 class MainPanel(Panel):
     title = "tdxd Settings"
+    size = (470, 430)
+    header_h = 67
 
     def build(self):
-        # header: which settings are being edited (3DxWare shows the focused application)
-        head = Gtk.Box(spacing=8)
-        self.app_label = Gtk.Label(xalign=0)
-        self.app_label.set_hexpand(True)
-        self.app_label.set_ellipsize(Pango.EllipsizeMode.END)
-        head.pack_start(self.app_label, True, True, 0)
-        self.profile_combo = Gtk.ComboBoxText()
-        self.profile_combo.set_tooltip_text(
-            "Settings shown below apply to this profile.\n"
-            "Default applies to every application without its own profile.")
-        self.profile_combo.connect("changed", self.guard(self.on_profile))
-        head.pack_end(self.profile_combo, False, False, 0)
-        self.box.pack_start(head, False, False, 0)
-        self.box.pack_start(Gtk.Separator(), False, False, 0)
+        devs = self.app.status.get("devices", [])
+        self.dev = devs[0] if devs else None
+        self.dev_label = self.put(lab("", "tdx-dev"), 30, 100)
+        self.put(device_image(self.dev), 252, 42)
+        self.state_box = Gtk.Box(spacing=5)
+        self.state_icon = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
+        if self.state_icon:
+            self.state_box.pack_start(self.state_icon, False, False, 0)
+        self.state_label = lab("", "tdx-status")
+        self.state_box.pack_start(self.state_label, False, False, 0)
+        self.state_box.set_size_request(200, -1)
+        self.state_box.set_halign(Gtk.Align.CENTER)
+        self.state_wrap = Gtk.Box()
+        self.state_wrap.set_size_request(200, -1)
+        self.state_wrap.set_center_widget(self.state_box)
+        self.put(self.state_wrap, 252, 163)
 
-        self.dev_label = Gtk.Label(xalign=0.5)
-        self.box.pack_start(self.dev_label, False, False, 0)
-        self.box.pack_start(drawing(360, 200, lambda w, cr: draw_device(w, cr, self.has_lcd())),
-                            False, False, 0)
-        self.state_label = Gtk.Label(xalign=0.5)
-        self.state_label.get_style_context().add_class("dim-label")
-        self.box.pack_start(self.state_label, False, False, 0)
-
-        sp = Gtk.Box(spacing=10)
-        lab = Gtk.Label(label="Speed")
-        lab.set_markup("<b>Speed</b>")
-        sp.pack_start(lab, False, False, 0)
-        sp.pack_start(Gtk.Label(label="Low"), False, False, 0)
-        self.speed = log_scale()
+        self.put(lab("Speed"), 30, 197)
+        self.speed = self.put(log_scale(422), 24, 221)
         self.speed.connect("value-changed", self.guard(self.on_speed))
-        sp.pack_start(self.speed, True, True, 0)
-        sp.pack_start(Gtk.Label(label="High"), False, False, 0)
-        self.box.pack_start(sp, False, False, 4)
 
-        row = Gtk.Box(spacing=8, homogeneous=True)
-        for label, cb in (("Advanced Settings", self.app.show_advanced),
-                          ("Buttons", self.app.show_buttons),
-                          ("LCD Manager", self.app.show_lcd)):
-            b = Gtk.Button(label=label)
+        for text, x, y, cb in (("Advanced Settings", 30, 274, self.app.show_advanced),
+                               ("Buttons", 245, 274, self.app.show_buttons),
+                               ("LCD Manager", 30, 312, self.app.show_lcd)):
+            b = self.put(flat_button(text, 195), x, y)
             b.connect("clicked", lambda _b, f=cb: f())
-            row.pack_start(b, True, True, 0)
-            if label == "LCD Manager":
+            if text == "LCD Manager":
                 self.lcd_button = b
-        self.box.pack_start(row, False, False, 0)
+        more = Gtk.Button()
+        more.get_style_context().add_class("tdx-link")
+        more.set_can_focus(False)
+        mb = Gtk.Box(spacing=9)
+        mb.pack_start(lab("More"), False, False, 0)
+        arrow = image_widget(ASSETS.ui("SmartUI_Button_Arrow"))
+        mb.pack_start(arrow or lab(">"), False, False, 0)
+        more.add(mb)
+        more.connect("clicked", lambda *_: self.app.show_about())
+        self.put(more, 396, 318)
 
-        foot = Gtk.Box(spacing=8)
-        more = Gtk.LinkButton.new_with_label("", "More ›")
-        more.connect("activate-link", lambda *_: (self.app.show_about(), True)[1])
-        foot.pack_start(more, False, False, 0)
-        self.save_label = Gtk.Label(xalign=0)
-        self.save_label.get_style_context().add_class("dim-label")
+        self.save_label = lab("", "tdx-small")
         self.save_label.set_ellipsize(Pango.EllipsizeMode.END)
-        foot.pack_start(self.save_label, True, True, 0)
-        close = Gtk.Button(label="Close")
+        self.save_label.set_size_request(150, -1)
+        self.put(self.save_label, 190, 393)
+        close = self.put(flat_button("Close", 94), 345, 387)
         close.connect("clicked", lambda *_: self.app.quit())
-        foot.pack_end(close, False, False, 0)
-        self.box.pack_end(foot, False, False, 0)
+        self.close_btn.connect("clicked", lambda *_: self.app.quit())
 
     def has_lcd(self):
         devs = self.app.status.get("devices", [])
-        return not devs or any(d["name"] in ("SpacePilot Pro", "SpacePilot PRO")
+        return not devs or any(d["name"].lower().startswith("spacepilot pro")
                                or "Enterprise" in d["name"] or "Giotto" in d["name"]
                                for d in devs)
 
     def refresh(self):
         self.updating = True
+        self.refresh_header()
         st = self.app.status
-        names = self.store.profile_names()
-        self.profile_combo.remove_all()
-        self.profile_combo.append("", "Default (all applications)")
-        for n in names:
-            self.profile_combo.append(n, "Profile: " + n)
-        self.profile_combo.append("+new", "New profile…")
-        cur = os.path.basename(self.store.profile.path)[:-5] if self.store.profile else ""
-        if cur and cur not in names:  # created but not saved yet
-            self.profile_combo.insert(1, cur, "Profile: " + cur)
-        self.profile_combo.set_active_id(cur)
-
-        if self.store.profile:
-            match = self.store.profile.get("match") or cur
-            head = "%s" % cur
-            sub = "applications: %s" % match
-        else:
-            head, sub = "All applications", "default settings"
-        app = st.get("app")
-        if app and app != "-":
-            sub += "  ·  focused: %s" % app
-        self.app_label.set_markup("<span size='x-large' weight='bold'>%s</span>\n"
-                                  "<small>%s</small>" % (GLib.markup_escape_text(head),
-                                                         GLib.markup_escape_text(sub)))
         devs = st.get("devices", [])
-        name = devs[0]["name"] if devs else "No device connected"
-        self.dev_label.set_markup("<span size='large' weight='bold'>%s</span>"
-                                  % GLib.markup_escape_text(name))
+        name = devs[0]["name"].replace(" PRO", " Pro") if devs else "No device connected"
+        self.dev_label.set_text(name)
         if not st.get("running"):
-            state = "tdxd is not running – settings are saved for its next start"
+            state = "tdxd is not running"
         elif devs:
-            state = "Connected · firmware %s · %s" % (devs[0]["firmware"],
-                                                                 devs[0]["node"])
+            info = ASSETS.device(devs[0].get("pid"))
+            state = SUPPORT_TEXT.get(info.get("support"), "")
+            if not info:
+                state = "Firmware %s" % devs[0]["firmware"]
         else:
-            state = "tdxd is running; plug in a device"
+            state = "Connect a device"
         self.state_label.set_text(state)
+        if self.state_icon:
+            self.state_icon.set_visible(bool(state))
         self.speed.set_value(math.log10(max(0.05, self.store.get_float("sensitivity", 1.0))))
         self.speed.set_tooltip_text("Speed %sx" % fmt_num(self.store.get_float("sensitivity",
                                                                                1.0)))
@@ -816,25 +1105,21 @@ class MainPanel(Panel):
             v = 1.0
         self.store.set("sensitivity", fmt_num(v))
 
-    def on_profile(self, combo):
-        pid = combo.get_active_id()
-        if pid == "+new":
-            self.app.new_profile()
-            return
-        self.app.switch_profile(pid or None)
-
 
 class AdvancedPanel(Panel):
     title = "Advanced Settings"
+    subtitle = "Advanced Settings"
+    size = (682, 516)
+    header_h = 91
+    # icons from Base.xml's axis order: X pan, Y zoom, Z pan up/down, Rx tilt, Ry roll, Rz spin
+    DOF = ["PanH", "Zoom", "PanV", "Tilt", "Roll", "Spin"]
+    ROWS = [186, 232, 277, 322, 366, 412]
 
     def build(self):
-        grid = Gtk.Box(spacing=14)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-
-        nav = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.panzoom = Gtk.CheckButton(label="Pan/Zoom")
-        self.rotation = Gtk.CheckButton(label="Rotation")
-        self.dominant = Gtk.CheckButton(label="Dominant")
+        self.section("Navigation", 30, 242, 136)
+        self.panzoom = self.put(Gtk.CheckButton(label="Pan / Zoom"), 37, 143)
+        self.rotation = self.put(Gtk.CheckButton(label="Rotation"), 37, 167)
+        self.dominant = self.put(Gtk.CheckButton(label="Dominant"), 37, 191)
         self.dominant.set_tooltip_text("Only the strongest axis is passed on")
         self.panzoom.connect("toggled", self.guard(
             lambda b: self.store.set("disable_translation", "no" if b.get_active() else "yes")))
@@ -842,89 +1127,92 @@ class AdvancedPanel(Panel):
             lambda b: self.store.set("disable_rotation", "no" if b.get_active() else "yes")))
         self.dominant.connect("toggled", self.guard(
             lambda b: self.store.set("dominant", "yes" if b.get_active() else "no")))
-        for w in (self.panzoom, self.rotation, self.dominant):
-            nav.pack_start(w, False, False, 0)
-        left.pack_start(frame("Navigation", nav), False, False, 0)
 
-        zd = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.zoom_fb = Gtk.RadioButton.new_with_label(None, "Forward/Backward")
-        self.zoom_ud = Gtk.RadioButton.new_with_label_from_widget(self.zoom_fb, "Up/Down")
+        self.section("Zoom Direction", 30, 242, 258)
+        self.zoom_fb = self.put(Gtk.RadioButton.new_with_label(None, "Forward / Backward"),
+                                37, 265)
+        self.zoom_ud = self.put(Gtk.RadioButton.new_with_label_from_widget(self.zoom_fb,
+                                                                           "Up / Down"), 37, 289)
         self.zoom_ud.set_tooltip_text("Push/pull the cap up and down to zoom "
                                       "(swaps the zoom and pan up/down axes)")
         self.zoom_ud.connect("toggled", self.guard(self.on_zoom))
-        zd.pack_start(self.zoom_fb, False, False, 0)
-        zd.pack_start(self.zoom_ud, False, False, 0)
-        left.pack_start(frame("Zoom Direction", zd), False, False, 0)
 
-        ds = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.led = Gtk.CheckButton(label="LEDs Active")
+        self.section("Device Settings", 30, 242, 357)
+        self.led = self.put(Gtk.CheckButton(label="LEDs Active"), 37, 363)
         self.led.connect("toggled", self.guard(
             lambda b: self.store.set("led", "yes" if b.get_active() else "no")))
-        ds.pack_start(self.led, False, False, 0)
-        cal = Gtk.Button(label="Calibrate")
+        cal = self.put(flat_button("Calibrate", 119), 31, 390)
         cal.set_tooltip_text("Re-zero the cap's rest position. Do not touch the cap.")
         cal.connect("clicked", self.on_calibrate)
-        cal.set_halign(Gtk.Align.START)
-        ds.pack_start(cal, False, False, 0)
-        left.pack_start(frame("Device Settings", ds), False, False, 0)
-        grid.pack_start(left, False, False, 0)
 
-        rows = Gtk.Grid(column_spacing=10, row_spacing=4)
+        self.section("Speed", 270, 652, 136)
+        a = lab("Active", xalign=0.5)
+        a.set_size_request(60, -1)
+        self.put(a, 323, 145)
+        r = lab("Reverse", xalign=0.5)
+        r.set_size_request(60, -1)
+        self.put(r, 578, 145)
         self.axis = []
-        for i, a in enumerate(AXES):
-            glyph = drawing(36, 32, draw_axis_glyph, i)
-            glyph.set_tooltip_text(AXIS_LABELS[i])
-            rows.attach(glyph, 0, i, 1, 1)
-            lab = Gtk.Label(label=AXIS_LABELS[i], xalign=0)
-            lab.set_width_chars(13)
-            rows.attach(lab, 1, i, 1, 1)
-            act = Gtk.CheckButton(label="Active")
-            sc = log_scale()
-            sc.set_size_request(170, -1)
-            rev = Gtk.CheckButton(label="Reverse")
+        self.glyph = []
+        for i, ax in enumerate(AXES):
+            cy = self.ROWS[i]
+            gl = Gtk.Stack()
+            on = image_widget(ASSETS.ui("SmartUI_DoFIcon_" + self.DOF[i])) or \
+                drawing(56, 44, draw_axis_glyph, i)
+            off = image_widget(ASSETS.ui("SmartUI_DoFIcon_%s_inactive" % self.DOF[i])) or \
+                drawing(56, 44, draw_axis_glyph, i)
+            gl.add_named(on, "on")
+            gl.add_named(off, "off")
+            gl.set_tooltip_text(AXIS_LABELS[i])
+            self.put(gl, 272, cy - 22)
+            self.glyph.append(gl)
+            act = self.put(Gtk.CheckButton(), 347, cy - 9)
+            act.set_tooltip_text(AXIS_LABELS[i] + " active")
+            sc = self.put(log_scale(212), 376, cy - 10)
+            rev = self.put(Gtk.CheckButton(), 602, cy - 9)
+            rev.set_tooltip_text("Reverse " + AXIS_LABELS[i])
             act.connect("toggled", self.guard(lambda b, i=i: self.on_active(i)))
             sc.connect("value-changed", self.guard(lambda s, i=i: self.on_scale(i)))
             rev.connect("toggled", self.guard(
-                lambda b, a=a: self.store.set("invert_" + a, "yes" if b.get_active() else "no")))
-            rows.attach(act, 2, i, 1, 1)
-            rows.attach(sc, 3, i, 1, 1)
-            rows.attach(rev, 4, i, 1, 1)
+                lambda b, ax=ax: self.store.set("invert_" + ax, "yes" if b.get_active()
+                                                else "no")))
             self.axis.append((act, sc, rev))
-        grid.pack_start(frame("Speed", rows), True, True, 0)
-        self.box.pack_start(grid, True, True, 0)
 
-        self.msg = Gtk.Label(xalign=0)
-        self.msg.get_style_context().add_class("dim-label")
-        self.box.pack_start(self.msg, False, False, 0)
-
-        foot = Gtk.Box(spacing=8)
-        rd = Gtk.Button(label="Restore Defaults")
+        self.msg = lab("", "tdx-small")
+        self.put(self.msg, 160, 396)
+        rd = self.put(flat_button("Restore Defaults", 156), 390, 472)
         rd.connect("clicked", self.on_restore)
-        foot.pack_start(rd, False, False, 0)
-        self.close = Gtk.Button(label="Close")
-        foot.pack_end(self.close, False, False, 0)
-        self.box.pack_end(foot, False, False, 0)
+        self.close = self.put(flat_button("Close", 94), 557, 472)
         self.last_scale = [1.0] * 6
 
     def refresh(self):
         self.updating = True
+        self.refresh_header()
         st = self.store
-        self.panzoom.set_active(not st.get_bool("disable_translation"))
-        self.rotation.set_active(not st.get_bool("disable_rotation"))
+        trans = not st.get_bool("disable_translation")
+        rot = not st.get_bool("disable_rotation")
+        self.panzoom.set_active(trans)
+        self.rotation.set_active(rot)
         self.dominant.set_active(st.get_bool("dominant"))
-        ud = (st.get("map_ty") or "ty").lower() == "tz" and (st.get("map_tz") or "tz").lower() == "ty"
+        ud = ((st.get("map_ty") or "ty").lower() == "tz"
+              and (st.get("map_tz") or "tz").lower() == "ty")
         (self.zoom_ud if ud else self.zoom_fb).set_active(True)
         self.led.set_active(st.get_bool("led", True))
-        for i, a in enumerate(AXES):
+        for i, ax in enumerate(AXES):
             act, sc, rev = self.axis[i]
-            v = st.get_float("scale_" + a, 1.0)
+            group = trans if i < 3 else rot
+            v = st.get_float("scale_" + ax, 1.0)
             act.set_active(v != 0)
-            sc.set_sensitive(v != 0)
+            act.set_sensitive(group)
+            live = group and v != 0
+            sc.set_sensitive(live)
+            rev.set_sensitive(live)
+            self.glyph[i].set_visible_child_name("on" if live else "off")
             if v != 0:
                 self.last_scale[i] = abs(v)
                 sc.set_value(math.log10(max(0.1, min(10, abs(v)))))
             sc.set_tooltip_text("%s speed %sx" % (AXIS_LABELS[i], fmt_num(abs(v))))
-            rev.set_active(st.get_bool("invert_" + a))
+            rev.set_active(st.get_bool("invert_" + ax))
         self.updating = False
 
     def on_zoom(self, b):
@@ -940,7 +1228,8 @@ class AdvancedPanel(Panel):
 
     def on_active(self, i):
         act, sc, _ = self.axis[i]
-        self.store.set("scale_" + AXES[i], fmt_num(self.last_scale[i]) if act.get_active() else "0")
+        self.store.set("scale_" + AXES[i], fmt_num(self.last_scale[i]) if act.get_active()
+                       else "0")
 
     def on_scale(self, i):
         v = 10 ** self.axis[i][1].get_value()
@@ -958,8 +1247,7 @@ class AdvancedPanel(Panel):
         for k in ADVANCED_KEYS:
             self.store.target.remove(k)
         self.store.changed()
-        self.msg.set_text("Advanced settings restored to %s" %
-                          ("the default profile" if self.store.profile else "defaults"))
+        self.msg.set_text("Restored")
 
 
 class KeyCaptureDialog(Gtk.Dialog):
@@ -1023,52 +1311,85 @@ def chord_value(names):
     return "+".join("KEY_" + n if not n.isdigit() or n in KEY_CODES else n for n in names)
 
 
+# key-cap image per button (3DxSmartUi.exe resources) and the 3DxWare column layout
+CAP_IMAGE = dict(
+    {"V3DK_%d" % i: "SmartUI_FunctionKey_%d" % i for i in range(1, 13)},
+    V3DK_MENU="SmartUI_3DxKey_MENU", V3DK_FIT="SmartUI_3DxKey_FIT",
+    V3DK_PLUS="SmartUI_3DxKey__1", V3DK_MINUS="SmartUI_3DxKey__",
+    V3DK_DOMINANT="SmartUI_3DxKey_DOM", V3DK_ROTATE="SmartUI_3DxKey_ROT",
+    V3DK_PANZOOM="SmartUI_3DxKey_PANZOOM", V3DK_ESC="SmartUI_OtherKey_ESC",
+    V3DK_CTRL="SmartUI_OtherKey_CTRL", V3DK_ALT="SmartUI_OtherKey_ALT",
+    V3DK_SHIFT="SmartUI_OtherKey_SHIFT", V3DK_TOP="SmartUI_OtherKey_T",
+    V3DK_LEFT="SmartUI_OtherKey_L", V3DK_RIGHT="SmartUI_OtherKey_R",
+    V3DK_FRONT="SmartUI_OtherKey_F", V3DK_BOTTOM="SmartUI_OtherKey_B",
+    V3DK_BACK="SmartUI_OtherKey_BK", V3DK_ISO1="SmartUI_OtherKey_ISO1",
+    V3DK_ISO2="SmartUI_OtherKey_ISO2", V3DK_ROLL_CW="SmartUI_OtherKey_ROL_1",
+    V3DK_ROLL_CCW="SmartUI_OtherKey_ROL_")
+SPP_COLUMNS = [
+    [("V3DK_%d" % i, str(i), "Button %d" % i) for i in range(1, 11)],
+    [("V3DK_MENU", "MENU", "Menu"), ("V3DK_FIT", "FIT", "Fit"),
+     ("V3DK_PLUS", "+", "Plus"), ("V3DK_MINUS", "−", "Minus"),
+     ("V3DK_DOMINANT", "DOM", "Dominant"), ("V3DK_ROTATE", "LOCK", "Rotation"),
+     ("V3DK_PANZOOM", "PAN\nZOOM", "Pan Zoom")],
+    [("V3DK_ESC", "ESC", "Esc"), ("V3DK_CTRL", "CTRL", "Ctrl"),
+     ("V3DK_ALT", "ALT", "Alt"), ("V3DK_SHIFT", "SHIFT", "Shift"),
+     ("V3DK_TOP", "T", "Top View"), ("V3DK_LEFT", "L", "Left View"),
+     ("V3DK_RIGHT", "R", "Right View"), ("V3DK_FRONT", "F", "Front View"),
+     ("V3DK_BOTTOM", "B", "Bottom View"), ("V3DK_BACK", "BK", "Back View"),
+     ("V3DK_ISO1", "ISO1", "ISO1"), ("V3DK_ISO2", "ISO2", "ISO2"),
+     ("V3DK_ROLL_CW", "↻", "Roll +"), ("V3DK_ROLL_CCW", "↺", "Roll -")],
+]
+# function icons (installer files) for what a button does
+ACTION_ICON = {"rotation": "Driver_ToggleRotations.png"}
+PRESET_ICON = {"Copy": "Macro_Copy.png", "Cut": "Macro_Cut.png", "Paste": "Macro_Paste.png",
+               "Undo": "Macro_Undo.png", "Redo": "Macro_Redo.png",
+               "Select All": "Macro_SelectAll.png",
+               "Align Window Left": "Macro_AlignWindowLeft.png",
+               "Align Window Right": "Macro_AlignWindowRight.png",
+               "Cycle Apps": "Macro_TabApplication.png", "Esc Key": "KB_Esc.png",
+               "Ctrl Key": "KB_Ctrl.png", "Alt Key": "KB_Alt.png", "Shift Key": "KB_Shift.png",
+               "Enter Key": "KB_Enter.png", "Tab Key": "KB_Tab.png",
+               "Delete Key": "KB_Delete.png", "Space Key": "KB_Space.png"}
+
+
 class ButtonsPanel(Panel):
     title = "Buttons"
+    subtitle = "Buttons"
+    size = (812, 732)
+    header_h = 91
+    COLS = [(31, 81), (291, 342), (551, 601)]
 
     def build(self):
-        cols = Gtk.Box(spacing=18, homogeneous=True)
+        devs = self.app.status.get("devices", [])
+        self.put(device_image(devs[0] if devs else None), 594, 42)
         self.rows = {}
-        for col in SPP_LAYOUT:
-            g = Gtk.Grid(column_spacing=8, row_spacing=4)
-            r = 0
-            for item in col:
-                if item is None:
-                    g.attach(Gtk.Separator(margin_top=4, margin_bottom=4), 0, r, 2, 1)
-                    r += 1
-                    continue
+        for c, col in enumerate(SPP_COLUMNS):
+            capx, bx = self.COLS[c]
+            for r, item in enumerate(col):
                 v3dk, cap, fn = item
-                capw = drawing(46, 26, draw_keycap, cap)
+                y = 171 + r * 34
+                capw = image_widget(ASSETS.ui(CAP_IMAGE.get(v3dk, ""))) or \
+                    drawing(40, 28, draw_keycap, cap)
                 capw.set_tooltip_text(v3dk)
-                g.attach(capw, 0, r, 1, 1)
-                btn = Gtk.Button()
-                lab = Gtk.Label(xalign=0)
-                lab.set_ellipsize(Pango.EllipsizeMode.END)
-                lab.set_width_chars(21)
-                hb = Gtk.Box(spacing=4)
-                hb.pack_start(lab, True, True, 0)
-                hb.pack_end(Gtk.Image.new_from_icon_name("pan-down-symbolic",
-                                                         Gtk.IconSize.MENU), False, False, 0)
+                self.put(capw, capx, y)
+                btn = flat_button(None, 179)
+                hb = Gtk.Box(spacing=0)
+                icon = Gtk.Box()
+                icon.set_size_request(16, 16)
+                hb.pack_start(icon, False, False, 1)
+                l = lab("")
+                l.set_ellipsize(Pango.EllipsizeMode.END)
+                l.set_margin_start(6)
+                hb.pack_start(l, True, True, 0)
+                arrow = image_widget(ASSETS.ui("SmartUI_Button_Arrow")) or lab("›", "tdx-more")
+                hb.pack_end(arrow, False, False, 4)
                 btn.add(hb)
-                btn.set_hexpand(True)
                 btn.connect("clicked", lambda b, it=item: self.popup(b, it))
-                g.attach(btn, 1, r, 1, 1)
-                self.rows[v3dk] = (lab, fn)
-                r += 1
-            cols.pack_start(g, True, True, 0)
-        self.box.pack_start(cols, True, True, 0)
-        note = Gtk.Label(xalign=0)
-        note.set_markup("<small>Buttons left at their default are sent to the application "
-                        "(spacenavd button events / evdev BTN_*).</small>")
-        note.get_style_context().add_class("dim-label")
-        self.box.pack_start(note, False, False, 0)
-        foot = Gtk.Box(spacing=8)
-        rd = Gtk.Button(label="Restore Defaults")
-        rd.connect("clicked", self.on_restore)
-        foot.pack_start(rd, False, False, 0)
-        self.close = Gtk.Button(label="Close")
-        foot.pack_end(self.close, False, False, 0)
-        self.box.pack_end(foot, False, False, 0)
+                self.put(btn, bx, y)
+                self.rows[v3dk] = (l, fn, icon)
+        note = lab("Buttons left at their default are sent to the application.", "tdx-small")
+        self.put(note, 31, 655 - 6)
+        self.close = self.put(flat_button("Close", 94), 686, 688)
 
     def assignment(self, v3dk):
         """(kind, value): ('action', name) | ('keys', [names]) | ('app', None)"""
@@ -1080,27 +1401,42 @@ class ButtonsPanel(Panel):
             return "keys", k
         return "app", None
 
+    def preset_of(self, keys):
+        for name, preset in KEY_PRESETS:
+            if preset and chord_names(preset) == keys:
+                return name
+        return None
+
     def describe(self, v3dk, fn):
         kind, val = self.assignment(v3dk)
         if kind == "action":
             return ACTION_LABEL.get(val, val)
         if kind == "keys":
-            joined = "+".join(val)
-            for name, preset in KEY_PRESETS:
-                if preset and chord_names(preset) == val:
-                    return name
-            return pretty_chord(val) if joined else fn
+            return self.preset_of(val) or pretty_chord(val)
         return fn
 
+    def icon_for(self, v3dk):
+        kind, val = self.assignment(v3dk)
+        if kind == "action":
+            return ASSETS.icon(ACTION_ICON.get(val))
+        if kind == "keys":
+            p = self.preset_of(val)
+            return ASSETS.icon(PRESET_ICON.get(p)) if p else ASSETS.icon("Keyboard.png")
+        return ASSETS.icon(v3dk + ".png")  # view buttons: V3DK_TOP.png, ...
+
     def refresh(self):
-        for v3dk, (lab, fn) in self.rows.items():
+        self.refresh_header()
+        for v3dk, (l, fn, slot) in self.rows.items():
             kind, _ = self.assignment(v3dk)
-            text = self.describe(v3dk, fn)
-            if kind == "app":
-                lab.set_markup("%s <span alpha='60%%'>(application)</span>"
-                               % GLib.markup_escape_text(text))
-            else:
-                lab.set_text(text)
+            l.set_text(self.describe(v3dk, fn))
+            l.get_parent().get_parent().set_tooltip_text(
+                "Sent to the application" if kind == "app" else None)
+            for c in slot.get_children():
+                slot.remove(c)
+            img = image_widget(self.icon_for(v3dk), 16)
+            if img:
+                slot.add(img)
+                img.show()
 
     def popup(self, widget, item):
         v3dk, _cap, fn = item
@@ -1132,7 +1468,7 @@ class ButtonsPanel(Panel):
         menu.append(mi)
         add(menu, "Custom keystroke…", lambda: self.capture(v3dk, fn))
         menu.show_all()
-        menu.popup_at_widget(widget, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+        menu.popup_at_widget(widget, Gdk.Gravity.NORTH_EAST, Gdk.Gravity.NORTH_WEST, None)
 
     def capture(self, v3dk, fn):
         dlg = KeyCaptureDialog(self.box.get_toplevel(), fn)
@@ -1177,69 +1513,65 @@ class ButtonsPanel(Panel):
 
 class LcdPanel(Panel):
     title = "LCD Manager"
+    subtitle = "LCD Manager"
+    size = (682, 516)
+    header_h = 91
 
     def build(self):
-        top = Gtk.Box(spacing=14)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.section("Display", 30, 352, 136)
+        frame_ = Gtk.Frame()
+        frame_.set_shadow_type(Gtk.ShadowType.NONE)
         self.preview = drawing(320, 240, self.draw_preview)
-        left.pack_start(self.preview, False, False, 0)
-        self.page2 = Gtk.CheckButton(label="Show keys 6–10 (as while SHIFT is held)")
+        frame_.add(self.preview)
+        self.put(frame_, 31, 146)
+        self.page2 = self.put(Gtk.CheckButton(label="Show keys 6–10 (while SHIFT is held)"),
+                              31, 394)
         self.page2.connect("toggled", lambda *_: self.preview.queue_draw())
-        left.pack_start(self.page2, False, False, 0)
-        top.pack_start(left, False, False, 0)
-
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        self.enable = Gtk.CheckButton(label="Use the LCD")
+        self.enable = self.put(Gtk.CheckButton(label="Use the LCD"), 31, 418)
         self.enable.set_tooltip_text("Daemon-wide (stored in the default settings)")
         self.enable.connect("toggled", self.guard(
             lambda b: self.store.set("lcd", "yes" if b.get_active() else "no")))
-        right.pack_start(self.enable, False, False, 0)
 
-        br = Gtk.Box(spacing=8)
+        self.section("Brightness", 382, 652, 136)
         self.bright = {}
         first = None
-        for name, val in [("Device", None)] + BRIGHTNESS:
+        for n, (name, val) in enumerate([("Device", None)] + BRIGHTNESS):
             rb = Gtk.RadioButton.new_with_label_from_widget(first, name)
             first = first or rb
-            rb.connect("toggled", self.guard(lambda b, v=val: b.get_active() and self.on_bright(v)))
-            br.pack_start(rb, False, False, 0)
+            rb.connect("toggled", self.guard(lambda b, v=val: b.get_active() and
+                                             self.on_bright(v)))
+            self.put(rb, (389, 459, 515, 597)[n], 145)
             self.bright[val] = rb
         self.bright[None].set_tooltip_text("Leave the brightness as the device has it")
-        right.pack_start(frame("Brightness", br), False, False, 0)
 
-        g = Gtk.Grid(column_spacing=8, row_spacing=4)
+        self.section("Key Labels", 382, 652, 202)
         self.labels = []
         for i in range(10):
-            lab = Gtk.Label(label=str(i + 1), xalign=1)
+            c, r = divmod(i, 5)
+            x, y = 389 + c * 136, 212 + r * 30
+            n = lab(str(i + 1), xalign=1)
+            n.set_size_request(16, 24)
+            self.put(n, x, y)
             e = Gtk.Entry()
             e.set_max_length(23)
-            e.set_width_chars(12)
+            e.set_width_chars(10)
+            e.set_size_request(104, 24)
             e.connect("changed", self.guard(lambda w, i=i: self.on_label(i)))
-            c, r = divmod(i, 5)
-            g.attach(lab, c * 2, r, 1, 1)
-            g.attach(e, c * 2 + 1, r, 1, 1)
+            self.put(e, x + 22, y)
             self.labels.append(e)
-        right.pack_start(frame("Key labels", g), False, False, 0)
 
-        img = Gtk.Box(spacing=6)
+        self.section("Image Instead of Labels", 382, 652, 386)
         self.image = Gtk.FileChooserButton(title="LCD image (320×240 PPM)")
         flt = Gtk.FileFilter()
         flt.set_name("PPM images")
         flt.add_pattern("*.ppm")
         self.image.add_filter(flt)
+        self.image.set_size_request(186, 27)
         self.image.connect("file-set", self.guard(self.on_image))
-        img.pack_start(self.image, True, True, 0)
-        clr = Gtk.Button(label="Clear")
+        self.put(self.image, 389, 396)
+        clr = self.put(flat_button("Clear", 70), 582, 396)
         clr.connect("clicked", lambda *_: self.store.reset("lcd_image"))
-        img.pack_start(clr, False, False, 0)
-        right.pack_start(frame("Image instead of labels", img), False, False, 0)
-        top.pack_start(right, True, True, 0)
-        self.box.pack_start(top, True, True, 0)
-
-        foot = Gtk.Box(spacing=8)
-        self.close = Gtk.Button(label="Close")
-        foot.pack_end(self.close, False, False, 0)
-        self.box.pack_end(foot, False, False, 0)
+        self.close = self.put(flat_button("Close", 94), 557, 472)
 
     def label_values(self):
         return [self.store.get("lcd_label_%d" % (i + 1)) or "Key %d" % (i + 1)
@@ -1253,6 +1585,7 @@ class LcdPanel(Panel):
 
     def refresh(self):
         self.updating = True
+        self.refresh_header()
         self.enable.set_active(parse_bool(self.store.base.get("lcd", "yes")))
         b = self.store.get("lcd_brightness")
         try:
@@ -1299,67 +1632,57 @@ class LcdPanel(Panel):
 
 class AboutPanel(Panel):
     title = "About tdxd"
+    size = (450, 580)
+    header_h = 89
+
+    def header(self):  # plain title, like "About 3DxWare"
+        self.put(lab("About tdxd", "tdx-title"), 35, 51)
+
+    def refresh_header(self):
+        pass
 
     def build(self):
-        head = Gtk.Box(spacing=12)
-        head.pack_start(drawing(96, 60, lambda w, cr: draw_device(w, cr, True)), False, False, 0)
-        t = Gtk.Label(xalign=0)
-        t.set_markup("<span size='x-large' weight='bold'>tdxd</span>\n"
-                     "Linux driver for 3Dconnexion six-axis devices")
-        head.pack_start(t, True, True, 0)
-        self.box.pack_start(head, False, False, 0)
-
-        self.versions = Gtk.Grid(column_spacing=16, row_spacing=2)
-        self.box.pack_start(frame("Versions", self.versions), False, False, 0)
-        self.devices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.box.pack_start(frame("Devices", self.devices), False, False, 0)
-        self.files = Gtk.Grid(column_spacing=16, row_spacing=2)
-        self.box.pack_start(frame("Configuration", self.files), False, False, 0)
-
-        link = Gtk.LinkButton.new_with_label(PROJECT_URL, "Project page")
-        link.set_halign(Gtk.Align.START)
-        self.box.pack_start(link, False, False, 0)
-        foot = Gtk.Box(spacing=8)
-        self.close = Gtk.Button(label="Close")
-        foot.pack_end(self.close, False, False, 0)
-        self.box.pack_end(foot, False, False, 0)
-
-    @staticmethod
-    def fill(grid, rows):
-        for c in grid.get_children():
-            grid.remove(c)
-        for r, (k, v) in enumerate(rows):
-            a = Gtk.Label(label=k, xalign=0)
-            a.get_style_context().add_class("dim-label")
-            b = Gtk.Label(label=v, xalign=0)
-            grid.attach(a, 0, r, 1, 1)
-            grid.attach(b, 1, r, 1, 1)
-        grid.show_all()
+        self.section("Software Versions", 33, 420, 136)
+        self.ver = [self.put(lab("", markup=True), 34, y) for y in (145, 163)]
+        self.section("Configuration", 33, 420, 205)
+        self.cfg = [self.put(lab("", "tdx-dim"), 34, y) for y in (214, 232, 250)]
+        link = Gtk.LinkButton.new_with_label(PROJECT_URL, "tdxd project page")
+        link.get_style_context().add_class("tdx-link")
+        self.put(link, 31, 272)
+        self.section("Devices", 33, 420, 403)
+        self.devbox = self.put(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2), 34, 412)
+        self.put(lab("tdxd is an independent Linux driver, not a 3Dconnexion product.",
+                     "tdx-small"), 34, 494)
+        self.close = self.put(flat_button("Close", 94), 324, 535)
 
     def refresh(self):
         st = self.app.status
-        self.fill(self.versions, [
-            ("tdxd", st.get("version", "not running")),
-            ("tdx-settings", APP_VERSION),
-            ("GTK", "%d.%d.%d" % (Gtk.get_major_version(), Gtk.get_minor_version(),
-                                  Gtk.get_micro_version())),
-        ])
-        for c in self.devices.get_children():
-            self.devices.remove(c)
+        rows = [("tdxd", st.get("version", "not running")), ("tdx-settings", APP_VERSION)]
+        for l, (k, v) in zip(self.ver, rows):
+            l.set_markup("<span foreground='#555555'><b>%s</b> %s</span>"
+                         % (GLib.markup_escape_text(k), GLib.markup_escape_text(v)))
+        for l, (k, v) in zip(self.cfg, [("Settings", self.store.base.path),
+                                        ("Profiles", self.store.profile_dir),
+                                        ("Control socket", self.app.daemon.socket)]):
+            l.set_text("%s: %s" % (k, v))
+        for c in self.devbox.get_children():
+            self.devbox.remove(c)
         devs = st.get("devices", [])
         if not devs:
-            self.devices.add(Gtk.Label(label="none connected", xalign=0))
+            self.devbox.add(lab("None connected", "tdx-dim"))
         for d in devs:
-            l = Gtk.Label(xalign=0)
-            l.set_markup("<b>%s</b>   FW: %s   [%s:%s]   %s" % (
-                GLib.markup_escape_text(d["name"]), d["firmware"], d["vid"], d["pid"], d["node"]))
-            self.devices.add(l)
-        self.devices.show_all()
-        self.fill(self.files, [
-            ("Settings", self.store.base.path),
-            ("Profiles", self.store.profile_dir),
-            ("Control socket", self.app.daemon.socket),
-        ])
+            row = Gtk.Box(spacing=5)
+            row.pack_start(lab("<span foreground='#555555'><b>%s</b> FW: %s</span>" % (
+                GLib.markup_escape_text(d["name"]), d["firmware"]), markup=True),
+                False, False, 0)
+            sup = SUPPORT_TEXT.get(ASSETS.device(d.get("pid")).get("support"))
+            if sup:
+                ic = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
+                if ic:
+                    row.pack_start(ic, False, False, 0)
+                row.pack_start(lab(sup, "tdx-dim"), False, False, 0)
+            self.devbox.add(row)
+        self.devbox.show_all()
 
 
 # --------------------------------------------------------------------------
@@ -1394,7 +1717,7 @@ class App:
             self.save_timer = GLib.timeout_add(600, self.flush)
             self.set_save_state("")
         else:
-            self.set_save_state("Unsaved – saved when you close (administrator password)")
+            self.set_save_state("Saved when you close (password)")
 
     def set_save_state(self, text):
         self.save_state = text
@@ -1410,8 +1733,7 @@ class App:
             self.set_save_state("Not saved: " + errors[0])
             return False
         rc, out = self.daemon.request("reload")
-        self.set_save_state("Saved" + ("" if rc == 0 else
-                                       " – tdxd not reloaded (%s)" % out.strip()[:60]))
+        self.set_save_state("Saved" if rc == 0 else "Saved; tdxd not reloaded")
         GLib.timeout_add(800, self.poll_status)
         return False
 
@@ -1421,7 +1743,28 @@ class App:
             p.refresh()
         return False
 
-    # ---- profiles
+    # ---- profiles (the window title is the profile chooser)
+    def profile_menu(self, widget):
+        menu = Gtk.Menu()
+        cur = os.path.basename(self.store.profile.path)[:-5] if self.store.profile else None
+
+        def item(label, cb, active=False):
+            mi = Gtk.CheckMenuItem(label=label)
+            mi.set_draw_as_radio(True)
+            mi.set_active(active)
+            mi.connect("activate", lambda *_: cb())
+            menu.append(mi)
+
+        item("All Applications (default)", lambda: self.switch_profile(None), cur is None)
+        for n in self.store.profile_names():
+            item(n, lambda n=n: self.switch_profile(n), n == cur)
+        menu.append(Gtk.SeparatorMenuItem())
+        mi = Gtk.MenuItem(label="New profile…")
+        mi.connect("activate", lambda *_: self.new_profile())
+        menu.append(mi)
+        menu.show_all()
+        menu.popup_at_widget(widget, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+
     def switch_profile(self, name):
         if self.store.dirty():
             self.flush()
@@ -1451,19 +1794,28 @@ class App:
                 self.flush()
             self.store.create_profile(name, match)
             self.on_changed()
-        else:
-            self.main.refresh()
 
     # ---- windows
+    def make_window(self, panel, parent=None):
+        w = Gtk.Window(title=panel.title)
+        if parent:
+            w.set_transient_for(parent)
+            w.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+        else:
+            w.set_position(Gtk.WindowPosition.CENTER)
+        w.set_decorated(False)
+        w.set_resizable(False)
+        w.add(panel.box)
+        return w
+
     def window(self, cls):
         if cls in self.windows:
             self.windows[cls].present()
             return
         panel = cls(self)
-        w = Gtk.Window(title=panel.title, transient_for=self.win)
-        w.set_resizable(False)
-        w.add(panel.box)
+        w = self.make_window(panel, self.win)
         panel.close.connect("clicked", lambda *_: w.destroy())
+        panel.close_btn.connect("clicked", lambda *_: w.destroy())
         w.connect("destroy", lambda *_: self.closed(cls, panel))
         w.show_all()
         self.windows[cls] = w
@@ -1493,19 +1845,17 @@ class App:
 
     def run(self):
         self.main = MainPanel(self)
-        self.win = Gtk.Window(title=MainPanel.title)
-        self.win.set_resizable(False)
-        self.win.set_default_size(440, -1)
-        self.win.add(self.main.box)
+        self.win = self.make_window(self.main)
+        self.win.set_icon_name("input-mouse")
         self.win.connect("delete-event", lambda *_: (self.quit(), True)[1])
         self.win.show_all()
+        self.main.refresh()
         Gtk.main()
 
     # ---- --snapshot
     def snapshot(self, outdir):
         os.makedirs(outdir, exist_ok=True)
         self.main = MainPanel(self)
-        self.win = None
         shots = [("main", self.main)] + [(n, c(self)) for n, c in (
             ("advanced", AdvancedPanel), ("buttons", ButtonsPanel),
             ("lcd", LcdPanel), ("about", AboutPanel))]
@@ -1513,17 +1863,13 @@ class App:
             off = Gtk.OffscreenWindow()
             off.add(panel.box)
             off.show_all()
+            panel.refresh()
             for _ in range(50):
                 while Gtk.events_pending():
                     Gtk.main_iteration()
-            # paint the theme background ourselves (OffscreenWindow leaves the margins bare)
-            import cairo
-            w, h = off.get_allocated_width(), off.get_allocated_height()
+            w, h = panel.size
             surf = cairo.ImageSurface(cairo.FORMAT_RGB24, w, h)
             cr = cairo.Context(surf)
-            Gtk.render_background(off.get_style_context(), cr, 0, 0, w, h)
-            a = panel.box.get_allocation()
-            cr.translate(a.x, a.y)
             panel.box.draw(cr)
             path = os.path.join(outdir, "tdx-settings-%s.png" % name)
             surf.write_to_png(path)
@@ -1531,17 +1877,24 @@ class App:
 
 
 def main():
+    global ASSETS
     ap = argparse.ArgumentParser(description="Settings panel for the tdxd 3Dconnexion driver")
     ap.add_argument("-c", "--config", default="/etc/tdxd.conf", help="base configuration file")
     ap.add_argument("--profile-dir", help="per-application profiles (default: profile_dir)")
     ap.add_argument("-p", "--profile", help="edit this profile instead of the active one "
                                             "('' for the default settings)")
     ap.add_argument("-s", "--socket", help="tdxd control socket (default: control_socket)")
+    ap.add_argument("--assets", help="3DxWare artwork from tools/extract_3dxware_ui.py "
+                                     "(default: ~/.local/share/tdxd/3dxware-ui, "
+                                     "/usr/local/share/tdxd/3dxware-ui)")
+    ap.add_argument("--no-assets", action="store_true", help="use the built-in drawings")
     ap.add_argument("--snapshot", metavar="DIR", help="render every window to DIR/*.png and exit")
     ap.add_argument("--status-file", help=argparse.SUPPRESS)  # canned `tdxctl status` (tests)
     ap.add_argument("--no-save", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("-V", "--version", action="version", version="tdx-settings " + APP_VERSION)
     args = ap.parse_args()
+    ASSETS = Assets(args.assets) if not args.no_assets else Assets("/nonexistent")
+    install_css(ASSETS)
     app = App(args)
     if args.snapshot:
         app.snapshot(args.snapshot)

@@ -141,14 +141,33 @@ attached, Windows and 3DxWare cannot use it.
 
 ## Settings panel (`tdx-settings`)
 
-`tdx-settings` is a GTK 3 port of the 3DxWare control panel: the main window
-(profile, device, Speed), **Advanced Settings**, **Buttons**, **LCD Manager** and
-**About** ("More ›"). It edits the same files as the table below, keeps their
-comments, and runs `tdxctl reload` after each change. Files in `/etc` that you
-cannot write are saved through `pkexec tdx-settings-helper` when you close a
-window (one administrator prompt). The drop-down at the top picks the profile
-being edited: the defaults or a per-application profile (and "New profile…"
-creates one for the focused application).
+`tdx-settings` is a GTK 3 port of the 3DxWare control panel with the same
+windows, layout and controls: the main window (device, Speed), **Advanced
+Settings**, **Buttons**, **LCD Manager** and **About** ("More ›"). It edits the
+same files as the table below, keeps their comments, and runs `tdxctl reload`
+after each change. Files in `/etc` that you cannot write are saved through
+`pkexec tdx-settings-helper` when you close a window (one administrator prompt).
+The window title names the profile being edited; click it to switch between the
+defaults and the per-application profiles, or to create one for the focused
+application.
+
+### The 3DxWare look
+
+The 3DxWare artwork (backgrounds, device photos, key caps, axis icons, check
+boxes, slider thumbs, function icons) belongs to 3Dconnexion and is **not**
+included with tdxd. If you have the Windows installer, copy it out once and
+`tdx-settings` uses it automatically:
+
+```bash
+sudo tdx-extract-3dxware-ui 3DxWare64_v10-9-14_b745.exe     # -> /usr/local/share/tdxd/3dxware-ui
+tools/extract_3dxware_ui.py 3DxWare64_v10-9-14_b745.exe     # or per user -> ~/.local/share/tdxd/3dxware-ui
+```
+
+The extractor only reads files (7z unpacks installer → MSI → CAB; the MSI
+`File` table gives the names; the images are parsed out of the .NET resources of
+`3DxSmartUi.exe`; `Base.xml` gives each device's photo and support status). It
+needs `7z` (`p7zip-full`). Without the artwork the same layout is drawn with
+plain shapes, as in these screenshots:
 
 | Main window | Advanced Settings |
 |---|---|
@@ -163,9 +182,9 @@ creates one for the focused application).
 | ![lcd](docs/screenshots/tdx-settings-lcd.png) | ![about](docs/screenshots/tdx-settings-about.png) |
 
 It needs Python 3 with PyGObject: `sudo apt install python3-gi python3-gi-cairo
-gir1.2-gtk-3.0` (Fedora: `python3-gobject gtk3`). The artwork is drawn by the
-program; no 3Dconnexion images are used. The Buttons window currently shows the
-SpacePilot Pro layout. `tdx-settings --snapshot DIR` renders every window to PNG.
+gir1.2-gtk-3.0` (Fedora: `python3-gobject gtk3`). The Buttons window currently
+shows the SpacePilot Pro layout. `tdx-settings --snapshot DIR` renders every
+window to PNG (`--no-assets` forces the built-in drawings).
 
 ## Settings (compared with 3DxWare on Windows)
 
