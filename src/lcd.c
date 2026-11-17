@@ -202,6 +202,8 @@ int tdx_lcd_open(struct tdx_lcd *lcd, uint16_t vid, uint16_t pid)
 {
 	lcd->fd = -1;
 	lcd->iface = 0;
+	lcd->ep_in = 0;
+	lcd->in_pending = 0;
 	int rc = tdx_usb_find_node(vid, pid, lcd->path, sizeof lcd->path);
 	if (rc)
 		return rc;
@@ -217,8 +219,87 @@ int tdx_lcd_open(struct tdx_lcd *lcd, uint16_t vid, uint16_t pid)
 
 void tdx_lcd_close(struct tdx_lcd *lcd)
 {
+	if (lcd->fd >= 0 && lcd->in_pending) {
+		ioctl(lcd->fd, USBDEVFS_DISCARDURB, &lcd->in_urb);
+		void *done = NULL;
+		ioctl(lcd->fd, USBDEVFS_REAPURBNDELAY, &done);
+		lcd->in_pending = 0;
+	}
 	tdx_usb_release(lcd->fd, lcd->iface);
 	lcd->fd = -1;
+}
+
+uint32_t tdx_lcd_softbuttons(uint8_t b)
+{
+	uint32_t m = 0;
+	if (b & 0x80) m |= TDX_SB_UP;
+	if (b & 0x40) m |= TDX_SB_DOWN;
+	if (b & 0x20) m |= TDX_SB_LEFT;
+	if (b & 0x10) m |= TDX_SB_RIGHT;
+	if (b & 0x08) m |= TDX_SB_OK;
+	if (b & 0x04) m |= TDX_SB_MENU;
+	if (b & 0x02) m |= TDX_SB_CANCEL;
+	if (b & 0x01) m |= TDX_SB_SPECIAL;
+	return m;
+}
+
+/* First interrupt IN endpoint of @iface. */
+static int find_int_in(int fd, int iface, unsigned *ep)
+{
+	uint8_t buf[4096];
+	ssize_t n = pread(fd, buf, sizeof buf, 0);
+	int cur = -1;
+	for (ssize_t i = 0; n > 0 && i + 2 <= n && buf[i] >= 2 && i + buf[i] <= n; i += buf[i]) {
+		if (buf[i + 1] == 4 && buf[i] >= 9)
+			cur = buf[i + 2];
+		else if (buf[i + 1] == 5 && buf[i] >= 7 && cur == iface && (buf[i + 2] & 0x80) &&
+			 (buf[i + 3] & 3) == 3) {
+			*ep = buf[i + 2];
+			return 0;
+		}
+	}
+	return -ENOENT;
+}
+
+int tdx_lcd_buttons_start(struct tdx_lcd *lcd)
+{
+	if (lcd->fd < 0)
+		return -EBADF;
+	if (lcd->in_pending)
+		return 0;
+	if (!lcd->ep_in && find_int_in(lcd->fd, lcd->iface, &lcd->ep_in))
+		return -ENOENT;
+	memset(&lcd->in_urb, 0, sizeof lcd->in_urb);
+	lcd->in_urb.type = USBDEVFS_URB_TYPE_INTERRUPT;
+	lcd->in_urb.endpoint = (unsigned char)lcd->ep_in;
+	lcd->in_urb.buffer = lcd->in_buf;
+	lcd->in_urb.buffer_length = sizeof lcd->in_buf;
+	if (ioctl(lcd->fd, USBDEVFS_SUBMITURB, &lcd->in_urb) < 0)
+		return -errno;
+	lcd->in_pending = 1;
+	return 0;
+}
+
+int tdx_lcd_buttons_reap(struct tdx_lcd *lcd, uint32_t *buttons)
+{
+	if (lcd->fd < 0)
+		return -EBADF;
+	struct usbdevfs_urb *done = NULL;
+	if (ioctl(lcd->fd, USBDEVFS_REAPURBNDELAY, &done) < 0)
+		return errno == EAGAIN ? 0 : -errno;
+	if (done != &lcd->in_urb)
+		return 0;
+	lcd->in_pending = 0;
+	int st = lcd->in_urb.status, got = lcd->in_urb.actual_length;
+	if (st == -ENODEV || st == -ESHUTDOWN)
+		return -ENODEV;
+	int rc = 0;
+	if (st == 0 && got >= 1) {
+		*buttons = tdx_lcd_softbuttons(lcd->in_buf[0]);
+		rc = 1;
+	}
+	int r = tdx_lcd_buttons_start(lcd);
+	return r < 0 ? r : rc;
 }
 
 int tdx_lcd_show(struct tdx_lcd *lcd, const uint32_t *xrgb)

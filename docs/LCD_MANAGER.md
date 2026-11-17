@@ -1,0 +1,129 @@
+# LCD Manager (Linux port of Logitech LCDMon 3.06)
+
+On Windows, 3DxWare installs Logitech's **LCD Manager** (`LCDMon.exe`, from
+`LADPInst.msi`) to run *applets* on the SpacePilot PRO's 320×240 LCD:
+Function Keys, RSS Feeds, Picture Viewer. The **LCD Manager** button in the
+3DxWare panel opens its window. tdxd replaces it with:
+
+| Windows | Linux |
+|---|---|
+| `LCDMon.exe` (manager + tray UI) | `tdx-lcdmgr` (user service) + `tdx-lcdmanager` (window) |
+| `LgLcdApi.dll` + `lglcd.lib` (applet API, named pipe `\\.\pipe\LGLCDPIPE…`) | `libtdxlcd` (same `lgLcd*` functions, C) and `tdxlcd.py` (Python), Unix socket |
+| `LCDExtDevMngrEmulator.dll` / `EDMBTDD.dll` (SpacePilot PRO as a 320×240 "ext. device") | `lcd.c` over usbfs (frames, brightness, ping, **soft buttons**) |
+| `%LOCALAPPDATA%\Logitech\LCD Software\LCD Manager\LGLCDDB.TXT` | `~/.config/tdxd/lcdmgr.ini` (same sections and keys) |
+
+```
+applets (libtdxlcd / tdxlcd.py) ──► $XDG_RUNTIME_DIR/tdx-lcd.sock ──► tdx-lcdmgr ──usbfs──► LCD
+tdx-lcdmanager (window) ──admin commands──┘        │  "lcd-release" (held)
+                                                  └──► tdxd control socket: tdxd stops drawing
+                                                       its key page; takes the LCD back on close
+```
+
+Start it with `systemctl --user enable --now tdx-lcdmgr`. While it runs, tdxd
+leaves the SpacePilot PRO LCD alone (`tdxctl status` shows `lcd lcdmgr`); stop it
+and tdxd's built-in key page returns. The Enterprise and Giotto LCDs are not
+LCDMon devices (3DxWare drives them itself) and stay with tdxd.
+
+## Recovered behaviour
+
+**Soft buttons.** The LCD's navigation keys arrive on USB interface 0, interrupt
+IN endpoint `0x81`, 2-byte reports. EDMBTDD.dll `FUN_180001af0` maps byte 0 to
+the lglcd button bits:
+
+| bit | lglcd | | bit | lglcd |
+|---|---|---|---|---|
+| 7 | UP `0x1000` | | 3 | OK `0x0400` |
+| 6 | DOWN `0x2000` | | 2 | MENU `0x4000` |
+| 5 | LEFT `0x0100` | | 1 | CANCEL `0x0800` |
+| 4 | RIGHT `0x0200` | | 0 | `0x80000000` (the LCD key, kept by LCDMon) |
+
+`tdx-lcd buttons` prints them live.
+
+**Program list on the LCD** (LCDMon `FUN_14007fadc`, `FUN_140084a10`,
+`FUN_14007fe10`): the `0x80000000` key opens the list of running programs (or,
+with *Enable Quick Switch*, goes straight to the next one); UP/DOWN move, OK runs
+the highlighted program, CANCEL closes, and the list closes after 2 s without
+input. Every other button goes to the program being shown
+(`lgLcdOnSoftButtonsCB`, `lgLcdReadSoftButtons`).
+
+**Which program is shown** ("Display Switching Method"):
+
+1. an `LGLCD_PRIORITY_ALERT` (255) update is shown at once when *Immediate
+   Display of High Priority Items* (`Alerts`) is on;
+2. a program that called `lgLcdSetAsLCDForegroundApp(…, YES)` is shown if
+   *Allow Program to Force Itself to Foreground* (`L`) is ticked;
+3. `Algorithm=1` (*Manual*): the program picked on the device (`ManualModeApplet`);
+   `Algorithm=2` (*Rotate Between Programs*): the next program every `Delay`
+   seconds (1–20). *Klever-VU* (`Algorithm=3`) is greyed out for colour panels in
+   LCDMon and treated as rotate.
+
+Programs with priority `IDLE_NO_SHOW` (0) are skipped. Mono (160×43) applets are
+shown scaled 2× on the colour panel.
+
+**Database** (`FUN_140032680` writes, `FUN_140034f0c` / `FUN_140036c4c` read):
+`[DEVICE_0]` `Brightness`, `Contrast` (0–2), `Alerts` (default 1), `Algorithm`
+(1–3, default 1), `Delay` (1–20, default 8), `QuickSwitch` (0), `InvertColors`
+(0), `ManualModeApplet="path","name"`; `[ClientApplications]`
+`N="path","name",E1,A1,S1,L1,C2` with E enabled (default 1), A autostart (0),
+S persistent (0), L allow foreground (1), C capabilities; `[Application_N]`
+`0=F<family>,I<device>,E<enabled on the device>`. Only persistent programs are
+saved. LCDMon's own file can be copied over and read as is (Windows paths are
+kept as text).
+
+*Inferred, not read from code:* `S` = the applet's `isPersistent` (LCDMon saves
+only those) and `L` = the *Allow…Foreground* box (its default and the window
+agree). The default brightness for a new database is 100 (LCDMon takes it from
+the device).
+
+## Applet API
+
+`#include <tdxlcd.h>`, link `-ltdxlcd -pthread`. The functions, structures and
+constants have the lglcd names (`lgLcdInit`, `lgLcdConnectEx`,
+`lgLcdOpenByType`, `lgLcdUpdateBitmap`, `lgLcdReadSoftButtons`,
+`lgLcdSetAsLCDForegroundApp`, `lgLcdClose`, `lgLcdDisconnect`, …), so a Windows
+applet's LCD code ports by changing the include; strings are UTF-8. Bitmaps are
+`LGLCD_BMP_FORMAT_QVGAx32` (320×240, B G R A) or `160x43x1`. Callbacks run on the
+library's reader thread. `src/tdx-lcd-demo.c` is a complete example.
+
+Python:
+
+```python
+import tdxlcd
+conn = tdxlcd.Connection("My Applet", persistent=True, autostart=True,
+                         on_configure=show_settings, on_notify=on_event)
+dev = conn.open(tdxlcd.DEVICE_QVGA, on_buttons=on_buttons)
+dev.update_rgb(rgb_bytes, tdxlcd.PRIORITY_NORMAL)   # 320*240*3 bytes
+```
+
+The manager identifies a program by its executable (or, for Python and other
+interpreters, its script) and friendly name, like LCDMon's path + name pair.
+Programs marked *Automatically Start This Program* are started by the manager.
+
+## Administration
+
+`tdx-lcdmanager` uses these text commands (`tdxlcd.admin()`), also handy from a
+shell (`python3 -c 'import tdxlcd; print(tdxlcd.admin("status"))'`):
+
+| Command | Effect |
+|---|---|
+| `status` | device, settings, programs (index, name, path, E A S L C, device, running, configurable) |
+| `set KEY VALUE` | `brightness algorithm delay quickswitch alerts contrast invert show_tray_icon restore_size show_new_device device_balloons warning_balloons` |
+| `select N` | show program N (as if chosen on the device) |
+| `program N enabled\|device\|autostart\|foreground 0\|1` | the Programs page check boxes |
+| `program N configure` / `start` / `remove` | *Configure…*, start now, forget |
+| `identify` | show the device name on the LCD for 3 s (*Identify*) |
+| `defaults` | device settings back to defaults (*Defaults*) |
+| `press HEX…` | inject soft-button states (testing) |
+
+`tdx-lcdmgr -F frame.ppm` runs with a virtual LCD (frames written to a PPM file);
+`make test-lcdmgr` uses it to test the manager end to end without a device.
+
+## The window
+
+`tdx-lcdmanager` reproduces LCDMon's window: the device page (*Configuration*,
+*Programs Running on This Device*), *Programs* (*Programs on This System*,
+*Configure…*, *Program Properties*), *Global Settings*, *Help* and *About*. With
+the artwork extracted from your own installer (`tdx-extract-3dxware-ui`, which
+now also copies LCDMon's `IDR_*` images) it uses LCDMon's sidebar icons, pane
+headers and textures; without it the same layout is drawn plainly. The tray icon
+and balloon options are stored but Linux has no LCDMon tray icon yet.

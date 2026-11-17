@@ -201,7 +201,7 @@ with `tdxctl reload` or `systemctl reload tdxd`.
 | **Calibrate** | `tdxctl calibrate`, `calibrate_button`, or `calibrate_on_start` |
 | Buttons: keystrokes | `key_<V3DK id> = KEY [+ KEY …]` (or `none`) |
 | Buttons: Increase/Decrease Speed, Dominant/Rotation/Pan Zoom On/Off, Calibrate | `action_<V3DK id> = speed_up \| speed_down \| dominant \| rotation \| panzoom \| calibrate` (handled by tdxd, not sent to the application; the shipped config binds +, −, DOM, LOCK and PAN ZOOM like 3DxWare) |
-| LCD Manager | `lcd_brightness`, `lcd_label_N`, `lcd_image` |
+| LCD Manager (Logitech LCDMon: applets, switching, brightness) | `tdx-lcdmgr` + `tdx-lcdmanager`, see [docs/LCD_MANAGER.md](docs/LCD_MANAGER.md); without it tdxd's key page: `lcd_brightness`, `lcd_label_N`, `lcd_image` |
 | **Per-application settings** | `/etc/tdxd.d/<name>.conf` profiles |
 
 ### Calibrate
@@ -249,6 +249,20 @@ tdxd learns which application is focused in one of two ways:
 `tdxctl profiles` lists the profiles.
 
 ## LCD
+
+### LCD Manager and applets
+
+`tdx-lcdmgr` is a Linux port of Logitech's LCD Manager (LCDMon), which 3DxWare
+uses to run applets (Function Keys, RSS Feeds, Picture Viewer) on the
+SpacePilot PRO LCD. Run it as your user (`systemctl --user enable --now
+tdx-lcdmgr`); it takes the LCD over from tdxd, serves applets written against
+the lglcd-compatible `libtdxlcd` (C) or `tdxlcd.py`, and handles the LCD's own
+navigation keys (LCD key, UP/DOWN/OK/CANCEL). The **LCD Manager** button in
+`tdx-settings` opens its window, `tdx-lcdmanager`. Details, the recovered
+protocol and the API: [docs/LCD_MANAGER.md](docs/LCD_MANAGER.md). Try it with
+`tdx-lcd-demo -a`.
+
+### tdxd's built-in key page
 
 `tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240), SpaceMouse
 Enterprise (640×150) or Giotto (1280×416). Use `-d VID:PID` to pick one.

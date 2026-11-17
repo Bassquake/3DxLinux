@@ -1,0 +1,777 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""tdx-lcdmanager - the LCD Manager window (Linux port of Logitech LCDMon's UI).
+
+Pages as in LCDMon 3.06: the device (Configuration / Programs Running on This
+Device), Programs, Global Settings, Help and About. Every change is sent to
+tdx-lcdmgr at once (its admin commands, see src/tdx-lcdmgr.c) and stored in its
+LGLCDDB-format database.
+
+The look uses LCDMon's own artwork when it has been extracted from the user's
+3DxWare installer (tools/extract_3dxware_ui.py -> <assets>/lcdmon/IDR_*.png);
+otherwise the same layout is drawn with plain shapes.
+"""
+
+import argparse
+import math
+import os
+import shutil
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+import cairo  # noqa: E402
+
+_here = os.path.dirname(os.path.realpath(__file__))
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
+import tdxlcd  # noqa: E402
+
+APP_VERSION = "dev"  # set by make install / make dist
+DOCS_URL = "https://github.com/Bassquake/SpacePilot-Pro-Linux/blob/main/docs/LCD_MANAGER.md"
+W, H = 804, 736          # client area of LCDMon's window in the reference screenshots
+SIDE_W = 117
+PANEL = (150, 22, 598, 684)   # x, y, w, h of the white page
+TEAL = (0x31 / 255.0, 0x8d / 255.0, 0x9e / 255.0)
+FONT = "Segoe UI, Selawik, Ubuntu, Noto Sans, DejaVu Sans, sans-serif"
+
+
+# --------------------------------------------------------------------------
+# artwork
+
+def asset_dirs():
+    env = os.environ.get("TDX_UI_ASSETS")
+    here = os.path.dirname(os.path.realpath(__file__))
+    return ([env] if env else []) + [
+        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
+        os.path.join(here, "..", "share", "tdxd", "3dxware-ui"),
+        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+
+
+class Art:
+    def __init__(self, path=None, disabled=False):
+        self.dir = None
+        if not disabled:
+            for d in ([path] if path else asset_dirs()):
+                if d and os.path.isdir(os.path.join(d, "lcdmon")):
+                    self.dir = os.path.join(os.path.realpath(d), "lcdmon")
+                    break
+        self.cache = {}
+
+    def path(self, name):
+        if not self.dir:
+            return None
+        p = os.path.join(self.dir, "IDR_%s.png" % name)
+        return p if os.path.isfile(p) else None
+
+    def surface(self, name):
+        if name not in self.cache:
+            p = self.path(name)
+            try:
+                self.cache[name] = cairo.ImageSurface.create_from_png(p) if p else None
+            except (cairo.Error, OSError):
+                self.cache[name] = None
+        return self.cache[name]
+
+    def image(self, name, size=None):
+        p = self.path(name)
+        if not p:
+            return None
+        pb = (GdkPixbuf.Pixbuf.new_from_file_at_scale(p, size, size, True) if size
+              else GdkPixbuf.Pixbuf.new_from_file(p))
+        return Gtk.Image.new_from_pixbuf(pb)
+
+
+ART = Art()
+
+
+def paint(cr, name, x, y, w=None, h=None):
+    """Paint an artwork image at x,y (stretched to w x h if given). False if missing."""
+    s = ART.surface(name)
+    if not s:
+        return False
+    cr.save()
+    cr.translate(x, y)
+    if w or h:
+        cr.scale((w or s.get_width()) / s.get_width(), (h or s.get_height()) / s.get_height())
+    cr.set_source_surface(s, 0, 0)
+    cr.get_source().set_filter(cairo.FILTER_GOOD)
+    cr.paint()
+    cr.restore()
+    return True
+
+
+def three_slice(cr, prefix, x, y, w):
+    """Pane header: L / stretched MID / R images."""
+    l, m, r = (ART.surface(prefix + s) for s in ("_L", "_MID", "_R"))
+    if not (l and m and r):
+        return False
+    paint(cr, prefix + "_L", x, y)
+    paint(cr, prefix + "_MID", x + l.get_width(), y, w - l.get_width() - r.get_width(),
+          m.get_height())
+    paint(cr, prefix + "_R", x + w - r.get_width(), y)
+    return True
+
+
+def rounded(cr, x, y, w, h, r):
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+    cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+    cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+    cr.close_path()
+
+
+CSS = """
+.lm, .lm label, .lm button, .lm entry, .lm checkbutton, .lm radiobutton, .lm treeview {
+  font-family: %(font)s; font-size: 12px; color: #000000; text-shadow: none; }
+.lm label.side { color: #ffffff; font-size: 12px; }
+.lm label.pane { color: #ffffff; font-size: 13px; }
+.lm label.group { background-color: #ffffff; color: #1a1a1a; padding: 0 3px; }
+.lm label.title { color: #2b8fb0; font-size: 22px; }
+.lm label.dim { color: #a0a0a0; }
+.lm label.valuebox { border: 1px solid #b4b4b4; background-color: #ffffff; padding: 0 3px;
+  min-width: 16px; }
+.lm button.win { background-color: #e1e1e1; background-image: none; border: 1px solid #adadad;
+  border-radius: 0; box-shadow: none; padding: 0; min-height: 0; }
+.lm button.win:hover { background-color: #e5f1fb; border-color: #0078d7; }
+.lm button.win:active { background-color: #cce4f7; border-color: #005499; }
+.lm button.flat { background: none; border: none; box-shadow: none; padding: 0; min-height: 0;
+  min-width: 0; }
+.lm entry { background-color: #ffffff; background-image: none; border: 1px solid #7a7a7a;
+  border-radius: 0; box-shadow: none; min-height: 24px; padding: 0 4px; }
+.lm check, .lm radio { background-color: #ffffff; background-image: none;
+  border: 1px solid #333333; box-shadow: none; min-width: 13px; min-height: 13px;
+  margin: 0 7px 0 0; -gtk-icon-shadow: none; color: #000000; }
+.lm check { border-radius: 0; }
+.lm radio { border-radius: 50%%; }
+.lm check:disabled, .lm radio:disabled { border-color: #bcbcbc; color: #bcbcbc; }
+.lm checkbutton:disabled label, .lm radiobutton:disabled label { color: #a0a0a0; }
+.lm scale trough { background-color: #e7eaea; background-image: none;
+  border: 1px solid #d6d6d6; border-radius: 0; min-height: 4px; }
+.lm scale highlight { background: none; border: none; }
+.lm scale slider { background-color: #0078d7; background-image: none; border: none;
+  border-radius: 0; min-width: 11px; min-height: 22px; margin: -10px 0; box-shadow: none; }
+.lm scale:disabled slider { background-color: #cccccc; }
+.lm scale mark indicator { color: #9a9a9a; min-height: 5px; min-width: 1px; }
+.lm treeview { background-color: #ffffff; }
+.lm treeview:selected { background-color: #0078d7; color: #ffffff; }
+.lm treeview header button { background-color: #ffffff; background-image: none; border: none;
+  border-right: 1px solid #e5e5e5; border-bottom: 1px solid #e5e5e5; box-shadow: none;
+  color: #1c57c8; padding: 2px 4px; }
+.lm treeview header button label { color: #1c57c8; font-weight: normal; }
+.lm .listframe { border: 1px solid #828790; background-color: #ffffff; }
+.lm .banner { background-color: #fff4c4; border: 1px solid #c9a227; padding: 6px; }
+""" % {"font": FONT}
+
+
+def install_css():
+    prov = Gtk.CssProvider()
+    prov.load_from_data(CSS.encode())
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), prov,
+                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+
+
+def lab(text, cls=None, xalign=0.0):
+    l = Gtk.Label(label=text, xalign=xalign)
+    for c in (cls or "").split():
+        l.get_style_context().add_class(c)
+    return l
+
+
+def win_button(text, w, h=26):
+    b = Gtk.Button(label=text)
+    b.get_style_context().add_class("win")
+    b.set_size_request(w, h)
+    b.set_can_focus(False)
+    return b
+
+
+# --------------------------------------------------------------------------
+# window
+
+PAGES = [  # (key, icon, label)
+    ("device", "ICON_DEVICE", None),
+    ("programs", "ICON_PROGRAMS", "Programs"),
+    ("settings", "ICON_GLBSETTINGS", "Global Settings"),
+    ("help", "ICON_HELP", "Help"),
+    ("about", "ICON_ABOUT", "About"),
+]
+FALLBACK_ICON = {"device": "input-mouse", "programs": "view-list",
+                 "settings": "preferences-system", "help": "help-browser",
+                 "about": "help-about"}
+
+
+class LcdManager:
+    def __init__(self, args):
+        self.args = args
+        self.sock = args.socket or tdxlcd.socket_path()
+        self.st = None
+        self.page = "device"
+        self.updating = False
+        self.lines = []      # group boxes to draw: (x, y, w, h)
+        self.panes = []      # pane headers: (y, title, expanded)
+        self.section = None  # (image, title) for section pages
+        self.config_open, self.running_open = True, False
+        self.sel_prog = 0
+        self.refresh_status()
+
+        self.root = Gtk.Overlay()
+        self.root.get_style_context().add_class("lm")
+        self.root.set_size_request(W, H)
+        self.bg = Gtk.DrawingArea()
+        self.bg.set_size_request(W, H)
+        self.bg.connect("draw", self.draw_bg)
+        self.root.add(self.bg)
+        self.fix = Gtk.Fixed()
+        self.root.add_overlay(self.fix)
+        self.root.set_overlay_pass_through(self.fix, False)
+        self.build()
+
+    # ---- data
+    def refresh_status(self):
+        try:
+            self.st = tdxlcd.status(self.sock)
+        except (OSError, ValueError):
+            self.st = None
+
+    def admin(self, cmd):
+        try:
+            r = tdxlcd.admin(cmd, self.sock)
+        except OSError as e:
+            r = "error: %s" % e
+        self.refresh_status()
+        return r
+
+    def setting(self, key, default=0):
+        return (self.st or {}).get("settings", {}).get(key, default)
+
+    def general(self, key, default=0):
+        return (self.st or {}).get("general", {}).get(key, default)
+
+    # ---- background
+    def draw_bg(self, w, cr):
+        # sidebar
+        g = cairo.LinearGradient(0, 0, 0, H)
+        g.add_color_stop_rgb(0, 0.62, 0.62, 0.62)
+        g.add_color_stop_rgb(0.30, 0.42, 0.42, 0.42)
+        g.add_color_stop_rgb(1, 0.24, 0.24, 0.24)
+        cr.set_source(g)
+        cr.rectangle(0, 0, SIDE_W, H)
+        cr.fill()
+        cr.set_source_rgb(0.16, 0.16, 0.16)
+        cr.rectangle(SIDE_W - 1, 0, 1, H)
+        cr.fill()
+        # content background
+        g = cairo.LinearGradient(0, 0, 0, 40)
+        g.add_color_stop_rgb(0, 0.47, 0.47, 0.47)
+        g.add_color_stop_rgb(1, 0.70, 0.70, 0.70)
+        cr.set_source(g)
+        cr.rectangle(SIDE_W, 0, W - SIDE_W, H)
+        cr.fill()
+        # sidebar selection glow behind the current icon
+        for i, (key, icon, _l) in enumerate(PAGES):
+            if key == self.page and not ART.surface(icon + "_ON"):
+                cr.set_source_rgba(1.0, 0.75, 0.2, 0.35)
+                cr.arc(SIDE_W / 2, 45 + i * 114 + 32, 36, 0, 2 * math.pi)
+                cr.fill()
+        x, y, pw, ph = PANEL
+        if self.section:
+            self.draw_panel(cr, x, y, pw, ph)
+            self.draw_section(cr, *self.section)
+        for (py, title, expanded, height) in self.panes:
+            self.draw_pane(cr, x, py, pw, expanded, height)
+        for (bx, by, bw, bh) in self.lines:
+            cr.set_source_rgb(0.86, 0.86, 0.86)
+            cr.set_line_width(1)
+            rounded(cr, bx + 0.5, by + 0.5, bw, bh, 3)
+            cr.stroke()
+
+    def draw_shadow(self, cr, x, y, w, h):
+        for i in range(6, 0, -1):
+            cr.set_source_rgba(0, 0, 0, 0.035 * (7 - i))
+            cr.rectangle(x - i + 3, y - i + 4, w + 2 * i - 3, h + 2 * i - 3)
+            cr.fill()
+
+    def draw_panel(self, cr, x, y, w, h):
+        self.draw_shadow(cr, x, y, w, h)
+        cr.set_source_rgb(1, 1, 1)
+        cr.rectangle(x, y, w, h)
+        cr.fill()
+
+    def draw_section(self, cr, icon, title):
+        x, y, w, _h = PANEL
+        tex = ART.surface("TEXTUREBACKGROUND")
+        cr.save()
+        cr.rectangle(x, y, w, 380)
+        cr.clip()
+        if tex:
+            paint(cr, "TEXTUREBACKGROUND", x, y, w, 380)
+        else:
+            g = cairo.LinearGradient(x, y, x + w, y + 380)
+            g.add_color_stop_rgb(0, 0.55, 0.82, 0.86)
+            g.add_color_stop_rgb(1, 0.80, 0.93, 0.95)
+            cr.set_source(g)
+            cr.paint()
+        fade = cairo.LinearGradient(0, y + 250, 0, y + 380)
+        fade.add_color_stop_rgba(0, 1, 1, 1, 0)
+        fade.add_color_stop_rgba(1, 1, 1, 1, 1)
+        cr.set_source(fade)
+        cr.paint()
+        cr.restore()
+        if not paint(cr, icon, x + 225, y + 99):
+            cr.set_source_rgba(1, 1, 1, 0.6)
+            cr.arc(x + 300, y + 174, 70, 0, 2 * math.pi)
+            cr.fill()
+
+    def draw_pane(self, cr, x, y, w, expanded, height):
+        if expanded:
+            self.draw_shadow(cr, x, y + 10, w, height - 10)
+            cr.set_source_rgb(1, 1, 1)
+            cr.rectangle(x, y + 27, w, height - 27)
+            cr.fill()
+            if not three_slice(cr, "PANE_HEADER_EXPANDED", x, y, w):
+                g = cairo.LinearGradient(0, y, 0, y + 27)
+                g.add_color_stop_rgb(0, 0.30, 0.66, 0.74)
+                g.add_color_stop_rgb(1, *TEAL)
+                cr.set_source(g)
+                cr.rectangle(x, y, w, 27)
+                cr.fill()
+        else:
+            if not three_slice(cr, "PANE_HEADER_COLLAPSED", x, y, w):
+                self.draw_shadow(cr, x, y, w, 27)
+                g = cairo.LinearGradient(0, y, 0, y + 27)
+                g.add_color_stop_rgb(0, 0.30, 0.66, 0.74)
+                g.add_color_stop_rgb(1, *TEAL)
+                cr.set_source(g)
+                rounded(cr, x, y, w, 27, 4)
+                cr.fill()
+
+    # ---- layout
+    def put(self, widget, x, y):
+        self.fix.put(widget, int(x), int(y))
+        return widget
+
+    def group(self, title, x, y, w, h):
+        self.lines.append((x, y, w, h))
+        self.put(lab(title, "group"), x + 8, y - 8)
+
+    def clear(self):
+        for c in self.fix.get_children():
+            self.fix.remove(c)
+        self.lines, self.panes, self.section = [], [], None
+
+    def build(self):
+        self.updating = True
+        self.clear()
+        self.build_sidebar()
+        if self.st is None:
+            self.build_down()
+        else:
+            getattr(self, "page_" + self.page)()
+        self.fix.show_all()
+        self.bg.queue_draw()
+        self.updating = False
+
+    def build_sidebar(self):
+        up = ART.image("SCROLLER_UP")
+        self.put(up or lab("▲", "side", 0.5), 26, 5)
+        dn = ART.image("SCROLLER_DOWN")
+        self.put(dn or lab("▼", "side", 0.5), 26, 703)
+        for i, (key, icon, text) in enumerate(PAGES):
+            y = 45 + i * 114
+            name = icon + ("_ON" if key == self.page else "")
+            img = ART.image(name) or ART.image(icon)
+            if not img:
+                img = Gtk.Image.new_from_icon_name(FALLBACK_ICON[key], Gtk.IconSize.DIALOG)
+                img.set_pixel_size(56)
+            b = Gtk.Button()
+            b.get_style_context().add_class("flat")
+            b.set_can_focus(False)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=9)
+            img.set_size_request(64, 64)
+            box.pack_start(img, False, False, 0)
+            if text is None:
+                dev = (self.st or {}).get("device") or "3Dconnexion SpacePilot PRO"
+                first, _, rest = dev.partition(" ")
+                text = "%s\n%s" % (first, rest) if rest else dev
+            l = lab(text, "side", 0.5)
+            l.set_justify(Gtk.Justification.CENTER)
+            box.pack_start(l, False, False, 0)
+            box.set_size_request(SIDE_W - 6, -1)
+            b.add(box)
+            b.connect("clicked", lambda _b, k=key: self.go(k))
+            self.put(b, 3, y)
+
+    def go(self, page):
+        self.page = page
+        self.refresh_status()
+        self.build()
+
+    def build_down(self):
+        x, y, w, h = PANEL
+        self.section = ("IMAGE_SECTION_SETTINGS", "LCD Manager")
+        self.put(lab("LCD Manager", "title"), x + 18, y + 22)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.get_style_context().add_class("banner")
+        box.set_size_request(w - 80, -1)
+        msg = lab("The LCD Manager service (tdx-lcdmgr) is not running.\n"
+                  "Start it to manage the programs on the LCD.")
+        msg.set_line_wrap(True)
+        box.pack_start(msg, False, False, 0)
+        start = win_button("Start LCD Manager", 160)
+        start.set_halign(Gtk.Align.START)
+        start.connect("clicked", self.start_service)
+        box.pack_start(start, False, False, 0)
+        self.put(box, x + 40, y + 420)
+
+    def start_service(self, *_):
+        if shutil.which("systemctl") and subprocess.run(
+                ["systemctl", "--user", "start", "tdx-lcdmgr"], capture_output=True).returncode == 0:
+            pass
+        else:
+            here = os.path.dirname(os.path.realpath(__file__))
+            for cand in (os.path.join(here, "tdx-lcdmgr"),
+                         os.path.join(here, "..", "build", os.uname().machine, "tdx-lcdmgr"),
+                         shutil.which("tdx-lcdmgr")):
+                if cand and os.access(cand, os.X_OK):
+                    subprocess.Popen([cand], start_new_session=True,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    break
+        GLib.timeout_add(800, lambda: (self.go(self.page), False)[1])
+
+    # ---- device page
+    def page_device(self):
+        x, y, w, _h = PANEL
+        if self.config_open:
+            self.panes.append((y, "Configuration", True, 624))
+            self.pane_header("Configuration", y, True, "config")
+            self.device_config(x, y)
+            ry = y + 624 + 18
+        else:
+            self.panes.append((y, "Configuration", False, 0))
+            self.pane_header("Configuration", y, False, "config")
+            ry = y + 40
+        self.panes.append((ry, "Programs Running on This Device", self.running_open, 230))
+        self.pane_header("Programs Running on This Device", ry, self.running_open, "running")
+        if self.running_open:
+            self.running_list(x, ry + 34)
+
+    def pane_header(self, title, y, expanded, which):
+        x, _y, w, _h = PANEL
+        self.put(lab(title, "pane"), x + 12, y + 6)
+        icon = ART.image("PANE_CONTROL_CLOSE" if expanded else "PANE_CONTROL_OPEN")
+        b = Gtk.Button()
+        b.get_style_context().add_class("flat")
+        b.set_can_focus(False)
+        b.add(icon or lab("⌃" if expanded else "⌄", "pane"))
+        b.connect("clicked", lambda *_: self.toggle_pane(which))
+        self.put(b, x + w - 30, y + 6)
+
+    def toggle_pane(self, which):
+        if which == "config":
+            self.config_open = not self.config_open
+            if self.config_open:
+                self.running_open = False
+        else:
+            self.running_open = not self.running_open
+            if self.running_open:
+                self.config_open = False
+        self.build()
+
+    def device_config(self, x, y):
+        s = self.setting
+        self.group("Display Switching Method", 160, 75, 568, 306)
+        qs = self.put(Gtk.CheckButton(label="Enable Quick Switch to Next Program Using Device"),
+                      176, 96)
+        qs.set_active(bool(s("quickswitch")))
+        qs.connect("toggled", self.guard(lambda b: self.admin("set quickswitch %d" % b.get_active())))
+        self.group("Switching Algorithm", 177, 146, 533, 222)
+        manual = self.put(Gtk.RadioButton.new_with_label(None, "Manual - Use Device Controls to Switch"), 199, 164)
+        rotate = self.put(Gtk.RadioButton.new_with_label_from_widget(
+            manual, "Rotate Between Programs - In Seconds"), 199, 237)
+        alg = s("algorithm", 1)
+        (manual if alg == 1 else rotate).set_active(True)
+        imm = self.put(Gtk.CheckButton(label="Immediate Display of High Priority Items"), 225, 192)
+        imm.set_active(bool(s("alerts", 1)))
+        imm.set_sensitive(alg == 1)
+        imm.connect("toggled", self.guard(lambda b: self.admin("set alerts %d" % b.get_active())))
+        klever = self.put(Gtk.CheckButton(label="Use Klever-VU Technology"), 225, 267)
+        klever.set_sensitive(False)  # monochrome devices only, as in LCDMon
+        klever.set_active(alg == 3)
+        sl = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 20, 1)
+        sl.set_draw_value(False)
+        sl.set_size_request(466, 30)
+        for v in range(1, 21):
+            sl.add_mark(v, Gtk.PositionType.BOTTOM, None)
+        sl.set_value(s("delay", 8))
+        sl.set_sensitive(alg != 1)
+        self.put(sl, 222, 296)
+        self.put(lab("1", "dim" if alg == 1 else None), 228, 336)
+        self.put(lab("20", "dim" if alg == 1 else None), 678, 336)
+        val = self.put(lab(str(int(s("delay", 8))), "valuebox", 0.5), 437, 334)
+
+        def on_delay(scale):
+            v = int(round(scale.get_value()))
+            val.set_text(str(v))
+            if not self.updating:
+                self.admin("set delay %d" % v)
+        sl.connect("value-changed", on_delay)
+
+        def on_alg(_b):
+            if self.updating or not _b.get_active():
+                return
+            a = 1 if manual.get_active() else 2
+            self.admin("set algorithm %d" % a)
+            imm.set_sensitive(a == 1)
+            sl.set_sensitive(a != 1)
+        manual.connect("toggled", on_alg)
+        rotate.connect("toggled", on_alg)
+
+        self.group("Display Adjustments", 160, 400, 568, 181)
+        inv = self.put(Gtk.CheckButton(label="Invert Image"), 186, 422)
+        inv.set_sensitive(False)  # monochrome only
+        self.put(lab("Brightness"), 186, 468)
+        br = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        br.set_draw_value(False)
+        br.set_size_request(372, 30)
+        for v in range(0, 101, 5):
+            br.add_mark(v, Gtk.PositionType.BOTTOM, None)
+        br.set_value(s("brightness", 100))
+        br.connect("value-changed", self.guard(
+            lambda b: self.admin("set brightness %d" % int(b.get_value()))))
+        self.put(br, 318, 456)
+        self.put(lab("Low"), 333, 497)
+        self.put(lab("High"), 672, 497)
+        self.put(lab("Contrast", "dim"), 186, 539)
+        ct = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 2, 1)
+        ct.set_draw_value(False)
+        ct.set_size_request(372, 30)
+        ct.set_value(0)
+        ct.set_sensitive(False)  # LCDMon disables contrast on colour panels
+        self.put(ct, 318, 530)
+        ident = self.put(win_button("Identify", 184), 230, 600)
+        ident.connect("clicked", lambda *_: self.admin("identify"))
+        defaults = self.put(win_button("Defaults", 184), 462, 600)
+        defaults.connect("clicked", lambda *_: (self.admin("defaults"), self.build()))
+
+    def running_list(self, x, y):
+        progs = [p for p in (self.st or {}).get("programs", []) if p["running"]]
+        if not progs:
+            self.put(lab("No programs are running on this device.", "dim"), x + 20, y + 10)
+            return
+        for i, p in enumerate(progs):
+            cb = self.put(Gtk.CheckButton(label=p["name"]), x + 20, y + 6 + i * 26)
+            cb.set_active(p["enabled"] and p["device"])
+            cb.connect("toggled", self.guard(
+                lambda b, n=p["index"]: self.admin("program %d device %d" % (n, b.get_active()))))
+            shown = (self.st or {}).get("shown") == p["index"]
+            if shown:
+                self.put(lab("on the LCD now", "dim"), x + 360, y + 8 + i * 26)
+
+    # ---- programs page
+    def page_programs(self):
+        x, y, w, _h = PANEL
+        self.panes.append((y, "Programs on This System", True, 466))
+        self.pane_header("Programs on This System", y, True, "none")
+        progs = (self.st or {}).get("programs", [])
+        dev = (self.st or {}).get("device") or "3Dconnexion SpacePilot PRO"
+        store = Gtk.ListStore(bool, str, str, bool, int)
+        for p in progs:
+            store.append([p["enabled"], p["name"],
+                          "Running" if p["running"] else "Stopped", p["device"], p["index"]])
+        tv = Gtk.TreeView(model=store)
+        tv.set_size_request(578, 372)
+        tv.set_headers_clickable(False)
+
+        def toggled_col(col_idx, cmd):
+            r = Gtk.CellRendererToggle()
+
+            def on(_r, path):
+                it = store.get_iter(path)
+                v = not store[it][col_idx]
+                store[it][col_idx] = v
+                self.admin("program %d %s %d" % (store[it][4], cmd, v))
+            r.connect("toggled", on)
+            return r
+        c = Gtk.TreeViewColumn("Enable", toggled_col(0, "enabled"), active=0)
+        c.set_fixed_width(85)
+        c.set_alignment(0.5)
+        tv.append_column(c)
+        c = Gtk.TreeViewColumn("Program Name", Gtk.CellRendererText(), text=1)
+        c.set_fixed_width(230)
+        tv.append_column(c)
+        c = Gtk.TreeViewColumn("Status", Gtk.CellRendererText(), text=2)
+        c.set_fixed_width(88)
+        tv.append_column(c)
+        c = Gtk.TreeViewColumn(dev, toggled_col(3, "device"), active=3)
+        c.set_alignment(0.5)
+        tv.append_column(c)
+        frame = Gtk.ScrolledWindow()
+        frame.get_style_context().add_class("listframe")
+        frame.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        frame.add(tv)
+        frame.set_size_request(580, 374)
+        self.put(frame, 162, 66)
+        conf = self.put(win_button("Configure...", 128), 384, 452)
+
+        # Program Properties
+        self.panes.append((508, "Program Properties", True, 200))
+        self.pane_header("Program Properties", 508, True, "none")
+        self.put(lab("Name"), 160, 562)
+        name = self.put(Gtk.Entry(), 263, 556)
+        name.set_size_request(472, 28)
+        name.set_editable(False)
+        self.put(lab("Path"), 160, 602)
+        path = self.put(Gtk.Entry(), 263, 596)
+        path.set_size_request(472, 28)
+        path.set_editable(False)
+        auto = self.put(Gtk.CheckButton(label="Automatically Start This Program"), 156, 650)
+        fg = self.put(Gtk.CheckButton(label="Allow Program to Force Itself to Foreground on Display"),
+                      156, 675)
+
+        def show(i):
+            if not progs:
+                for wdg in (conf, auto, fg):
+                    wdg.set_sensitive(False)
+                return
+            p = progs[max(0, min(i, len(progs) - 1))]
+            self.updating = True
+            name.set_text(p["name"])
+            path.set_text(p["path"])
+            auto.set_active(p["autostart"])
+            fg.set_active(p["foreground"])
+            conf.set_sensitive(p["running"] and p["configurable"])
+            self.updating = False
+
+        def selected():
+            m, it = tv.get_selection().get_selected()
+            return m[it][4] if it else None
+        tv.get_selection().connect("changed", lambda *_: show(
+            next((k for k, p in enumerate(progs) if p["index"] == selected()), 0)))
+        auto.connect("toggled", self.guard(lambda b: selected() is not None and self.admin(
+            "program %d autostart %d" % (selected(), b.get_active()))))
+        fg.connect("toggled", self.guard(lambda b: selected() is not None and self.admin(
+            "program %d foreground %d" % (selected(), b.get_active()))))
+        conf.connect("clicked", lambda *_: selected() is not None and self.admin(
+            "program %d configure" % selected()))
+        if progs:
+            tv.get_selection().select_path(Gtk.TreePath.new_from_indices(
+                [min(self.sel_prog, len(progs) - 1)]))
+        show(self.sel_prog)
+
+    # ---- global settings
+    def page_settings(self):
+        x, y, w, h = PANEL
+        self.section = ("IMAGE_SECTION_SETTINGS", "Global Settings")
+        self.put(lab("Global Settings", "title"), x + 18, y + 20)
+        self.group("Look and Feel", 183, 425, 534, 183)
+        g = self.general
+        for i, (key, text) in enumerate([
+                ("show_tray_icon", "Show Icon for LCD Manager in Tray Area"),
+                ("restore_size", "Save Window Size Between Sessions"),
+                ("show_new_device", "Show Settings for Newly Connected Device")]):
+            cb = self.put(Gtk.CheckButton(label=text), 200, 452 + i * 37)
+            cb.set_active(bool(g(key)))
+            cb.connect("toggled", self.guard(
+                lambda b, k=key: self.admin("set %s %d" % (k, b.get_active()))))
+        self.group("Tray Area Alerts", 183, 628, 534, 63)
+        cb = self.put(Gtk.CheckButton(label="Show Device Connection Alerts in Tray Area"), 200, 655)
+        cb.set_active(bool(g("device_balloons")))
+        cb.connect("toggled", self.guard(
+            lambda b: self.admin("set device_balloons %d" % b.get_active())))
+
+    # ---- help / about
+    def page_help(self):
+        x, y, w, h = PANEL
+        self.section = ("IMAGE_SECTION_HELP", "Help")
+        self.put(lab("Help", "title"), x + 18, y + 20)
+        txt = lab("Programs on the LCD: press the LCD key on the SpacePilot PRO to open\n"
+                  "the program list, UP / DOWN to choose, OK to run, CANCEL to close.\n\n"
+                  "Programs written for the LCD use libtdxlcd (C, lglcd-compatible) or\n"
+                  "the tdxlcd Python module.")
+        self.put(txt, x + 37, y + 405)
+        b = Gtk.LinkButton.new_with_label(DOCS_URL, "Open the LCD Manager documentation")
+        self.put(b, x + 33, y + 505)
+
+    def page_about(self):
+        x, y, w, h = PANEL
+        self.section = ("IMAGE_SECTION_ABOUT", "About")
+        self.put(lab("About", "title"), x + 18, y + 20)
+        ver = (self.st or {}).get("tdx-lcdmgr", "not running")
+        for i, t in enumerate(["tdx-lcdmgr LCD Manager", "Version  %s  (window %s)" % (ver, APP_VERSION),
+                               "Linux port of the LCD Manager's behaviour; not a Logitech product."]):
+            self.put(lab(t), x + 37, y + 405 + i * 30)
+
+    def guard(self, fn):
+        def h(*a):
+            if not self.updating:
+                fn(*a)
+        return h
+
+    # ---- run / snapshot
+    def run(self):
+        win = Gtk.Window(title="LCD Manager")
+        win.set_icon_name("input-mouse")
+        win.set_resizable(False)
+        win.add(self.root)
+        win.connect("destroy", Gtk.main_quit)
+        win.show_all()
+        GLib.timeout_add_seconds(2, self.tick)
+        Gtk.main()
+
+    def tick(self):
+        old = self.st
+        self.refresh_status()
+        if (old is None) != (self.st is None) or (
+                old and self.st and [p["running"] for p in old["programs"]]
+                != [p["running"] for p in self.st["programs"]]):
+            self.build()
+        return True
+
+    def snapshot(self, outdir):
+        os.makedirs(outdir, exist_ok=True)
+        off = Gtk.OffscreenWindow()
+        off.add(self.root)
+        off.show_all()
+        for page in [p[0] for p in PAGES]:
+            self.page = page
+            self.build()
+            for _ in range(40):
+                while Gtk.events_pending():
+                    Gtk.main_iteration()
+            surf = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
+            self.root.draw(cairo.Context(surf))
+            p = os.path.join(outdir, "tdx-lcdmanager-%s.png" % page)
+            surf.write_to_png(p)
+            print(p)
+
+
+def main():
+    global ART
+    ap = argparse.ArgumentParser(description="LCD Manager window for tdx-lcdmgr")
+    ap.add_argument("-s", "--socket", help="tdx-lcdmgr socket (default $XDG_RUNTIME_DIR/tdx-lcd.sock)")
+    ap.add_argument("--assets", help="artwork extracted by tools/extract_3dxware_ui.py")
+    ap.add_argument("--no-assets", action="store_true", help="use the built-in drawings")
+    ap.add_argument("-p", "--page", choices=[p[0] for p in PAGES], default="device")
+    ap.add_argument("--snapshot", metavar="DIR", help="render every page to DIR and exit")
+    ap.add_argument("-V", "--version", action="version", version="tdx-lcdmanager " + APP_VERSION)
+    args = ap.parse_args()
+    ART = Art(args.assets, args.no_assets)
+    install_css()
+    app = LcdManager(args)
+    app.page = args.page
+    if args.snapshot:
+        app.snapshot(args.snapshot)
+        return 0
+    app.build()
+    app.run()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -5,6 +5,8 @@
  *   focus APP [PID]        the focused application changed (sent by tdx-focus)
  *   calibrate              re-zero every device (feature report 0x07)
  *   reload                 re-read the configuration and profiles (like SIGHUP)
+ *   lcd-release            hand the SpacePilot Pro LCD to tdx-lcdmgr while this
+ *                          connection stays open (tdxd takes it back on close)
  */
 #ifndef TDX_CONTROL_H
 #define TDX_CONTROL_H
@@ -17,8 +19,11 @@ typedef void (*tdx_ctl_handler)(char *cmd, char *reply, size_t len);
 
 /* Server side. Returns the listening fd or -errno. */
 int tdx_ctl_listen(const char *path);
-/* Accept one connection, read one line, call @h, send the reply, close. */
-void tdx_ctl_serve(int lfd, tdx_ctl_handler h);
+/* Accept one connection, read one line, call @h, send the reply, close.
+ * If the handler called tdx_ctl_keep_connection(), the connection is left
+ * open and its fd returned (else -1). */
+int tdx_ctl_serve(int lfd, tdx_ctl_handler h);
+void tdx_ctl_keep_connection(void);
 /* Client side: send @cmd, store the reply. Returns 0 or -errno. */
 int tdx_ctl_request(const char *path, const char *cmd, char *reply, size_t len);
 

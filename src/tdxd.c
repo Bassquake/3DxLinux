@@ -69,6 +69,7 @@ static char focus_app[64];        /* last application reported by tdx-focus / td
 static int focus_pid;
 static int focus_known;           /* a focus helper has reported at least once */
 static int ctl_fd = -1;
+static int lcdmgr_fd = -1; /* held "lcd-release" connection from tdx-lcdmgr */
 static char ctl_path[108];
 static int key_union[3 * TDX_MAX_KEYMAP];
 static int nkey_union;
@@ -296,6 +297,8 @@ static void lcd_attach(struct dev_ctx *d)
 {
 	if (!cfg.lcd_enable || d->node.bus != 3)
 		return;
+	if (lcdmgr_fd >= 0 && d->node.def->lcd == TDX_LCD_QVGA)
+		return; /* tdx-lcdmgr owns the SpacePilot Pro LCD */
 	if (d->node.def->lcd == TDX_LCD_ENT640) {
 		entlcd_attach(d);
 		return;
@@ -524,6 +527,23 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 					      devs[i].node.def->name,
 					      rc ? strerror(-rc) : "re-zeroed");
 		}
+	} else if (!strcmp(verb, "lcd-release")) {
+		if (lcdmgr_fd >= 0) {
+			snprintf(reply, len, "error: the LCD is already managed\n");
+			return;
+		}
+		int n = 0;
+		for (int i = 0; i < ndev; i++)
+			if (devs[i].lcd) {
+				tdx_lcd_close(devs[i].lcd);
+				free(devs[i].lcd);
+				devs[i].lcd = NULL;
+				n++;
+			}
+		lcdmgr_fd = -2; /* set to the connection fd after the reply */
+		tdx_ctl_keep_connection();
+		LOG(0, "LCD handed to the LCD manager (%d released)\n", n);
+		snprintf(reply, len, "ok lcd-released %d\n", n);
 	} else if (!strcmp(verb, "reload")) {
 		g_reload = 1;
 		snprintf(reply, len, "ok reloading\n");
@@ -546,9 +566,10 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 #endif
 					    profile_name(active_profile), app ? app : "-", src, ndev);
 		o += (size_t)snprintf(reply + o, len - o,
-				      "speed %.3f\npanzoom %s\nrotation %s\ndominant %s\n",
+				      "speed %.3f\npanzoom %s\nrotation %s\ndominant %s\nlcd %s\n",
 				      cfg.sensitivity, cfg.disable_translation ? "off" : "on",
-				      cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off");
+				      cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off",
+				      lcdmgr_fd >= 0 ? "lcdmgr" : "tdxd");
 		for (int i = 0; i < ndev && o < len; i++)
 			o += (size_t)snprintf(reply + o, len - o, "  %s [%04x:%04x] %s firmware %x.%02x\n",
 					      devs[i].node.def->name, devs[i].node.vid,
@@ -757,7 +778,7 @@ int main(int argc, char **argv)
 			last_scan = now_ms();
 		}
 
-		struct pollfd pfd[MAX_DEV + 3 + TDX_SPNAV_MAX_CLIENTS];
+		struct pollfd pfd[MAX_DEV + 4 + TDX_SPNAV_MAX_CLIENTS];
 		int np = 0;
 		for (int i = 0; i < ndev; i++)
 			pfd[np++] = (struct pollfd){.fd = devs[i].fd, .events = POLLIN};
@@ -765,6 +786,11 @@ int main(int argc, char **argv)
 		if (ctl_fd >= 0) {
 			ctl_idx = np;
 			pfd[np++] = (struct pollfd){.fd = ctl_fd, .events = POLLIN};
+		}
+		int mgr_idx = -1;
+		if (lcdmgr_fd >= 0) {
+			mgr_idx = np;
+			pfd[np++] = (struct pollfd){.fd = lcdmgr_fd, .events = POLLIN};
 		}
 		int bmp_idx = -1;
 		if (bmp_ifd >= 0) {
@@ -793,8 +819,30 @@ int main(int argc, char **argv)
 			continue;
 		if (bmp_idx >= 0 && (pfd[bmp_idx].revents & POLLIN))
 			bmp_watch_read();
-		if (ctl_idx >= 0 && (pfd[ctl_idx].revents & POLLIN))
-			tdx_ctl_serve(ctl_fd, ctl_handler);
+		if (mgr_idx >= 0 && (pfd[mgr_idx].revents & (POLLIN | POLLHUP | POLLERR))) {
+			char junk[64];
+			if (read(lcdmgr_fd, junk, sizeof junk) <= 0) { /* manager gone: take the LCD back */
+				close(lcdmgr_fd);
+				lcdmgr_fd = -1;
+				LOG(0, "LCD manager disconnected; tdxd drives the LCD again\n");
+				for (int i = 0; i < ndev; i++) {
+					lcd_attach(&devs[i]);
+					lcd_redraw(&devs[i]);
+				}
+			}
+		}
+		if (ctl_idx >= 0 && (pfd[ctl_idx].revents & POLLIN)) {
+			int kept = tdx_ctl_serve(ctl_fd, ctl_handler);
+			if (lcdmgr_fd == -2)
+				lcdmgr_fd = kept; /* -1 if the client vanished: back to tdxd */
+			if (lcdmgr_fd == -1 && kept < 0) {
+				for (int i = 0; i < ndev; i++)
+					if (!devs[i].lcd && devs[i].node.def->lcd == TDX_LCD_QVGA) {
+						lcd_attach(&devs[i]);
+						lcd_redraw(&devs[i]);
+					}
+			}
+		}
 		for (int i = ndev - 1; i >= 0; i--)
 			if (pfd[i].revents & (POLLIN | POLLHUP | POLLERR))
 				dev_read(&devs[i]);

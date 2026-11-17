@@ -140,6 +140,95 @@ def dotnet_images(pe):
         p += 4
 
 
+def pe_resources(path):
+    """[(type, name, data)] from a PE's .rsrc (types/names: int id or str)."""
+    d = open(path, "rb").read()
+    pe, = struct.unpack_from("<I", d, 0x3C)
+    nsec, = struct.unpack_from("<H", d, pe + 6)
+    opt_size, = struct.unpack_from("<H", d, pe + 20)
+    magic, = struct.unpack_from("<H", d, pe + 24)
+    dd = pe + 24 + (112 if magic == 0x20B else 96)
+    rva, size = struct.unpack_from("<II", d, dd + 2 * 8)  # data directory 2 = resources
+    secs = []
+    for i in range(nsec):
+        s = pe + 24 + opt_size + i * 40
+        vsz, va, raw_sz, raw = struct.unpack_from("<IIII", d, s + 8)
+        secs.append((va, max(vsz, raw_sz), raw))
+
+    def off(r):
+        for va, sz, raw in secs:
+            if va <= r < va + sz:
+                return raw + r - va
+        raise ValueError("rva %x" % r)
+    base = off(rva)
+
+    def name_of(entry_name):
+        if entry_name & 0x80000000:
+            o = base + (entry_name & 0x7FFFFFFF)
+            n, = struct.unpack_from("<H", d, o)
+            return d[o + 2:o + 2 + 2 * n].decode("utf-16le")
+        return entry_name
+
+    def walk(o, depth, path, out):
+        nnamed, nid = struct.unpack_from("<HH", d, o + 12)
+        for i in range(nnamed + nid):
+            ename, eoff = struct.unpack_from("<II", d, o + 16 + i * 8)
+            p = path + [name_of(ename)]
+            if eoff & 0x80000000:
+                walk(base + (eoff & 0x7FFFFFFF), depth + 1, p, out)
+            else:
+                drva, dsz = struct.unpack_from("<II", d, base + eoff)
+                out.append((p[0], p[1] if len(p) > 1 else None, d[off(drva):off(drva) + dsz]))
+    out = []
+    walk(base, 0, [], out)
+    return out
+
+
+def unpack_msi(installer, msi_name, t):
+    """{long file name: extracted path} for one MSI inside the installer."""
+    run7z("x", "-y", "-o" + t, installer, msi_name)
+    msi = os.path.join(t, msi_name)
+    if not os.path.exists(msi):
+        return None
+    md = os.path.join(t, msi_name + ".d")
+    run7z("x", "-y", "-o" + md, msi)
+    if not os.path.exists(os.path.join(md, "!_StringPool")):
+        # 7z opened the embedded cabinet directly: files are named by key (LCDMon_exe)
+        return {re.sub(r"_([A-Za-z0-9]+)$", r".\1", k): os.path.join(md, k)
+                for k in os.listdir(md) if os.path.isfile(os.path.join(md, k))}
+    cd = os.path.join(t, msi_name + ".cab")
+    for c in [f for f in os.listdir(md) if f.lower().endswith(".cab")]:
+        run7z("x", "-y", "-o" + cd, os.path.join(md, c))
+    by_name = {}
+    for key, name in msi_files(md).items():
+        path = os.path.join(cd, key)
+        if os.path.isfile(path):
+            by_name.setdefault(name, path)
+    return by_name
+
+
+def lcdmon_images(lcdmon, outdir):
+    """LCDMon.exe's named PNG / bitmap resources (sidebar icons, panes, textures)."""
+    os.makedirs(outdir, exist_ok=True)
+    n = 0
+    for typ, name, data in pe_resources(lcdmon):
+        if not isinstance(name, str):
+            continue
+        fn = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            open(os.path.join(outdir, fn + ".png"), "wb").write(data)
+            n += 1
+        elif typ == 2:  # RT_BITMAP: add the file header
+            hsz, = struct.unpack_from("<I", data, 0)
+            bpp, = struct.unpack_from("<H", data, 14)
+            ncol, = struct.unpack_from("<I", data, 32) if hsz >= 36 else (0,)
+            pal = (ncol or (1 << bpp if bpp <= 8 else 0)) * 4
+            hdr = b"BM" + struct.pack("<IHHI", 14 + len(data), 0, 0, 14 + hsz + pal)
+            open(os.path.join(outdir, fn + ".bmp"), "wb").write(hdr + data)
+            n += 1
+    return n
+
+
 def devices_json(base_xml):
     root = ET.parse(base_xml).getroot()
     out = {}
@@ -168,22 +257,9 @@ def main():
         out = os.path.expanduser("~/.local/share/tdxd/3dxware-ui")
     with tempfile.TemporaryDirectory(prefix="tdx-ui-") as t:
         print("unpacking", os.path.basename(installer))
-        run7z("x", "-y", "-o" + t, installer, "3DxWinCore64.msi")
-        msi = os.path.join(t, "3DxWinCore64.msi")
-        if not os.path.exists(msi):
+        by_name = unpack_msi(installer, "3DxWinCore64.msi", t)
+        if by_name is None:
             sys.exit("3DxWinCore64.msi not found in %s (is this a 3DxWare 10 installer?)" % installer)
-        md = os.path.join(t, "msi")
-        run7z("x", "-y", "-o" + md, msi)
-        cabs = [f for f in os.listdir(md) if f.lower().endswith(".cab")]
-        cd = os.path.join(t, "cab")
-        for c in cabs:
-            run7z("x", "-y", "-o" + cd, os.path.join(md, c))
-        names = msi_files(md)
-        by_name = {}
-        for key, name in names.items():
-            path = os.path.join(cd, key)
-            if os.path.isfile(path):
-                by_name.setdefault(name, path)
 
         os.makedirs(os.path.join(out, "icons"), exist_ok=True)
         os.makedirs(os.path.join(out, "ui"), exist_ok=True)
@@ -202,6 +278,14 @@ def main():
             with open(os.path.join(out, "ui", name + ".png"), "wb") as f:
                 f.write(blob)
         print("%d control-panel images from 3DxSmartUi.exe" % len(imgs))
+
+        ladp = unpack_msi(installer, "LADPInst.msi", t)
+        lcdmon = (ladp or {}).get("LCDMon.exe")
+        if lcdmon:
+            print("%d LCD Manager images from LCDMon.exe"
+                  % lcdmon_images(lcdmon, os.path.join(out, "lcdmon")))
+        else:
+            print("LADPInst.msi / LCDMon.exe not found: LCD Manager artwork skipped")
 
         base = by_name.get("Base.xml")
         if base:

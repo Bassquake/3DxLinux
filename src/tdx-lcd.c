@@ -26,6 +26,7 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,7 +61,7 @@ static void bars(void)
 static int usage(void)
 {
 	fputs("usage: tdx-lcd [-d VID:PID] image FILE.ppm | text LINE... | fill RRGGBB|bars |\n"
-	      "               brightness [0-100] | ping | dump OUT.bin | preview OUT.ppm [CONF] |\n"
+	      "               brightness [0-100] | ping | buttons | dump OUT.bin | preview OUT.ppm [CONF] |\n"
 	      "               slide [-s PX] PAGE1.ppm PAGE2.ppm [PAGE3.ppm PAGE4.ppm]   (Giotto)\n"
 	      "               move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm                (Giotto)\n"
 	      "               rect X Y W H IMAGE.ppm   update only that rectangle         (Giotto)\n"
@@ -409,7 +410,7 @@ int main(int argc, char **argv)
 			bars();
 		else
 			gfx_fill(&fb, 0, 0, fb.w, fb.h, (uint32_t)strtoul(argv[ai], NULL, 16));
-	} else if (!strcmp(cmd, "brightness") || !strcmp(cmd, "ping")) {
+	} else if (!strcmp(cmd, "brightness") || !strcmp(cmd, "ping") || !strcmp(cmd, "buttons")) {
 		draw = 0;
 	} else {
 		return usage();
@@ -434,6 +435,29 @@ int main(int argc, char **argv)
 		if (!strcmp(cmd, "ping")) {
 			if (!(rc = tdx_lcd_ping(&lcd)))
 				puts("LCD answered");
+		} else if (!strcmp(cmd, "buttons")) {
+			/* print the soft-button reports (interrupt IN) until interrupted */
+			if (!(rc = tdx_lcd_buttons_start(&lcd)))
+				printf("reading soft buttons on ep 0x%02x (Ctrl+C to stop)\n", lcd.ep_in);
+			fflush(stdout);
+			while (!rc) {
+				struct pollfd pfd = {.fd = lcd.fd, .events = POLLOUT};
+				if (poll(&pfd, 1, -1) < 0)
+					break;
+				uint32_t b = 0;
+				int r = tdx_lcd_buttons_reap(&lcd, &b);
+				if (r < 0)
+					rc = r;
+				else if (r > 0) {
+					printf("raw %02x %02x -> 0x%08x%s%s%s%s%s%s%s%s\n", lcd.in_buf[0],
+					       lcd.in_buf[1], b, b & TDX_SB_UP ? " UP" : "",
+					       b & TDX_SB_DOWN ? " DOWN" : "", b & TDX_SB_LEFT ? " LEFT" : "",
+					       b & TDX_SB_RIGHT ? " RIGHT" : "", b & TDX_SB_OK ? " OK" : "",
+					       b & TDX_SB_MENU ? " MENU" : "", b & TDX_SB_CANCEL ? " CANCEL" : "",
+					       b & TDX_SB_SPECIAL ? " SPECIAL" : "");
+					fflush(stdout);
+				}
+			}
 		} else if (!strcmp(cmd, "brightness")) {
 			if (ai < argc)
 				rc = tdx_lcd_set_brightness(&lcd, atoi(argv[ai]));

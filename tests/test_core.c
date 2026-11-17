@@ -13,6 +13,8 @@
 #include "config.h"
 #include "control.h"
 #include "profile.h"
+#include "lcdmgr_db.h"
+#include "lcdmgr_core.h"
 #include "devices.h"
 #include "deflate.h"
 #include "lcd.h"
@@ -950,11 +952,95 @@ static void test_actions(void)
 	(void)dom;
 }
 
+static void test_lcdmgr(void)
+{
+	/* the database LCDMon 3.06 wrote on the SpacePilot PRO test machine */
+	const char *f = "test_lgLcddb.txt";
+	write_file(f,
+		   "[General]\r\nWWidth=550\r\nShowTrayIcon=1\r\nVersion=30\r\nRestoreSize=0\r\n\r\n"
+		   "[DEVICE_0]\r\nBrightness=89\r\nFamilyId=32\r\nAlerts=1\r\nInvertColors=0\r\n"
+		   "DeviceId=110064\r\nManualModeApplet=\"C:\\\\Program Files\\\\Logitech\\\\GamePanel "
+		   "Software\\\\LCD Manager\\\\Applets\\\\3DxLCD10SPPRO.exe\",\"Function Keys\"\r\n"
+		   "QuickSwitch=0\r\nFamilyName=3Dconnexion SpacePilot PRO\r\nAlgorithm=1\r\nDelay=8\r\n"
+		   "Contrast=0\r\n\r\n[Application_0]\r\n0=F32,I110064,E1\r\n\r\n[Application_1]\r\n"
+		   "0=F32,I110064,E0\r\n\r\n[ClientApplications]\r\n"
+		   "0=\"C:\\\\Applets\\\\3DxLCD10SPPRO.exe\",\"Function Keys\",E1,A1,S1,L1,C2\r\n"
+		   "1=\"C:\\\\Applets\\\\zz3DxLCD50RSSReader.exe\",\"RSS Feeds\",E0,A1,S1,L0,C2\r\n");
+	static struct lm_db db, db2;
+	lm_db_defaults(&db);
+	CHECK(lm_db_load(&db, f) == 0);
+	CHECK(db.brightness == 89 && db.family_id == 32 && db.device_id == 110064 && db.delay == 8);
+	CHECK(db.algorithm == 1 && db.alerts == 1 && db.quickswitch == 0 && db.wwidth == 550);
+	CHECK(!strcmp(db.manual_name, "Function Keys"));
+	CHECK(strstr(db.manual_path, "LCD Manager\\Applets\\3DxLCD10SPPRO.exe") != NULL);
+	CHECK(db.nprog == 2 && !strcmp(db.prog[1].name, "RSS Feeds"));
+	CHECK(!strcmp(db.prog[0].path, "C:\\Applets\\3DxLCD10SPPRO.exe"));
+	CHECK(db.prog[0].enabled && db.prog[0].autostart && db.prog[0].persistent &&
+	      db.prog[0].allow_fg && db.prog[0].caps == 2 && db.prog[0].dev_enabled);
+	CHECK(!db.prog[1].enabled && !db.prog[1].allow_fg && !db.prog[1].dev_enabled);
+	CHECK(lm_db_save(&db, f) == 0);
+	lm_db_defaults(&db2);
+	CHECK(lm_db_load(&db2, f) == 0);
+	CHECK(db2.nprog == 2 && db2.brightness == 89 && !strcmp(db2.manual_name, "Function Keys") &&
+	      !strcmp(db2.prog[0].path, db.prog[0].path) && !db2.prog[1].dev_enabled);
+	unlink(f);
+	CHECK(lm_db_add(&db, "/usr/bin/x", "X", 2, 0, 0) == 2 && !db.prog[2].persistent);
+	CHECK(lm_db_add(&db, "/usr/bin/x", "X", 2, 1, 0) == 2 && db.prog[2].persistent);
+
+	/* soft-button menu (LCDMon FUN_14007fadc / FUN_140084a10) */
+	struct lm_menu m = {0};
+	int commit = -1;
+	CHECK(lm_menu_buttons(&m, TDX_SB_UP, 3, 0, 0, 0, &commit) == LM_MENU_FORWARD);
+	CHECK(lm_menu_buttons(&m, 0, 3, 0, 0, 0, &commit) == LM_MENU_FORWARD);
+	CHECK(lm_menu_buttons(&m, LM_KEY_LCD, 3, 1, 0, 0, &commit) == LM_MENU_REDRAW && m.open &&
+	      m.sel == 1);
+	CHECK(lm_menu_buttons(&m, 0, 3, 1, 0, 10, &commit) == LM_MENU_NONE);
+	CHECK(lm_menu_buttons(&m, TDX_SB_DOWN, 3, 1, 0, 20, &commit) == LM_MENU_REDRAW && m.sel == 2);
+	lm_menu_buttons(&m, 0, 3, 1, 0, 30, &commit);
+	CHECK(lm_menu_buttons(&m, TDX_SB_DOWN, 3, 1, 0, 40, &commit) == LM_MENU_REDRAW && m.sel == 0);
+	lm_menu_buttons(&m, 0, 3, 1, 0, 50, &commit);
+	CHECK(lm_menu_buttons(&m, TDX_SB_UP, 3, 1, 0, 60, &commit) == LM_MENU_REDRAW && m.sel == 2);
+	lm_menu_buttons(&m, 0, 3, 1, 0, 70, &commit);
+	CHECK(lm_menu_buttons(&m, TDX_SB_OK, 3, 1, 0, 80, &commit) == LM_MENU_COMMIT && commit == 2 &&
+	      !m.open);
+	lm_menu_buttons(&m, 0, 3, 1, 0, 90, &commit);
+	CHECK(lm_menu_buttons(&m, LM_KEY_LCD, 3, 1, 0, 100, &commit) == LM_MENU_REDRAW);
+	lm_menu_buttons(&m, 0, 3, 1, 0, 110, &commit);
+	CHECK(lm_menu_tick(&m, 2000) == 0 && lm_menu_tick(&m, 2200) == 1 && !m.open);
+	CHECK(lm_menu_buttons(&m, LM_KEY_LCD, 3, 2, 1, 3000, &commit) == LM_MENU_COMMIT &&
+	      commit == 0); /* quick switch wraps to the first program */
+
+	/* display selection */
+	struct lm_sched s = {.shown = -1};
+	struct lm_cand c[3] = {{.prog = 0, .has_frame = 1, .priority = 128},
+			       {.prog = 1, .has_frame = 1, .priority = 128},
+			       {.prog = 2, .has_frame = 1, .priority = 0}};
+	CHECK(lm_pick(&s, c, 3, 1, 8, 1, -1, 0) == 0);  /* manual, nothing chosen */
+	CHECK(lm_pick(&s, c, 3, 1, 8, 1, 1, 0) == 1);   /* manual choice */
+	c[0].priority = 255, c[0].alert_time = 5;
+	CHECK(lm_pick(&s, c, 3, 1, 8, 1, 1, 0) == 0);   /* alert pre-empts */
+	CHECK(lm_pick(&s, c, 3, 1, 8, 0, 1, 0) == 1);   /* ...unless Alerts=0 */
+	c[0].priority = 128;
+	c[1].foreground = 1, c[1].fg_time = 9;
+	CHECK(lm_pick(&s, c, 3, 1, 8, 1, 0, 0) == 1);   /* foreground request */
+	c[1].foreground = 0;
+	struct lm_sched r = {.shown = -1};
+	CHECK(lm_pick(&r, c, 3, 2, 2, 1, -1, 1000) == 0);
+	CHECK(lm_pick(&r, c, 3, 2, 2, 1, -1, 2500) == 0);
+	CHECK(lm_pick(&r, c, 3, 2, 2, 1, -1, 3100) == 1); /* 2 s later: next */
+	CHECK(lm_pick(&r, c, 3, 2, 2, 1, -1, 5200) == 0); /* skips the idle (priority 0) one */
+	CHECK(lm_pick(&r, c, 0, 2, 2, 1, -1, 6000) == -1);
+	CHECK(tdx_lcd_softbuttons(0x80) == TDX_SB_UP && tdx_lcd_softbuttons(0x08) == TDX_SB_OK &&
+	      tdx_lcd_softbuttons(0x01) == TDX_SB_SPECIAL && tdx_lcd_softbuttons(0x46) ==
+	      (TDX_SB_DOWN | TDX_SB_MENU | TDX_SB_CANCEL));
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
 	test_rezero();
 	test_actions();
+	test_lcdmgr();
 	test_profiles();
 	test_control();
 	test_enterprise_lcd();

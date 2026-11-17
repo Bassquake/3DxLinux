@@ -39,11 +39,19 @@ int tdx_ctl_listen(const char *path)
 	return fd;
 }
 
-void tdx_ctl_serve(int lfd, tdx_ctl_handler h)
+static int keep_conn;
+
+void tdx_ctl_keep_connection(void)
+{
+	keep_conn = 1;
+}
+
+int tdx_ctl_serve(int lfd, tdx_ctl_handler h)
 {
 	int fd = accept4(lfd, NULL, NULL, SOCK_CLOEXEC);
 	if (fd < 0)
-		return;
+		return -1;
+	keep_conn = 0;
 	struct timeval tv = {.tv_sec = 0, .tv_usec = 300000}; /* never stall the daemon */
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
@@ -66,8 +74,14 @@ void tdx_ctl_serve(int lfd, tdx_ctl_handler h)
 	size_t len = strlen(reply);
 	if (len && write(fd, reply, len) < 0) {
 		/* client went away */
+		keep_conn = 0;
+	}
+	if (keep_conn) {
+		keep_conn = 0;
+		return fd;
 	}
 	close(fd);
+	return -1;
 }
 
 int tdx_ctl_request(const char *path, const char *cmd, char *reply, size_t len)

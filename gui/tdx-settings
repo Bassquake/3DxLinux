@@ -1835,6 +1835,18 @@ class App:
         self.window(ButtonsPanel)
 
     def show_lcd(self):
+        """3DxWare's LCD Manager button opens Logitech's LCD Manager; ours opens
+        tdx-lcdmanager when tdx-lcdmgr runs, else tdxd's built-in key page settings."""
+        rt = os.environ.get("XDG_RUNTIME_DIR")
+        sock = os.environ.get("TDX_LCD_SOCKET") or (
+            os.path.join(rt, "tdx-lcd.sock") if rt else "/tmp/tdx-lcd-%d.sock" % os.getuid())
+        prog = find_program("tdx-lcdmanager")
+        if prog and os.path.exists(sock) and not self.args.status_file:
+            args = [prog]
+            if ASSETS.dir:
+                args += ["--assets", ASSETS.dir]
+            subprocess.Popen(args, start_new_session=True)
+            return
         self.window(LcdPanel)
 
     def show_about(self):

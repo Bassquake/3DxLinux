@@ -41,10 +41,28 @@ BUILD   := build/$(ARCH)
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx output process profile control
+CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx output process profile control \
+        lcdmgr_db lcdmgr_core
 CORE_OBJ := $(addprefix $(BUILD)/,$(addsuffix .o,$(CORE)))
 
-all: $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl
+all: $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl $(BUILD)/tdx-lcdmgr $(BUILD)/libtdxlcd.a \
+     $(BUILD)/libtdxlcd.so $(BUILD)/tdx-lcd-demo
+
+# LCD Manager (Linux LCDMon) and the lglcd-compatible applet library
+$(BUILD)/tdx-lcdmgr: $(BUILD)/tdx-lcdmgr.o $(CORE_OBJ)
+	$(CC) $(LDFLAGS) $^ -o $@
+
+$(BUILD)/libtdxlcd.a: $(BUILD)/tdxlcd.o
+	$(CROSS_COMPILE)ar rcs $@ $^
+
+$(BUILD)/tdxlcd.pic.o: src/tdxlcd.c src/tdxlcd.h src/lcdmgr_proto.h | $(BUILD)
+	$(CC) $(CFLAGS) -fPIC -pthread -c $< -o $@
+
+$(BUILD)/libtdxlcd.so: $(BUILD)/tdxlcd.pic.o
+	$(CC) -shared -pthread -Wl,-soname,libtdxlcd.so.1 $^ -o $@
+
+$(BUILD)/tdx-lcd-demo: $(BUILD)/tdx-lcd-demo.o $(BUILD)/libtdxlcd.a $(BUILD)/gfx.o
+	$(CC) $(LDFLAGS) -pthread $^ -o $@
 
 $(BUILD)/%.o: src/%.c src/*.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -73,6 +91,10 @@ test: $(BUILD)/test_core
 test-gui: $(BUILD)/tdxd
 	python3 tests/test_settings.py $(BUILD)/tdxd
 
+# LCD Manager end to end with a virtual LCD (no device needed)
+test-lcdmgr: $(BUILD)/tdx-lcdmgr $(BUILD)/tdx-lcd-demo
+	python3 tests/test_lcdmgr.py $(BUILD)
+
 # Regenerate the device table from an extracted 3DxWare Base.xml
 devices:
 	@test -n "$(BASE_XML)" || (echo "usage: make devices BASE_XML=path/to/Base.xml"; exit 1)
@@ -86,6 +108,15 @@ install: all
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-settings
 	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
 	install -Dm755 tools/extract_3dxware_ui.py $(DESTDIR)$(PREFIX)/bin/tdx-extract-3dxware-ui
+	install -Dm755 $(BUILD)/tdx-lcdmgr $(DESTDIR)$(PREFIX)/bin/tdx-lcdmgr
+	install -Dm755 $(BUILD)/tdx-lcd-demo $(DESTDIR)$(PREFIX)/bin/tdx-lcd-demo
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-lcdmanager | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-lcdmanager
+	install -Dm644 gui/tdxlcd.py $(DESTDIR)$(PREFIX)/lib/tdxd/python/tdxlcd.py
+	install -Dm644 $(BUILD)/libtdxlcd.a $(DESTDIR)$(PREFIX)/lib/libtdxlcd.a
+	install -Dm755 $(BUILD)/libtdxlcd.so $(DESTDIR)$(PREFIX)/lib/libtdxlcd.so.1
+	ln -sf libtdxlcd.so.1 $(DESTDIR)$(PREFIX)/lib/libtdxlcd.so
+	install -Dm644 src/tdxlcd.h $(DESTDIR)$(PREFIX)/include/tdxlcd.h
+	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-lcdmgr.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-lcdmgr.service
 	install -Dm644 gui/tdx-settings.desktop $(DESTDIR)$(PREFIX)/share/applications/tdx-settings.desktop
 	sed 's#/usr/local/lib/tdxd#$(PREFIX)/lib/tdxd#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
@@ -111,10 +142,18 @@ dist:
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings > $(DIST)/bin/tdx-settings
 	cp gui/tdx-settings-helper $(DIST)/lib/
 	cp tools/extract_3dxware_ui.py $(DIST)/bin/tdx-extract-3dxware-ui
+	cp $(BUILD)/tdx-lcdmgr $(BUILD)/tdx-lcd-demo $(DIST)/bin/
+	$(STRIP) $(DIST)/bin/tdx-lcdmgr $(DIST)/bin/tdx-lcd-demo
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-lcdmanager > $(DIST)/bin/tdx-lcdmanager
+	mkdir -p $(DIST)/lib/python $(DIST)/include
+	cp gui/tdxlcd.py $(DIST)/lib/python/
+	cp $(BUILD)/libtdxlcd.a $(DIST)/lib/
+	cp $(BUILD)/libtdxlcd.so $(DIST)/lib/libtdxlcd.so.1
+	cp src/tdxlcd.h $(DIST)/include/
 	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
 	cp packaging/99-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
 	   packaging/tdx-focus.service packaging/profiles/blender.conf.example \
-	   packaging/install.sh gui/tdx-settings.desktop gui/org.tdxd.settings.policy \
+	   packaging/install.sh packaging/tdx-lcdmgr.service gui/tdx-settings.desktop gui/org.tdxd.settings.policy \
 	   README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
 	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION
@@ -123,7 +162,9 @@ dist:
 	# /mnt drives reports 0777 for everything, and root's tar restores archived modes.)
 	rm -rf $(STAGE) && mkdir -p $(STAGE) && cp -r $(DIST) $(STAGE)/
 	find $(STAGE) -type d -exec chmod 755 {} + && find $(STAGE) -type f -exec chmod 644 {} +
-	chmod 755 $(STAGE)/$(notdir $(DIST))/bin/* $(STAGE)/$(notdir $(DIST))/lib/* \
+	find $(STAGE)/$(notdir $(DIST))/lib -type d -exec chmod 755 {} +
+	chmod 755 $(STAGE)/$(notdir $(DIST))/bin/* $(STAGE)/$(notdir $(DIST))/lib/tdx-settings-helper \
+	   $(STAGE)/$(notdir $(DIST))/lib/libtdxlcd.so.1 \
 	   $(STAGE)/$(notdir $(DIST))/install.sh
 	tar -C $(STAGE) --owner=0 --group=0 --numeric-owner -czf $(DIST).tar.gz $(notdir $(DIST))
 	rm -rf $(STAGE)
@@ -139,4 +180,4 @@ release:
 clean:
 	rm -rf build
 
-.PHONY: all test test-gui install clean devices dist release
+.PHONY: all test test-gui test-lcdmgr install clean devices dist release
