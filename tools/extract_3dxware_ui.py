@@ -20,6 +20,8 @@ What it does, without running any installer code:
   !File table (via _StringPool/_StringData) maps cab keys to file names
   3DxSmartUi.exe: .NET .resources blobs are parsed for the named PNGs
   Base.xml: device image and support status per USB product id
+  <Application>.xml + en-US.xml: each application's key settings -> profiles/
+  FreeCAD_Navlib.xml: FreeCAD's per-workbench keys -> freecad/buttons.json
 """
 
 import json
@@ -589,6 +591,296 @@ def freecad_buttons(navlib_xml):
     return {"banks": banks, "actions": actions, "menus": menus}
 
 
+# ---- 3DxWare's application configurations -> tdxd profiles -------------------
+
+# USB HID keyboard usage (what 3DxWare's macros store) -> Linux KEY_ name
+HID_KEYS = {0x28: "ENTER", 0x29: "ESC", 0x2A: "BACKSPACE", 0x2B: "TAB", 0x2C: "SPACE",
+            0x2D: "MINUS", 0x2E: "EQUAL", 0x2F: "LEFTBRACE", 0x30: "RIGHTBRACE",
+            0x31: "BACKSLASH", 0x32: "BACKSLASH", 0x33: "SEMICOLON", 0x34: "APOSTROPHE",
+            0x35: "GRAVE", 0x36: "COMMA", 0x37: "DOT", 0x38: "SLASH", 0x39: "CAPSLOCK",
+            0x46: "SYSRQ", 0x47: "SCROLLLOCK", 0x48: "PAUSE", 0x49: "INSERT", 0x4A: "HOME",
+            0x4B: "PAGEUP", 0x4C: "DELETE", 0x4D: "END", 0x4E: "PAGEDOWN", 0x4F: "RIGHT",
+            0x50: "LEFT", 0x51: "DOWN", 0x52: "UP", 0x53: "NUMLOCK", 0x54: "KPSLASH",
+            0x55: "KPASTERISK", 0x56: "KPMINUS", 0x57: "KPPLUS", 0x58: "KPENTER",
+            0x62: "KP0", 0x63: "KPDOT", 0x64: "102ND", 0x65: "COMPOSE", 0x67: "KPEQUAL",
+            0x85: "KPCOMMA", 0xE0: "LEFTCTRL", 0xE1: "LEFTSHIFT", 0xE2: "LEFTALT",
+            0xE3: "LEFTMETA", 0xE4: "RIGHTCTRL", 0xE5: "RIGHTSHIFT", 0xE6: "RIGHTALT",
+            0xE7: "RIGHTMETA"}
+HID_KEYS.update({0x04 + i: chr(ord("A") + i) for i in range(26)})
+HID_KEYS.update({0x1E + i: str((i + 1) % 10) for i in range(10)})
+HID_KEYS.update({0x3A + i: "F%d" % (i + 1) for i in range(12)})
+HID_KEYS.update({0x59 + i: "KP%d" % (i + 1) for i in range(9)})
+HID_KEYS.update({0x68 + i: "F%d" % (i + 13) for i in range(12)})
+MODIFIERS = {"control": "LEFTCTRL", "ctrl": "LEFTCTRL", "shift": "LEFTSHIFT", "alt": "LEFTALT",
+             "win": "LEFTMETA", "windows": "LEFTMETA", "meta": "LEFTMETA"}
+# typed text (a macro's <Text>) on a US layout
+_SHIFTED = dict(zip('!@#$%^&*()_+{}|:"<>?~', "1234567890") )
+_SHIFTED.update(dict(zip('_+{}|:"<>?~', ["MINUS", "EQUAL", "LEFTBRACE", "RIGHTBRACE", "BACKSLASH",
+                                          "SEMICOLON", "APOSTROPHE", "COMMA", "DOT", "SLASH",
+                                          "GRAVE"])))
+_PLAIN = {" ": "SPACE", "-": "MINUS", "=": "EQUAL", "[": "LEFTBRACE", "]": "RIGHTBRACE",
+          "\\": "BACKSLASH", ";": "SEMICOLON", "'": "APOSTROPHE", ",": "COMMA", ".": "DOT",
+          "/": "SLASH", "`": "GRAVE", "\n": "ENTER", "\t": "TAB"}
+# 3DxWare's keyboard keys (KB_*) and driver functions -> tdxd
+KB_KEYS = {"KB_Esc": "ESC", "KB_Alt": "LEFTALT", "KB_Ctrl": "LEFTCTRL", "KB_Shift": "LEFTSHIFT",
+           "KB_Enter": "ENTER", "KB_Tab": "TAB", "KB_Space": "SPACE", "KB_Delete": "DELETE",
+           "KB_Home": "HOME", "KB_End": "END", "KB_PageUp": "PAGEUP", "KB_PageDown": "PAGEDOWN",
+           "KB_LeftArrow": "LEFT", "KB_RightArrow": "RIGHT", "KB_UpArrow": "UP",
+           "KB_DownArrow": "DOWN"}
+KB_KEYS.update({"KB_F%d" % i: "F%d" % i for i in range(1, 13)})
+DRIVER_ACTIONS = {"Driver_ShowDriverGUI": "settings", "Driver_ToggleRotations": "rotation",
+                  "Driver_ToggleTranslations": "panzoom", "Driver_ToggleDominantFilter": "dominant",
+                  "Driver_IncreaseAppScale": "speed_up", "Driver_DecreaseAppScale": "speed_down",
+                  "Driver_RezeroDevice": "calibrate"}
+MAX_KEYS = 32  # tdxd's TDX_MAX_KEYS
+# program names that on Linux are many programs (Creo and Cyclone run as java)
+GENERIC_EXES = {"java", "javaw", "javaws", "python", "pythonw", "dllhost", "rundll32",
+                "explorer", "desktop", "shellui", "applicationframehost"}
+# configurations for Windows itself and 3DxWare's own tools: nothing on Linux
+WINDOWS_ONLY = re.compile(r"(?i)^(3dx|appdefcfg|desktop|explorer|windows|taskmanager|"
+                          r"controlpanel|searchandcortana|guisync|defnews|global|sharedcfg|"
+                          r"ignoredapps|.*template)")
+
+
+def _xid(e):
+    return (e.findtext("ID") or "").strip()
+
+
+def _text_chords(text):
+    out = []
+    for ch in text:
+        if ch.isalpha() and ch.isascii():
+            out.append(["LEFTSHIFT", ch.upper()] if ch.isupper() else [ch.upper()])
+        elif ch.isdigit():
+            out.append([ch])
+        elif ch in _PLAIN:
+            out.append([_PLAIN[ch]])
+        elif ch in _SHIFTED:
+            out.append(["LEFTSHIFT", _SHIFTED[ch]])
+        else:
+            return None  # not on a US keyboard
+    return out
+
+
+def _hid(code_text):
+    try:
+        return HID_KEYS.get(int(code_text.strip(), 16))
+    except (ValueError, AttributeError):
+        return None
+
+
+def macro_chords(entry, macros, depth=0):
+    """A 3DxWare MacroEntry -> list of chords (each a list of KEY_ names without
+    the KEY_ prefix), or None if tdxd can't send it (mouse clicks, odd keys)."""
+    if depth > 4:
+        return None
+    ks = entry.find("KeyStroke")
+    if ks is not None:
+        if ks.find("MouseButton") is not None:
+            return None
+        chord = []
+        for m in ks.iter("Modifier"):
+            name = MODIFIERS.get((m.text or "").strip().lower())
+            if not name:
+                return None
+            chord.append(name)
+        key = _hid(ks.findtext("Key") or "")
+        if not key:
+            return None
+        return [chord + [key]]
+    seq = entry.find("Sequence")
+    if seq is None:
+        return None
+    chords, held, fresh = [], [], False
+    for step in seq:
+        tag = step.tag
+        if tag == "KeyPress":
+            k = _hid(step.text or "")
+            if not k:
+                return None
+            if k not in held:
+                held.append(k)
+            fresh = True
+        elif tag == "KeyRelease":
+            k = _hid(step.text or "")
+            if not k:
+                return None
+            if fresh and held:
+                chords.append(list(held))
+            fresh = False
+            if k in held:
+                held.remove(k)
+        elif tag == "Text":
+            t = _text_chords(step.text or "")
+            if t is None:
+                return None
+            chords += [list(held) + c for c in t]
+        elif tag == "ActionID":
+            sub = macros.get((step.text or "").strip())
+            subc = macro_chords(sub, macros, depth + 1) if sub is not None else None
+            if subc is None:
+                return None
+            chords += subc
+        elif tag == "Pause":
+            continue  # tdxd sends the chords at once
+        else:
+            return None  # mouse buttons and moves
+    if fresh and held:
+        chords.append(list(held))
+    return chords or None
+
+
+def _string_table(xml_path):
+    if not xml_path:
+        return {}, {}
+    root = ET.parse(xml_path).getroot()
+    strings = {}
+    for e in root.iter("StringEntry"):
+        k, v = e.findtext("Key"), e.findtext("Value")
+        if k and v is not None:
+            strings[k.strip()] = v.strip()
+    macros = {_xid(m): m for m in root.iter("MacroEntry") if _xid(m)}
+    return strings, macros
+
+
+def _match_names(root):
+    """ExecutableName regexes (BLENDER\\.exe) -> Linux process names (blender)."""
+    out = []
+    for e in root.iter("ExecutableName"):
+        n = (e.text or "").strip()
+        n = re.sub(r"(?i)(\\\.|\.)exe\$?$", "", n).lstrip("^")
+        n = n.replace("\\.", ".").replace(".*", "*").replace("\\ ", " ")
+        if not n or re.search(r"[\\\[\]()|+?{}$^ ]", n):
+            continue  # a regex tdxd's name globs can't express, or a name with spaces
+        n = n.lower()
+        if len(n.replace("*", "")) < 3 or n in GENERIC_EXES:
+            continue  # would catch other programs on Linux
+        if n not in out:
+            out.append(n)
+    return out
+
+
+def _profile_name(filename):
+    n = re.sub(r"[^a-z0-9]+", "-", os.path.splitext(filename)[0].lower()).strip("-")
+    return "3dx-" + n if n else None
+
+
+def app_profiles(by_name):
+    """Every application configuration in the installer -> {profile name:
+    (text of a tdxd profile, keys converted)}. What can't be done on Linux (the
+    application's own NavLib commands, 3DxWare's legacy SDK commands, menus,
+    mouse macros) is left out, so those keys keep tdxd's defaults."""
+    strings, shared_macros = _string_table(by_name.get("en-US.xml"))
+    roots, by_cfg_id = {}, {}
+    for name, path in by_name.items():
+        if not name.lower().endswith(".xml") or name in ("Base.xml",) or name.endswith("-DE.xml"):
+            continue
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError:
+            continue
+        if root.tag != "AppCfg":
+            continue
+        roots[name] = root
+        cid = (root.findtext("CfgProperties/ID") or "").strip()
+        if cid:
+            by_cfg_id[cid] = root
+
+    def chain(root):
+        seen = []
+        while root is not None and root not in seen:
+            seen.append(root)
+            parent = (root.findtext("CfgProperties/InheritsFromID") or "").strip()
+            root = by_cfg_id.get(parent)
+        return seen
+
+    def label(text):
+        text = strings.get(text, text) or ""
+        return re.sub(r"\s+", " ", text).strip()[:23]
+
+    results = {}
+    for fname, root in sorted(roots.items(), key=lambda kv: kv[0].lower()):
+        match = _match_names(root)
+        pname = _profile_name(fname)
+        if not match or not pname or WINDOWS_ONLY.match(fname):
+            continue
+        cfgs = chain(root)
+        macros, names = dict(shared_macros), {}
+        for r in reversed(cfgs):  # the file's own win over its parents'
+            for m in r.iter("MacroEntry"):
+                if _xid(m):
+                    macros[_xid(m)] = m
+            for a in r.iter("ButtonAction"):
+                if _xid(a) and a.findtext("Name"):
+                    names[_xid(a)] = a.findtext("Name").strip()
+        bank = None
+        for dev in root.iter("Device"):
+            if dev.findtext("ID") != "ID_Standard_3D_Mouse":
+                continue
+            banks = dev.findall("ButtonBank")
+            bank = next((b for b in banks if b.get("Default") == "true"), None) or \
+                next((b for b in banks if b.findtext("ID") == "Default"), None) or \
+                (banks[0] if banks else None)
+        if bank is None:
+            continue
+        out = {}
+        for b in bank.findall("Button"):
+            key, aid = b.findtext("Input/ActionID"), b.findtext("Output/ActionID")
+            if key and aid and key.startswith("V3DK_"):
+                out[key.strip()] = aid.strip()
+
+        lines, done = [], 0
+
+        def convert(key, aid, depth=0):
+            if aid.startswith("V3DK_") and depth < 3:  # "does what key X does here"
+                return convert(key, out.get(aid, ""), depth + 1) if out.get(aid) else None
+            if aid in DRIVER_ACTIONS:
+                return ["action_%s = %s" % (key, DRIVER_ACTIONS[aid])]
+            if aid in ("Driver_Disabled", "Driver_DevNull"):
+                return ["key_%s = none" % key, "action_%s = none" % key]
+            if aid in KB_KEYS:
+                return ["key_%s = KEY_%s" % (key, KB_KEYS[aid]), "action_%s = none" % key]
+            if aid.startswith("App_"):  # the application's own function: its button only
+                return ["key_%s = none" % key, "action_%s = none" % key]
+            m = macros.get(aid)
+            if m is not None:
+                chords = macro_chords(m, macros)
+                if not chords or sum(len(c) for c in chords) > MAX_KEYS:
+                    return None
+                text = ", ".join(" + ".join("KEY_" + k for k in c) for c in chords)
+                return ["key_%s = %s" % (key, text), "action_%s = none" % key]
+            return None  # NavLib / SDK commands, menus: not on Linux
+
+        for key in sorted(out):
+            got = convert(key, out[key])
+            if not got:
+                continue
+            aid = out[key]
+            name = label(names.get(aid, "")) if not aid.startswith(("Driver_", "KB_")) else ""
+            if name:
+                got.append("lcd_label_%s = %s" % (key, name))
+            lines += got
+            if any(g.startswith("key_") and not g.endswith("= none") for g in got):
+                done += 1  # only 3DxWare's driver functions: tdxd's defaults already
+        if not done:
+            continue
+        app = label((root.findtext("CfgProperties/Name") or "").strip()) or fname
+        text = ("# %s: 3DxWare's key settings for %s, imported from your 3DxWare installer\n"
+                "# (%s) by tdx-extract-3dxware-ui. Your own profiles in /etc/tdxd.d win.\n"
+                "match = %s\n" % (pname, strings.get((root.findtext("CfgProperties/Name") or "").strip(), app),
+                                  fname, ", ".join(match)))
+        text += "\n".join(lines) + "\n"
+        # two configurations for one program (FreeCAD.xml, FreeCAD_Navlib.xml):
+        # keep the one with more keys
+        dup = next((p for p, (t, n, mm) in results.items() if set(mm) & set(match)), None)
+        if dup:
+            if results[dup][1] >= done:
+                continue
+            del results[dup]
+        results[pname] = (text, done, match)
+    return {p: (t, n) for p, (t, n, _m) in results.items()}
+
+
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         print(__doc__)
@@ -666,6 +958,19 @@ def main():
                 json.dump(fc, f, indent=1, sort_keys=True)
             print("FreeCAD keys: %d workbenches, %d commands, %d menus"
                   % (len(fc["banks"]), len(fc["actions"]), len(fc["menus"])))
+        # every application's key settings, as tdxd profiles (tdxd reads them
+        # after /etc/tdxd.d; see profile.h)
+        prof = app_profiles(by_name)
+        pdir = os.path.join(out, "profiles")
+        os.makedirs(pdir, exist_ok=True)
+        for old in os.listdir(pdir):
+            if old.startswith("3dx-") and old.endswith(".conf"):
+                os.remove(os.path.join(pdir, old))
+        for pname, (text, _n) in prof.items():
+            with open(os.path.join(pdir, pname + ".conf"), "w") as f:
+                f.write(text)
+        print("%d application profiles (%d keys) in %s"
+              % (len(prof), sum(n for _t, n in prof.values()), pdir))
         with open(os.path.join(out, "SOURCE"), "w") as f:
             f.write("Extracted from %s for local use by tdx-settings.\n"
                     "Artwork (c) 3Dconnexion; do not redistribute.\n" % os.path.basename(installer))

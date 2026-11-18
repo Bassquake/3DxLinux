@@ -194,7 +194,8 @@ tools/extract_3dxware_ui.py 3DxWare64_v10-9-14_b745.exe     # or per user -> ~/.
 
 The extractor only reads files (7z unpacks installer → MSI → CAB; the MSI
 `File` table gives the names; the images are parsed out of the .NET resources of
-`3DxSmartUi.exe`; `Base.xml` gives each device's photo and support status). It
+`3DxSmartUi.exe`; `Base.xml` gives each device's photo and support status; the
+application XML files become key profiles, see below). It
 needs `7z` (`p7zip-full`). Without the artwork the same layout is drawn with
 plain shapes, as in these screenshots:
 
@@ -276,6 +277,36 @@ tdxd learns which application is focused in one of two ways:
 
 `tdxctl status` shows the active profile and how the application was detected.
 `tdxctl profiles` lists the profiles.
+
+### 3DxWare's key settings for each application
+
+3DxWare ships its key settings for about 280 applications as XML files
+(`Blender.xml`, `prusa-slicer.xml`, …), with the keystrokes and names in
+`en-US.xml`. Importing the 3DxWare look (above) turns every one that tdxd can do
+into a profile named `3dx-<application>` in `…/3dxware-ui/profiles`. That is 66
+profiles with 3DxWare 10.9.14, among them Blender, PrusaSlicer, OrcaSlicer,
+Bambu Studio, Cura, Firefox and Chrome. On the keys, each profile has:
+
+- keyboard shortcuts, including macros that type several keys in a row;
+- 3DxWare's names for the LCD;
+- driver functions (speed, rotation, pan/zoom, dominant, settings panel).
+
+Some of 3DxWare's key functions don't exist on Linux, so those keys keep tdxd's
+defaults:
+
+- the application's own NavLib commands (FreeCAD has its add-on, below);
+- 3DxWare's SDK view commands;
+- radial menus;
+- mouse macros.
+
+A program matches by its process name, taken from 3DxWare's `.exe` name.
+
+Your own profiles in `/etc/tdxd.d` come first: a profile there that matches the
+same program, or has the same name, wins. tdxd reads the profiles from
+`/usr/local/share/tdxd/3dxware-ui/profiles` (imported as root) and from
+`~/.local/share/tdxd/3dxware-ui/profiles` of the desktop user (the one running
+`tdx-focus` or the settings panel). From a user's folder it takes only keys, key
+names and actions.
 
 ### FreeCAD: keys that follow the workbench
 

@@ -103,6 +103,10 @@ test-lcdapplets: $(BUILD)/tdx-lcdmgr
 test-freecad:
 	python3 tests/test_freecad.py
 
+# 3DxWare's application configurations -> tdxd profiles (the importer)
+test-apps:
+	python3 tests/test_app_profiles.py
+
 # Regenerate src/font_aa.c (needs python3-gi with Pango and the DejaVu fonts)
 font:
 	python3 tools/gen_font.py > src/font_aa.c
@@ -213,4 +217,4 @@ release:
 clean:
 	rm -rf build
 
-.PHONY: all test test-gui test-lcdmgr test-lcdapplets test-freecad font install clean devices dist packages release
+.PHONY: all test test-gui test-lcdmgr test-lcdapplets test-freecad test-apps font install clean devices dist packages release

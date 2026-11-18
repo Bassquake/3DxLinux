@@ -4,12 +4,15 @@
 #include "report.h"
 
 #define TDX_MAX_KEYMAP 64
+#define TDX_MAX_KEYS 32 /* keys in one binding, all its chords together */
 
 struct tdx_keymap {
 	char v3dk[32];  /* e.g. V3DK_ESC, or "BUTTON_7" for generic devices */
-	int keys[4];    /* evdev KEY_* codes, 0-terminated */
-	int seq;        /* 0: a chord held with the button ("KEY_LEFTCTRL + KEY_C");
-			 * 1: tapped one after another on press ("KEY_V, KEY_F") */
+	int keys[TDX_MAX_KEYS + 1];          /* evdev KEY_* codes, 0-terminated */
+	unsigned char step[TDX_MAX_KEYS + 1]; /* which chord each key belongs to */
+	int seq;        /* 0: one chord held with the button ("KEY_LEFTCTRL + KEY_C");
+			 * 1: chords tapped one after another on press ("KEY_V, KEY_F",
+			 *    "KEY_LEFTALT + KEY_V, KEY_T": 3DxWare's keyboard macros) */
 };
 
 /* lcd_label_<V3DK id> = text: the LCD name of any key, e.g. a view key that a
@@ -18,7 +21,7 @@ struct tdx_named_label {
 	char v3dk[32];
 	char text[24];
 };
-#define TDX_MAX_NAMED_LABELS 32
+#define TDX_MAX_NAMED_LABELS 64
 
 /* Built-in button actions (3DxWare's driver actions), set with action_<V3DK> = NAME */
 enum tdx_action {
@@ -104,6 +107,9 @@ int tdx_config_load(struct tdx_config *c, const char *path);
 /* Load a per-application overlay on top of @c. Daemon-wide options (sockets,
  * uinput, spnav, lcd on/off, profile_dir, lcd_bmp_dir, verbose) are ignored with a warning. */
 int tdx_config_load_profile(struct tdx_config *c, const char *path);
+/* A profile imported into a user's own folder: a plain file (no symlink), and
+ * only match, key_*, action_* and lcd_label_* are taken. */
+int tdx_config_load_user_profile(struct tdx_config *c, const char *path);
 int tdx_key_from_name(const char *name);
 /* Number of 12-label pages configured (1..4). */
 int tdx_config_lcd_pages(const struct tdx_config *c);

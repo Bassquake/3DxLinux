@@ -2,10 +2,13 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <linux/input-event-codes.h>
 
 static const char *axis_names[6] = {"tx", "ty", "tz", "rx", "ry", "rz"};
@@ -85,6 +88,8 @@ static const struct { const char *name; int code; } keytab[] = {
 	K(KEY_VOLUMEUP), K(KEY_VOLUMEDOWN), K(KEY_MUTE), K(KEY_PLAYPAUSE),
 	K(KEY_NEXTSONG), K(KEY_PREVIOUSSONG), K(KEY_UNDO), K(KEY_REDO),
 	K(KEY_COPY), K(KEY_PASTE), K(KEY_CUT), K(KEY_FIND),
+	K(KEY_CAPSLOCK), K(KEY_NUMLOCK), K(KEY_SCROLLLOCK), K(KEY_SYSRQ), K(KEY_102ND),
+	K(KEY_COMPOSE), K(KEY_KPEQUAL), K(KEY_KPCOMMA),
 };
 #undef K
 
@@ -165,13 +170,32 @@ static int config_load(struct tdx_config *c, const char *path, int profile);
 
 int tdx_config_load(struct tdx_config *c, const char *path) { return config_load(c, path, 0); }
 int tdx_config_load_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 1); }
+int tdx_config_load_user_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 2); }
 
 static int config_load(struct tdx_config *c, const char *path, int profile)
 {
-	FILE *f = fopen(path, "r");
+	FILE *f;
+	if (profile == 2) {
+		/* a profile from a user's own folder: no symlinks, only a plain file */
+		int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+		struct stat st;
+		if (fd < 0)
+			return -errno;
+		if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size > 256 * 1024) {
+			close(fd);
+			return -EINVAL;
+		}
+		f = fdopen(fd, "r");
+		if (!f) {
+			close(fd);
+			return -errno;
+		}
+	} else {
+		f = fopen(path, "r");
+	}
 	if (!f)
 		return -errno;
-	char line[512];
+	char line[1024];
 	int ln = 0;
 	while (fgets(line, sizeof line, f)) {
 		ln++;
@@ -194,6 +218,13 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 		char *k = trim(s), *v = trim(eq + 1);
 		int ai;
 
+		if (profile == 2 && strcmp(k, "match") && strncmp(k, "key_", 4) &&
+		    strncmp(k, "action_", 7) && strncmp(k, "lcd_label_", 10)) {
+			/* imported for one user: keys, their names and actions only */
+			fprintf(stderr, "%s:%d: option not allowed in an imported profile; ignored\n",
+				path, ln);
+			continue;
+		}
 		if (profile && daemon_only(k)) {
 			fprintf(stderr, "%s:%d: '%s' is daemon-wide; ignored in a profile\n", path, ln, k);
 			continue;
@@ -290,18 +321,28 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			/* later files override earlier ones; "none" removes the binding.
 			 * "A + B" is a chord held with the button, "A, B" a sequence
 			 * tapped on press (e.g. FreeCAD's Fit All: V, F) */
-			int keys[4] = {0}, nk = 0, bad = 0;
-			int seq = strchr(v, ',') != NULL;
-			if (strcasecmp(v, "none"))
-				for (char *tok = strtok(v, seq ? ", " : "+ "); tok && nk < (seq ? 4 : 3);
-				     tok = strtok(NULL, seq ? ", " : "+ ")) {
-					int code = tdx_key_from_name(tok);
-					if (code < 0) {
-						fprintf(stderr, "%s:%d: unknown key '%s'\n", path, ln, tok);
-						bad = 1;
-					} else
-						keys[nk++] = code;
+			int keys[TDX_MAX_KEYS + 1] = {0}, nk = 0, ns = 0, bad = 0;
+			unsigned char step[TDX_MAX_KEYS + 1] = {0};
+			if (strcasecmp(v, "none")) {
+				char *csave = NULL;
+				for (char *ch = strtok_r(v, ",", &csave); ch; ch = strtok_r(NULL, ",", &csave)) {
+					int before = nk;
+					char *ksave = NULL;
+					for (char *tok = strtok_r(ch, "+ \t", &ksave); tok;
+					     tok = strtok_r(NULL, "+ \t", &ksave)) {
+						int code = tdx_key_from_name(tok);
+						if (code < 0) {
+							fprintf(stderr, "%s:%d: unknown key '%s'\n", path, ln, tok);
+							bad = 1;
+						} else if (nk < TDX_MAX_KEYS && ns < 255) {
+							keys[nk] = code;
+							step[nk++] = (unsigned char)ns;
+						}
+					}
+					if (nk > before)
+						ns++;
 				}
+			}
 			if (bad && !nk)
 				continue;
 			struct tdx_keymap *m = keymap_slot(c, k + 4);
@@ -310,7 +351,8 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			memset(m, 0, sizeof *m);
 			snprintf(m->v3dk, sizeof m->v3dk, "%s", k + 4);
 			memcpy(m->keys, keys, sizeof keys);
-			m->seq = seq && nk > 1;
+			memcpy(m->step, step, sizeof step);
+			m->seq = ns > 1;
 		} else
 			fprintf(stderr, "%s:%d: unknown option '%s'\n", path, ln, k);
 	}

@@ -317,9 +317,9 @@ void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *
 	const struct tdx_keymap *km = tdx_keymap_for(cfg, dev, idx);
 	if (km) {
 		int n = 0;
-		while (n < 4 && km->keys[n])
+		while (n < TDX_MAX_KEYS && km->keys[n])
 			n++;
-		for (size_t p = 0; p < sizeof key_presets / sizeof key_presets[0]; p++) {
+		for (size_t p = 0; !km->seq && p < sizeof key_presets / sizeof key_presets[0]; p++) {
 			int m = 0;
 			while (m < 3 && key_presets[p].keys[m])
 				m++;
@@ -337,7 +337,8 @@ void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *
 		for (int k = 0; k < n && o < len; k++) {
 			char kn[24];
 			key_name(km->keys[k], kn, sizeof kn);
-			o += (size_t)snprintf(out + o, len - o, "%s%s", k ? (km->seq ? ", " : "+") : "", kn);
+			const char *sep = !k ? "" : km->step[k] != km->step[k - 1] ? ", " : "+";
+			o += (size_t)snprintf(out + o, len - o, "%s%s", sep, kn);
 		}
 		return;
 	}

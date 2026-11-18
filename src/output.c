@@ -49,8 +49,14 @@ static int open_keyboard(const struct tdx_device_def *dev, const struct tdx_conf
 	ioctl(fd, UI_SET_EVBIT, EV_KEY);
 	ioctl(fd, UI_SET_EVBIT, EV_SYN);
 	for (int i = 0; i < cfg->nkeymap; i++)
-		for (int k = 0; k < 4 && cfg->keymap[i].keys[k]; k++)
+		for (int k = 0; k < TDX_MAX_KEYS && cfg->keymap[i].keys[k]; k++)
 			ioctl(fd, UI_SET_KEYBIT, cfg->keymap[i].keys[k]);
+	/* and the whole keyboard (Esc .. F24), so any profile, including the
+	 * imported 3DxWare ones, can send its keys without a new device; not the
+	 * power keys (116, 142, 143), so the desktop doesn't take it for a power button */
+	for (int code = KEY_ESC; code <= KEY_F24; code++)
+		if (code != KEY_POWER && code != KEY_SLEEP && code != KEY_WAKEUP)
+			ioctl(fd, UI_SET_KEYBIT, code);
 	struct uinput_setup s;
 	memset(&s, 0, sizeof s);
 	s.id.bustype = BUS_VIRTUAL;
@@ -130,28 +136,36 @@ void tdx_uinput_button(struct tdx_uinput *u, int idx, int pressed)
 	emit(u->fd, EV_SYN, SYN_REPORT, 0);
 }
 
-void tdx_uinput_keys(struct tdx_uinput *u, const int *keys, int seq, int pressed)
+void tdx_uinput_keys(struct tdx_uinput *u, const struct tdx_keymap *km, int pressed)
 {
 	int fd = u->kfd;  /* the keyboard device */
 	if (fd < 0)
 		return;
-	if (seq) { /* tap each key in turn when the button goes down */
+	const int *keys = km->keys;
+	int n = 0;
+	while (n < TDX_MAX_KEYS && keys[n])
+		n++;
+	if (km->seq) { /* tap each chord in turn when the button goes down */
 		if (!pressed)
 			return;
-		for (int k = 0; k < 4 && keys[k]; k++) {
-			emit(fd, EV_KEY, keys[k], 1);
+		for (int a = 0; a < n;) {
+			int b = a;
+			while (b < n && km->step[b] == km->step[a])
+				b++;
+			for (int k = a; k < b; k++)
+				emit(fd, EV_KEY, keys[k], 1);
 			emit(fd, EV_SYN, SYN_REPORT, 0);
-			emit(fd, EV_KEY, keys[k], 0);
+			for (int k = b - 1; k >= a; k--)
+				emit(fd, EV_KEY, keys[k], 0);
 			emit(fd, EV_SYN, SYN_REPORT, 0);
+			a = b;
 		}
 		return;
 	}
 	if (pressed) {
-		for (int k = 0; k < 4 && keys[k]; k++)
+		for (int k = 0; k < n; k++)
 			emit(fd, EV_KEY, keys[k], 1);
 	} else {
-		int n = 0;
-		while (n < 4 && keys[n]) n++;
 		for (int k = n - 1; k >= 0; k--)
 			emit(fd, EV_KEY, keys[k], 0);
 	}

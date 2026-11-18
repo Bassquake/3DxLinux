@@ -191,6 +191,9 @@ def gui_tests(d, tdxd):
            "wrote /home/u/.local/share/tdxd/3dxware-ui"]
     check(ts.import_summary(out) == "485 images into /home/u/.local/share/tdxd/3dxware-ui",
           "import summary: %s" % ts.import_summary(out))
+    out2 = out[:-1] + ["66 application profiles (651 keys) in /x/profiles"] + out[-1:]
+    check(ts.import_summary(out2) == "485 images and 66 application key settings into "
+          "/home/u/.local/share/tdxd/3dxware-ui", "import summary: %s" % ts.import_summary(out2))
 
     # ---- changes apply right away, also for a root-owned /etc/tdxd.conf
     # (pkexec faked): saved in the background, then on close after a cancel

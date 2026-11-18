@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <pwd.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -525,6 +526,11 @@ static void apply_effective(int idx)
 	active_profile = idx;
 }
 
+/* The desktop user (whoever runs tdx-focus): their own imported 3DxWare
+ * profiles are read too. -1: none yet. */
+static int session_uid = -1;
+static int nown_profiles; /* how many of them are profile_dir's */
+
 /* Base config, profile list, and the union of all keys any profile can send. */
 static void load_all(void)
 {
@@ -532,6 +538,19 @@ static void load_all(void)
 	int rc = tdx_profiles_scan(cfg.profile_dir, &profiles);
 	if (rc)
 		fprintf(stderr, "tdxd: cannot read %s: %s\n", cfg.profile_dir, strerror(-rc));
+	nown_profiles = profiles.n;
+	/* then the profiles imported from 3DxWare's application configurations
+	 * (tdx-extract-3dxware-ui); the first folder with a match wins */
+	static const char *const imported[] = {"/usr/local/share/tdxd/3dxware-ui/profiles",
+					       "/usr/share/tdxd/3dxware-ui/profiles"};
+	for (size_t i = 0; i < sizeof imported / sizeof imported[0]; i++)
+		tdx_profiles_add(imported[i], &profiles, 0);
+	struct passwd *pw = session_uid > 0 ? getpwuid((uid_t)session_uid) : NULL;
+	if (pw && pw->pw_dir) {
+		char dir[512];
+		snprintf(dir, sizeof dir, "%s/.local/share/tdxd/3dxware-ui/profiles", pw->pw_dir);
+		tdx_profiles_add(dir, &profiles, 1);
+	}
 	nkey_union = tdx_profiles_key_union(conf_path, &profiles, key_union,
 					    (int)(sizeof key_union / sizeof key_union[0]));
 	int idx = active_profile < profiles.n ? active_profile : -1;
@@ -693,6 +712,11 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 				 profile_name(active_profile));
 			return;
 		}
+		int uid = tdx_ctl_peer_uid();
+		if (uid > 0 && uid != session_uid) { /* a (new) desktop user: their profiles */
+			session_uid = uid;
+			load_all();
+		}
 		snprintf(focus_app, sizeof focus_app, "%s", app);
 		focus_pid = fpid;
 		focus_known = 1;
@@ -727,6 +751,10 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		LOG(0, "LCD handed to the LCD manager (%d released)\n", n);
 		snprintf(reply, len, "ok lcd-released %d\n", n);
 	} else if (!strcmp(verb, "reload")) {
+		/* from the settings panel after an import: its user's profiles too */
+		int uid = tdx_ctl_peer_uid();
+		if (uid > 0)
+			session_uid = uid;
 		g_reload = 1;
 		snprintf(reply, len, "ok reloading\n");
 	} else if (!strcmp(verb, "buttons")) {
@@ -885,7 +913,7 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 		}
 		const struct tdx_keymap *km = tdx_keymap_for(&cfg, d->node.def, i);
 		if (km)
-			tdx_uinput_keys(&d->ui, km->keys, km->seq, p);
+			tdx_uinput_keys(&d->ui, km, p);
 		else
 			tdx_uinput_button(&d->ui, i, p);
 		if (spnav.lfd >= 0)
@@ -975,8 +1003,10 @@ int main(int argc, char **argv)
 	if (access(conf_path, R_OK) && strcmp(conf_path, DEFAULT_CONF))
 		fprintf(stderr, "tdxd: cannot read %s: %s\n", conf_path, strerror(errno));
 	load_all();
-	if (profiles.n)
-		LOG(0, "%d per-application profile(s) in %s\n", profiles.n, cfg.profile_dir);
+	if (nown_profiles)
+		LOG(0, "%d per-application profile(s) in %s\n", nown_profiles, cfg.profile_dir);
+	if (profiles.n > nown_profiles)
+		LOG(0, "%d imported from 3DxWare's application settings\n", profiles.n - nown_profiles);
 
 	struct sigaction sa = {.sa_handler = on_sig};
 	sigaction(SIGINT, &sa, NULL);

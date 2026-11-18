@@ -17,7 +17,7 @@
 
 #include <stddef.h>
 
-#define TDX_CTL_MAX 4096
+#define TDX_CTL_MAX 65536 /* "profiles" lists ~280 imported ones */
 
 typedef void (*tdx_ctl_handler)(char *cmd, char *reply, size_t len);
 
@@ -31,6 +31,8 @@ void tdx_ctl_keep_connection(void);
 /* While @h runs: the process id of the client, as the kernel gives it
  * (SO_PEERCRED: a real one even from a Flatpak sandbox), or 0. */
 int tdx_ctl_peer_pid(void);
+/* ... and its user id, or -1 */
+int tdx_ctl_peer_uid(void);
 /* Client side: send @cmd, store the reply. Returns 0 or -errno. */
 int tdx_ctl_request(const char *path, const char *cmd, char *reply, size_t len);
 

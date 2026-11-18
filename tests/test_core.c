@@ -819,7 +819,7 @@ static void test_profiles(void)
 	write_file("test_profiles.d/notes.txt", "not a profile\n");
 	write_file("test_profiles.d/.hidden.conf", "sensitivity = 9\n");
 
-	struct tdx_profiles ps;
+	static struct tdx_profiles ps;
 	CHECK(tdx_profiles_scan(dir, &ps) == 0 && ps.n == 2);
 	CHECK(!strcmp(ps.p[0].name, "alpha") && !strcmp(ps.p[1].name, "zeta"));
 	CHECK(!strcmp(ps.p[0].match, "alpha") && !strcmp(ps.p[1].match, "blender, blender-*"));
@@ -883,6 +883,75 @@ static void test_profiles(void)
 
 	char app[64] = "";
 	CHECK(tdx_app_from_pid(getpid(), app, sizeof app) == 0 && !strcmp(app, "test_core"));
+}
+
+/* Profiles imported from 3DxWare (tdx-extract-3dxware-ui): chords one after
+ * another, folders after /etc/tdxd.d, and a user's folder limited to keys. */
+static void test_imported_profiles(void)
+{
+	static struct tdx_config c;
+	tdx_config_defaults(&c);
+	write_file("test_seq.conf", "key_V3DK_1 = KEY_LEFTALT + KEY_V, KEY_T\n"
+				    "key_V3DK_2 = KEY_LEFTSHIFT + KEY_SLASH, KEY_A, KEY_LEFTSHIFT + KEY_R, KEY_ENTER\n"
+				    "key_V3DK_3 = KEY_LEFTSHIFT + KEY_LEFTCTRL + KEY_KP7\n");
+	CHECK(tdx_config_load(&c, "test_seq.conf") == 0);
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	int k1 = -1, k2 = -1, k3 = -1;
+	for (int i = 0; i < spp->nbuttons; i++) {
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_1")) k1 = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_2")) k2 = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_3")) k3 = i;
+	}
+	const struct tdx_keymap *k = tdx_keymap_for(&c, spp, k1);
+	CHECK(k && k->seq && k->keys[0] == KEY_LEFTALT && k->keys[1] == KEY_V && k->keys[2] == KEY_T &&
+	      !k->keys[3] && k->step[0] == 0 && k->step[1] == 0 && k->step[2] == 1);
+	k = tdx_keymap_for(&c, spp, k2);
+	CHECK(k && k->seq && k->keys[5] == KEY_ENTER && k->step[3] == 2 && k->step[4] == 2 && k->step[5] == 3);
+	k = tdx_keymap_for(&c, spp, k3); /* a chord of three: held with the button */
+	CHECK(k && !k->seq && k->keys[2] == KEY_KP7 && !k->keys[3]);
+	char t[64];
+	tdx_button_text(&c, spp, k1, t, sizeof t);
+	CHECK(strstr(t, ", ") && strstr(t, "+"));  /* "Alt+V, T" */
+	remove("test_seq.conf");
+
+	/* folders: /etc/tdxd.d first, a name taken there is skipped later */
+	mkdir("test_etc.d", 0755);
+	mkdir("test_imp.d", 0755);
+	mkdir("test_user.d", 0755);
+	write_file("test_etc.d/blender.conf", "match = blender\nkey_V3DK_FIT = KEY_HOME\n");
+	write_file("test_imp.d/blender.conf", "match = blender\n");
+	write_file("test_imp.d/3dx-blender.conf", "match = blender\nkey_V3DK_FIT = KEY_KPDOT\n");
+	write_file("test_imp.d/3dx-prusa-slicer.conf", "match = prusa-slicer\nkey_V3DK_1 = KEY_M\n");
+	write_file("test_user.d/3dx-orca.conf",
+		   "match = orca-slicer\nsensitivity = 9\ndeadzone = 300\nled = off\n"
+		   "key_V3DK_1 = KEY_LEFTCTRL + KEY_A\naction_V3DK_2 = speed_up\nlcd_label_V3DK_1 = Arrange\n");
+	CHECK(symlink("../test_imp.d/3dx-prusa-slicer.conf", "test_user.d/3dx-link.conf") == 0);
+	static struct tdx_profiles ps;
+	CHECK(tdx_profiles_scan("test_etc.d", &ps) == 0 && ps.n == 1);
+	CHECK(tdx_profiles_add("test_imp.d", &ps, 0) == 0 && ps.n == 3); /* blender.conf skipped */
+	CHECK(tdx_profiles_add("test_user.d", &ps, 1) == 0 && ps.n == 4); /* the symlink too */
+	CHECK(!strcmp(ps.p[0].name, "blender") && !strcmp(ps.p[1].name, "3dx-blender"));
+	CHECK(tdx_profile_match(&ps, "blender") == 0);       /* yours wins */
+	CHECK(tdx_profile_match(&ps, "prusa-slicer") == 2);
+	int orca = tdx_profile_match(&ps, "orca-slicer");
+	CHECK(orca == 3 && ps.p[3].user);
+	tdx_config_compose(&c, "does_not_exist.conf", &ps, orca);
+	k = tdx_keymap_for(&c, spp, k1);
+	CHECK(k && k->keys[0] == KEY_LEFTCTRL && k->keys[1] == KEY_A);
+	CHECK(c.sensitivity == 1.0 && c.deadzone != 300);    /* a user's file: keys only */
+	CHECK(tdx_action_for(&c, spp, k2) == TDX_ACT_SPEED_UP);
+	tdx_button_text(&c, spp, k1, t, sizeof t);
+	CHECK(!strcmp(t, "Arrange"));
+	CHECK(tdx_config_load_user_profile(&c, "test_user.d/3dx-link.conf") < 0); /* no symlinks */
+	remove("test_etc.d/blender.conf");
+	remove("test_imp.d/blender.conf");
+	remove("test_imp.d/3dx-blender.conf");
+	remove("test_imp.d/3dx-prusa-slicer.conf");
+	remove("test_user.d/3dx-orca.conf");
+	remove("test_user.d/3dx-link.conf");
+	rmdir("test_etc.d");
+	rmdir("test_imp.d");
+	rmdir("test_user.d");
 }
 
 static void echo_handler(char *cmd, char *reply, size_t len)
@@ -1178,6 +1247,7 @@ int main(int argc, char **argv)
 	test_freecad_profile();
 	test_focus_names();
 	test_profiles();
+	test_imported_profiles();
 	test_control();
 	test_enterprise_lcd();
 	test_giotto_lcd();

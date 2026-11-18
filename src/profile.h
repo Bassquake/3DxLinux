@@ -7,18 +7,25 @@
  *   match = blender, blender-*        process names (case-insensitive globs)
  * which defaults to <name>. The active application comes from tdx-focus /
  * "tdxctl focus APP", or else from the spacenavd client that connected last.
+ *
+ * Profiles come from several folders, the first match wins: profile_dir
+ * (/etc/tdxd.d, yours), then the ones imported from 3DxWare's application
+ * configurations (tdx-extract-3dxware-ui: .../3dxware-ui/profiles), system
+ * wide and in the desktop user's own folder. A name already taken by an
+ * earlier folder is skipped there.
  */
 #ifndef TDX_PROFILE_H
 #define TDX_PROFILE_H
 
 #include "config.h"
 
-#define TDX_MAX_PROFILES 64
+#define TDX_MAX_PROFILES 512 /* 3DxWare has ~280 applications */
 
 struct tdx_profile {
 	char name[64];     /* file name without .conf */
 	char path[512];
 	char match[256];   /* from "match =", or the name */
+	int user;          /* from a user's own folder: tdx_config_load_user_profile */
 };
 
 struct tdx_profiles {
@@ -28,6 +35,9 @@ struct tdx_profiles {
 
 /* Scan @dir for *.conf (sorted by name). Missing directory = no profiles. */
 int tdx_profiles_scan(const char *dir, struct tdx_profiles *ps);
+/* Add @dir's profiles after those already in @ps (@user: a user's folder,
+ * only plain files, read as tdx_config_load_user_profile). */
+int tdx_profiles_add(const char *dir, struct tdx_profiles *ps, int user);
 /* Index of the first profile whose match list matches @app, or -1. */
 int tdx_profile_match(const struct tdx_profiles *ps, const char *app);
 /* Effective configuration: defaults, then @base_path, then profile @idx (-1 = none). */

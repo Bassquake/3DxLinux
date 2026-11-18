@@ -4,11 +4,13 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <fnmatch.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static int cmp_profile(const void *a, const void *b)
@@ -19,6 +21,20 @@ static int cmp_profile(const void *a, const void *b)
 int tdx_profiles_scan(const char *dir, struct tdx_profiles *ps)
 {
 	ps->n = 0;
+	return tdx_profiles_add(dir, ps, 0);
+}
+
+static int have_name(const struct tdx_profiles *ps, int n, const char *name)
+{
+	for (int i = 0; i < n; i++)
+		if (!strcmp(ps->p[i].name, name))
+			return 1;
+	return 0;
+}
+
+int tdx_profiles_add(const char *dir, struct tdx_profiles *ps, int user)
+{
+	int first = ps->n;
 	DIR *d = opendir(dir);
 	if (!d)
 		return errno == ENOENT ? 0 : -errno;
@@ -29,10 +45,21 @@ int tdx_profiles_scan(const char *dir, struct tdx_profiles *ps)
 			continue;
 		struct tdx_profile *p = &ps->p[ps->n];
 		snprintf(p->name, sizeof p->name, "%.*s", (int)(len - 5), e->d_name);
+		if (have_name(ps, first, p->name))
+			continue; /* an earlier folder has it */
 		snprintf(p->path, sizeof p->path, "%s/%s", dir, e->d_name);
+		p->user = user;
+		struct stat st;
+		if (user && (lstat(p->path, &st) || !S_ISREG(st.st_mode)))
+			continue;
 		/* read only the match line; full parsing happens when the profile is applied */
 		char match[256] = "";
-		FILE *f = fopen(p->path, "r");
+		FILE *f = user ? NULL : fopen(p->path, "r");
+		if (user) {
+			int fd = open(p->path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+			if (fd >= 0 && !(f = fdopen(fd, "r")))
+				close(fd);
+		}
 		if (f) {
 			char line[512];
 			while (fgets(line, sizeof line, f)) {
@@ -59,7 +86,7 @@ int tdx_profiles_scan(const char *dir, struct tdx_profiles *ps)
 		ps->n++;
 	}
 	closedir(d);
-	qsort(ps->p, (size_t)ps->n, sizeof ps->p[0], cmp_profile);
+	qsort(ps->p + first, (size_t)(ps->n - first), sizeof ps->p[0], cmp_profile);
 	return 0;
 }
 
@@ -83,7 +110,7 @@ int tdx_config_compose(struct tdx_config *out, const char *base_path,
 	tdx_config_defaults(out);
 	int rc = tdx_config_load(out, base_path);
 	if (idx >= 0 && idx < ps->n)
-		tdx_config_load_profile(out, ps->p[idx].path);
+		(ps->p[idx].user ? tdx_config_load_user_profile : tdx_config_load_profile)(out, ps->p[idx].path);
 	out->match[0] = 0;
 	return rc;
 }
@@ -106,7 +133,7 @@ int tdx_profiles_key_union(const char *base_path, const struct tdx_profiles *ps,
 	for (int idx = -1; idx < ps->n; idx++) {
 		tdx_config_compose(c, base_path, ps, idx);
 		for (int i = 0; i < c->nkeymap; i++)
-			for (int k = 0; k < 4 && c->keymap[i].keys[k]; k++)
+			for (int k = 0; k < TDX_MAX_KEYS && c->keymap[i].keys[k]; k++)
 				add_code(codes, &n, max, c->keymap[i].keys[k]);
 	}
 	free(c);

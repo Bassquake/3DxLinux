@@ -1809,7 +1809,9 @@ def import_summary(lines):
     """The importer's output -> 'N images from <installer> into <dir>'."""
     n = sum(int(m.group(1)) for m in (re.match(r"(\d+) .*(images|icons)", l) for l in lines) if m)
     dest = next((l[6:] for l in reversed(lines) if l.startswith("wrote ")), "")
-    return "%d images%s" % (n, " into " + dest if dest else "")
+    prof = next((m for m in (re.match(r"(\d+) application profiles", l) for l in lines) if m), None)
+    what = "%d images" % n + (" and %s application key settings" % prof.group(1) if prof else "")
+    return what + (" into " + dest if dest else "")
 
 
 def find_extractor():
@@ -1912,6 +1914,10 @@ def import_look(parent, app):
         if fc:
             subprocess.call(["sh", fc, "install"], stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL)
+        # tdxd reads the imported application profiles (yours, as the one asking)
+        ctl = find_program("tdxctl")
+        if ctl:
+            subprocess.call([ctl, "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         message(parent, Gtk.MessageType.INFO, "The 3DxWare look is imported",
                 "%s, from %s.\n\nThe settings panel restarts now to show it, and the "
                 "LCD Manager restarts too." % (import_summary(lines), os.path.basename(path)))
