@@ -324,3 +324,14 @@ search of the whole filesystem found nothing of tdxd; unrelated files in the
 same folders were kept. dpkg lists the package as `rc` (its record of the
 config files), which `apt purge tdxd` clears. An upgrade over it kept the
 config edit, the profile and the applet settings.
+
+## 2026-11-18: focus tracking on KDE Plasma (Kubuntu 26.04, Wayland)
+
+Test build `0.3.3+1+g293f906` on the Kubuntu 26.04 PC with the SpacePilot PRO.
+Before, the LCD header always said "default": the packages didn't start
+`tdx-focus`, and it only knew X11 and sway (under Wayland, `xprop` sees XWayland
+windows only).
+
+| Test | Result |
+|---|---|
+| Focus tracking | **Pass:** with `tdx-focus` started by the package and its new KWin path (`tdx-focus-kwin` loads a KWin script that reports each activated window over D-Bus), the Function Keys header follows the app switched to. |
