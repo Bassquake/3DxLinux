@@ -240,11 +240,14 @@ class FunctionKeys(la.Applet):
             cr.restore()
         elif self.art.paint(cr, "bitmap_113", 0, 0):  # the applet's own icon (48x35)
             pass
-        # motion filter status (green on / red off)
+        # motion filter status (green on / red off). Windows shows, left to right,
+        # Rotation, Pan/Zoom, Dominant; drawn here from the right edge leftwards.
+        # The applet's icons: 114/115 Dominant (cap, one left-right arrow),
+        # 116/117 Pan/Zoom (cap, X/Y/Z arrows), 118/119 Rotation (turning arrow).
         x = la.W - 2
-        for on, off_name, on_name in ((self.info["rotation"], "bitmap_119", "bitmap_118"),
-                                      (self.info["dominant"], "bitmap_117", "bitmap_116"),
-                                      (self.info["panzoom"], "bitmap_115", "bitmap_114")):
+        for on, off_name, on_name in ((self.info["dominant"], "bitmap_115", "bitmap_114"),
+                                      (self.info["panzoom"], "bitmap_117", "bitmap_116"),
+                                      (self.info["rotation"], "bitmap_119", "bitmap_118")):
             s = self.art.get(on_name if on else off_name)
             if s:
                 x -= s.get_width()
