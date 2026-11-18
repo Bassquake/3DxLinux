@@ -113,6 +113,52 @@ int tdx_profiles_key_union(const char *base_path, const struct tdx_profiles *ps,
 	return n;
 }
 
+/* An interpreter whose program is its script: python3.14, perl, node, sh ... */
+static int is_interpreter(const char *exe)
+{
+	static const char *const pre[] = {"python", "perl", "ruby", "node", "bash", "dash", "sh", NULL};
+	for (int i = 0; pre[i]; i++) {
+		size_t n = strlen(pre[i]);
+		if (!strncmp(exe, pre[i], n) && (!exe[n] || exe[n] == '.' || isdigit((unsigned char)exe[n])))
+			return 1;
+	}
+	return 0;
+}
+
+/* The script an interpreter runs (/proc/<pid>/cmdline): "python3 -B /usr/bin/tdx-settings"
+ * -> "tdx-settings", "python3 -m foo.bar" -> "foo.bar". 0, or -1 if none. */
+static int script_of(int pid, char *out, size_t len)
+{
+	char p[64], buf[4096];
+	snprintf(p, sizeof p, "/proc/%d/cmdline", pid);
+	FILE *f = fopen(p, "r");
+	if (!f)
+		return -1;
+	size_t n = fread(buf, 1, sizeof buf - 1, f);
+	fclose(f);
+	buf[n] = 0;
+	const char *a = buf, *end = buf + n;
+	a += strlen(a) + 1; /* argv[0], the interpreter */
+	while (a < end && *a) {
+		if (!strcmp(a, "-c"))
+			return -1;            /* a one-liner: no script */
+		if (!strcmp(a, "-m")) {       /* python -m module */
+			a += strlen(a) + 1;
+			if (a >= end || !*a)
+				return -1;
+			snprintf(out, len, "%s", a);
+			return 0;
+		}
+		if (*a != '-') {
+			const char *base = strrchr(a, '/');
+			snprintf(out, len, "%s", base ? base + 1 : a);
+			return 0;
+		}
+		a += strlen(a) + 1;
+	}
+	return -1;
+}
+
 int tdx_app_from_pid(int pid, char *out, size_t len)
 {
 	char p[64], buf[512];
@@ -124,7 +170,12 @@ int tdx_app_from_pid(int pid, char *out, size_t len)
 		if (del)
 			*del = 0;
 		const char *base = strrchr(buf, '/');
-		snprintf(out, len, "%s", base ? base + 1 : buf);
+		base = base ? base + 1 : buf;
+		/* a script is the application, not its interpreter (tdx-settings runs
+		 * as /usr/bin/python3.14) */
+		if (is_interpreter(base) && script_of(pid, out, len) == 0)
+			return 0;
+		snprintf(out, len, "%s", base);
 		return 0;
 	}
 	snprintf(p, sizeof p, "/proc/%d/comm", pid);
@@ -137,5 +188,16 @@ int tdx_app_from_pid(int pid, char *out, size_t len)
 		return -EIO;
 	buf[strcspn(buf, "\n")] = 0;
 	snprintf(out, len, "%s", buf);
+	return 0;
+}
+
+int tdx_is_own_app(const char *app)
+{
+	static const char *const own[] = {"tdx-settings", "tdx-settings-helper", "tdx-lcdmanager",
+					  "tdx-lcd-functionkeys", "tdx-lcd-rss", "tdx-lcd-pictures",
+					  "tdx-lcd-demo", "tdx-extract-3dxware-ui", NULL};
+	for (int i = 0; app && own[i]; i++)
+		if (!strcasecmp(app, own[i]))
+			return 1;
 	return 0;
 }

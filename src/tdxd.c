@@ -652,8 +652,19 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 			snprintf(reply, len, "error: focus needs an application name\n");
 			return;
 		}
+		int fpid = pid ? atoi(pid) : 0;
+		char resolved[64];
+		/* the helpers report /proc/<pid>/exe: for a script that is its
+		 * interpreter (python3.14), so name it by the script instead */
+		if (fpid > 0 && tdx_app_from_pid(fpid, resolved, sizeof resolved) == 0)
+			app = resolved;
+		if (tdx_is_own_app(app)) { /* our own panel: keep the application */
+			snprintf(reply, len, "ok ignored (%s is tdxd's own) profile=%s\n", app,
+				 profile_name(active_profile));
+			return;
+		}
 		snprintf(focus_app, sizeof focus_app, "%s", app);
-		focus_pid = pid ? atoi(pid) : 0;
+		focus_pid = fpid;
 		focus_known = 1;
 		select_profile();
 		lcdcfg_write(); /* the application name changed even if the profile didn't */

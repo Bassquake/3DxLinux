@@ -1127,6 +1127,40 @@ static void test_freecad_profile(void)
 	CHECK(!strcmp(t, "V, F"));
 }
 
+/* Focus: a script is named after the script, not its interpreter (tdx-settings
+ * runs as python3.14), and tdxd's own programs are recognised. */
+static void test_focus_names(void)
+{
+	char dir[] = "/tmp/tdx-focus-XXXXXX";
+	if (!mkdtemp(dir))
+		return;
+	char path[64], name[64];
+	snprintf(path, sizeof path, "%s/tdx-settings", dir);
+	write_file(path, "sleep 5\n");
+	pid_t pid = fork();
+	if (pid == 0) {
+		execl("/bin/sh", "sh", path, (char *)NULL);
+		_exit(127);
+	}
+	usleep(200000);
+	CHECK(tdx_app_from_pid(pid, name, sizeof name) == 0 && !strcmp(name, "tdx-settings"));
+	CHECK(tdx_is_own_app(name));
+	kill(pid, SIGTERM);
+	waitpid(pid, NULL, 0);
+	pid = fork();
+	if (pid == 0) {
+		execl("/bin/sh", "sh", "-c", "sleep 5", (char *)NULL);
+		_exit(127);
+	}
+	usleep(200000);
+	CHECK(tdx_app_from_pid(pid, name, sizeof name) == 0 && strcmp(name, "tdx-settings")); /* -c: no script */
+	kill(pid, SIGTERM);
+	waitpid(pid, NULL, 0);
+	unlink(path);
+	rmdir(dir);
+	CHECK(!tdx_is_own_app("freecad") && !tdx_is_own_app("blender") && tdx_is_own_app("tdx-lcdmanager"));
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
@@ -1135,6 +1169,7 @@ int main(int argc, char **argv)
 	test_lcdmgr();
 	test_lcdcfg();
 	test_freecad_profile();
+	test_focus_names();
 	test_profiles();
 	test_control();
 	test_enterprise_lcd();

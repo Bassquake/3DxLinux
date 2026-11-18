@@ -35,7 +35,12 @@ int tdx_config_compose(struct tdx_config *out, const char *base_path,
 		       const struct tdx_profiles *ps, int idx);
 /* Every key code used by the base config or any profile (for uinput capabilities). */
 int tdx_profiles_key_union(const char *base_path, const struct tdx_profiles *ps, int *codes, int max);
-/* Application name of a process: basename of /proc/PID/exe, else /proc/PID/comm. */
+/* Application name of a process: basename of /proc/PID/exe (for an interpreter
+ * such as python3, its script's name), else /proc/PID/comm. */
 int tdx_app_from_pid(int pid, char *out, size_t len);
+/* tdxd's own windows (settings panel, LCD Manager, applet dialogs): focusing
+ * them keeps the application the device follows, as 3DxWare does for its own
+ * panel. */
+int tdx_is_own_app(const char *app);
 
 #endif
