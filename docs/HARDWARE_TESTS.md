@@ -293,3 +293,15 @@ on), then tested with the SpacePilot PRO attached.
 
 Not tested: the `.rpm` (no Fedora system), the arm64 packages, and a
 double-click install on a real desktop.
+
+## 2026-11-18: the 0.3.1 `.deb` on a real desktop (Kubuntu 26.04 LTS)
+
+Same SpacePilot PRO, plugged into a Kubuntu 26.04 LTS PC (KDE Plasma, user
+session), `tdxd_0.3.1-1_amd64.deb` installed.
+
+| Test | Result |
+|---|---|
+| Service | **Pass:** `tdxd.service` enabled and running from `/usr/bin/tdxd`; `tdxctl status` (as the user) shows the device on `/dev/hidraw2`, firmware 4.11, `lcd lcdmgr`. |
+| Settings panel | **Pass:** shows the device as connected. |
+| LCD | **Fail, then pass after a fix:** the LCD kept its idle "SpacePilot PRO" picture. The udev rule was `99-3dconnexion-tdxd.rules`, after `73-seat-late.rules`, so its `uaccess` tag never became the user's ACL and tdx-lcdmgr (running as the user) could not open the LCD. Copied as `/etc/udev/rules.d/70-3dconnexion-tdxd.rules` plus `udevadm trigger` and restarting tdx-lcdmgr: the LCD works. Fixed for the next release (rule renamed to `70-`). |
+| LED toggle in the panel | Not a fault: `/etc/tdxd.conf` is root's, so the panel saves (one password) when its window closes and tdxd applies the LED then. |
