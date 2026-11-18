@@ -74,6 +74,15 @@ stage() { # stage LIBDIR -> $STAGE/root
 # ---- what the package does after install / before removal -------------------
 # $1: "install" or "upgrade"
 POST_INSTALL='modprobe uinput 2>/dev/null || true
+# a copy of tdxd'"'"'s own rule in /etc (the 0.3.1 workaround, or install.sh) replaces
+# the packaged one of the same name, so later fixes never apply: remove copies of
+# ours (recognised by the header line); rules of anyone else stay
+for r in /etc/udev/rules.d/70-3dconnexion-tdxd.rules /etc/udev/rules.d/99-3dconnexion-tdxd.rules; do
+	[ -f "$r" ] || continue
+	head -n 1 "$r" | grep -q "^# tdxd: access to 3Dconnexion devices" || continue
+	echo "tdxd: removing $r, an older copy of the packaged udev rule" >&2
+	rm -f "$r"
+done
 if command -v udevadm >/dev/null 2>&1; then
 	udevadm control --reload-rules 2>/dev/null || true
 	udevadm trigger --subsystem-match=hidraw --subsystem-match=usb --subsystem-match=misc \
