@@ -376,3 +376,9 @@ itself when 1-5 are held past about half a second.
 | Keys 1-5 (taps) | **Pass:** New Ctrl+N, Open Ctrl+O, Save Ctrl+S, Copy Ctrl+C, Cut Ctrl+X on the "(tdxd keys)" device. |
 | Keys 6-10 (hold 1-5) | **Pass:** Paste Ctrl+V, window left Super+Left, window right Super+Right, switch app Alt+Tab, Undo Ctrl+Z. |
 | MENU → settings panel | **Pass** on the Kubuntu 26.04 PC (KDE Plasma, test build `0.3.4+5+g69a5e51`): with `action_V3DK_MENU = settings`, MENU opens tdx-settings on the desktop. (Not testable in WSL: root has no desktop session there.) |
+
+## 2026-11-18: focus on the settings panel (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| Settings panel focused | **Pass after a fix:** the LCD header said "python3.14" (the panel is a Python script). tdxd now names a script by its script and ignores focus on its own windows; with test build `0.3.4+8+gf6e1e2a` the header keeps the previous application. |
