@@ -311,4 +311,5 @@ session), `tdxd_0.3.1-1_amd64.deb` installed.
 | Test | Result |
 |---|---|
 | Upgrade 0.3.1 → `0.3.2+1+g1417a66` | **Fail, then pass after a fix:** afterwards tdxd was enabled but stopped (`inactive (dead)`), so nothing detected the device; the package only *try-restarted* tdxd, which leaves a stopped one stopped. Now it restarts (also starts) tdxd and the users' LCD Managers. With `0.3.2+2+gaa46a75` the device is detected again. Why tdxd had stopped is unknown (the system journal needs root to read). |
+| Settings apply immediately | **Pass:** toggling LEDs in Advanced Settings asked for the password (pkexec) and the LED changed straight away, with the window still open. |
 | Menu after uninstall/upgrade | **Fixed:** "3D Mouse Settings" and "LCD Manager" stayed in the menu from the importer's copies in `~/.local/share/applications` (they win over the package's entries and nothing removes them). The entries and those copies now carry `TryExec=`, so the menu hides a copy once its program is gone. |
