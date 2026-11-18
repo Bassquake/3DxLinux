@@ -25,6 +25,11 @@ loader.exec_module(ts)
 checks = fails = 0
 
 
+def chord_norm(v):
+    """'KEY_LEFTCTRL + KEY_N' and 'KEY_LEFTCTRL+KEY_N' compare equal."""
+    return (v or "").replace(" ", "").upper()
+
+
 def check(cond, what):
     global checks, fails
     checks += 1
@@ -232,7 +237,15 @@ def gui_tests(d, tdxd):
     btn.on_restore(None)
     check(app.store.base.get("action_V3DK_PLUS") == "speed_up" and
           app.store.base.get("key_V3DK_ESC") == "KEY_ESC" and
-          not app.store.base.has("key_V3DK_1"), "Buttons Restore Defaults")
+          app.store.base.get("key_V3DK_1") == "KEY_LEFTCTRL+KEY_N" and
+          app.store.base.get("lcd_label_1") == "New" and
+          app.store.base.get("action_V3DK_MENU") == "settings", "Buttons Restore Defaults")
+    # the panel's defaults are the shipped config's (packaging/tdxd.conf)
+    ship = ts.ConfFile(os.path.join(ROOT, "packaging", "tdxd.conf"))
+    check(all(chord_norm(ship.get("key_" + k)) == chord_norm(v) for k, v in ts.DEFAULT_KEYS.items()) and
+          all(ship.get("action_" + k) == v for k, v in ts.DEFAULT_ACTIONS.items()) and
+          all(ship.get("lcd_label_%d" % (i + 1)) == v for i, v in enumerate(ts.DEFAULT_LABELS)),
+          "Restore Defaults matches packaging/tdxd.conf")
 
 
 def main():

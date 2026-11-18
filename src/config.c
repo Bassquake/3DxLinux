@@ -37,6 +37,7 @@ void tdx_config_defaults(struct tdx_config *c)
 
 static const char *const action_names[TDX_ACT_COUNT] = {
 	"none", "speed_up", "speed_down", "dominant", "rotation", "panzoom", "calibrate", "lcd_next",
+	"settings",
 };
 
 const char *tdx_action_name(int action)

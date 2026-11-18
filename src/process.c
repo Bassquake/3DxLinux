@@ -229,7 +229,7 @@ static const struct { const char *v3dk, *text; } button_names[] = {
 
 static const char *const action_texts[TDX_ACT_COUNT] = {
 	"", "Increase Speed", "Decrease Speed", "Dominant On/Off", "Rotation On/Off",
-	"Pan Zoom On/Off", "Calibrate", "Next LCD Page",
+	"Pan Zoom On/Off", "Calibrate", "Next LCD Page", "Settings",
 };
 
 /* keyboard presets the settings panel offers, by evdev code chord */

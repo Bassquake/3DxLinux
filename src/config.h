@@ -30,6 +30,7 @@ enum tdx_action {
 	TDX_ACT_PANZOOM,      /* "Pan Zoom On/Off"  */
 	TDX_ACT_CALIBRATE,    /* "Calibrate" (Driver_RezeroDevice) */
 	TDX_ACT_LCD_NEXT,     /* Giotto: slide to the next LCD page */
+	TDX_ACT_SETTINGS,     /* "3Dconnexion Settings" (Driver_ShowDriverGUI): open tdx-settings */
 	TDX_ACT_COUNT
 };
 #define TDX_MAX_ACTIONS 64

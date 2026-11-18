@@ -85,6 +85,7 @@ ACTIONS = [
     ("rotation", "Rotation On/Off"),
     ("panzoom", "Pan Zoom On/Off"),
     ("calibrate", "Calibrate"),
+    ("settings", "Open Settings"),
 ]
 ACTION_LABEL = dict(ACTIONS)
 
@@ -122,10 +123,19 @@ SPP_LAYOUT = [
 
 # Shipped defaults for the base file (packaging/tdxd.conf), used by "Restore Defaults"
 DEFAULT_KEYS = {"V3DK_ESC": "KEY_ESC", "V3DK_ALT": "KEY_LEFTALT",
-                "V3DK_SHIFT": "KEY_LEFTSHIFT", "V3DK_CTRL": "KEY_LEFTCTRL"}
+                "V3DK_SHIFT": "KEY_LEFTSHIFT", "V3DK_CTRL": "KEY_LEFTCTRL",
+                # keys 1-12: 3DxWare's defaults for every application (SharedCfg.xml)
+                "V3DK_1": "KEY_LEFTCTRL+KEY_N", "V3DK_2": "KEY_LEFTCTRL+KEY_O",
+                "V3DK_3": "KEY_LEFTCTRL+KEY_S", "V3DK_4": "KEY_LEFTCTRL+KEY_C",
+                "V3DK_5": "KEY_LEFTCTRL+KEY_X", "V3DK_6": "KEY_LEFTCTRL+KEY_V",
+                "V3DK_7": "KEY_LEFTMETA+KEY_LEFT", "V3DK_8": "KEY_LEFTMETA+KEY_RIGHT",
+                "V3DK_9": "KEY_LEFTALT+KEY_TAB", "V3DK_10": "KEY_LEFTCTRL+KEY_Z",
+                "V3DK_11": "KEY_LEFTCTRL+KEY_Y", "V3DK_12": "KEY_LEFTMETA+KEY_L"}
+DEFAULT_LABELS = ["New", "Open", "Save", "Copy", "Cut", "Paste", "Window Left",
+                  "Window Right", "Switch App", "Undo", "Redo", "Lock Screen"]
 DEFAULT_ACTIONS = {"V3DK_PLUS": "speed_up", "V3DK_MINUS": "speed_down",
                    "V3DK_DOMINANT": "dominant", "V3DK_ROTATE": "rotation",
-                   "V3DK_PANZOOM": "panzoom"}
+                   "V3DK_PANZOOM": "panzoom", "V3DK_MENU": "settings"}
 ADVANCED_KEYS = (["dominant", "disable_translation", "disable_rotation", "led",
                   "map_ty", "map_tz"] + ["scale_" + a for a in AXES]
                  + ["invert_" + a for a in AXES])
@@ -1408,7 +1418,7 @@ SPP_COLUMNS = [
      ("V3DK_ROLL_CW", "↻", "Roll +"), ("V3DK_ROLL_CCW", "↺", "Roll -")],
 ]
 # function icons (installer files) for what a button does
-ACTION_ICON = {"rotation": "Driver_ToggleRotations.png"}
+ACTION_ICON = {"rotation": "Driver_ToggleRotations.png", "settings": "Driver_ShowDriverGUI.png"}
 PRESET_ICON = {"Copy": "Macro_Copy.png", "Cut": "Macro_Cut.png", "Paste": "Macro_Paste.png",
                "Undo": "Macro_Undo.png", "Redo": "Macro_Redo.png",
                "Select All": "Macro_SelectAll.png",
@@ -1580,6 +1590,8 @@ class ButtonsPanel(Panel):
                 t.set("key_" + k, v)
             for k, v in DEFAULT_ACTIONS.items():
                 t.set("action_" + k, v)
+            for i, v in enumerate(DEFAULT_LABELS):  # the LCD names that go with them
+                t.set("lcd_label_%d" % (i + 1), v)
         self.store.changed()
 
 

@@ -160,10 +160,17 @@ static void test_config(void)
 	tdx_config_defaults(&c);
 	CHECK(tdx_config_load(&c, "packaging/tdxd.conf") == 0);
 	CHECK(c.enable_uinput == 1 && c.enable_spnav == 1 && c.lcd_brightness == 80);
-	CHECK(c.nkeymap == 4 && !strcmp(c.lcd_label[9], "Paste"));
+	/* ESC ALT SHIFT CTRL + keys 1-12 with 3DxWare's defaults (SharedCfg.xml) */
+	CHECK(c.nkeymap == 16 && !strcmp(c.lcd_label[0], "New") && !strcmp(c.lcd_label[9], "Undo"));
 	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
 	const struct tdx_keymap *km = tdx_keymap_for(&c, spp, find_btn(spp, "V3DK_ESC"));
 	CHECK(km && km->keys[0] == 1);
+	km = tdx_keymap_for(&c, spp, find_btn(spp, "V3DK_4"));    /* Copy */
+	CHECK(km && km->keys[0] == KEY_LEFTCTRL && km->keys[1] == KEY_C && !km->seq);
+	km = tdx_keymap_for(&c, spp, find_btn(spp, "V3DK_9"));    /* switch application */
+	CHECK(km && km->keys[0] == KEY_LEFTALT && km->keys[1] == KEY_TAB);
+	CHECK(tdx_action_for(&c, spp, find_btn(spp, "V3DK_MENU")) == TDX_ACT_SETTINGS);
+	CHECK(!strcmp(tdx_action_name(TDX_ACT_SETTINGS), "settings"));
 }
 
 static void test_rgb_leds(void)

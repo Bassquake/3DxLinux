@@ -21,6 +21,7 @@
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <linux/hidraw.h>
 
 #include "config.h"
@@ -450,6 +451,44 @@ static void dev_close(struct dev_ctx *d)
 	*d = devs[--ndev];
 }
 
+/* ---- the settings panel (3DxWare's Driver_ShowDriverGUI on MENU) ----
+ * tdxd runs as root outside any desktop session, so it asks the session of
+ * the user at the screen (logind's active session on seat0) to start
+ * tdx-settings, through that user's own systemd manager: the panel gets the
+ * session's display. A fixed unit name means a second press while the panel is
+ * open starts no second one. Double fork: tdxd never waits or leaves zombies. */
+static const char settings_script[] =
+	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n"
+	"[ -n \"$s\" ] || exit 0\n"
+	"u=$(loginctl show-session \"$s\" -p Name --value 2>/dev/null)\n"
+	"[ -n \"$u\" ] && [ \"$u\" != root ] || exit 0\n"
+	"exec systemd-run --user --machine=\"$u@\" --unit=tdx-settings-menu --collect --quiet "
+	"tdx-settings\n";
+
+static void open_settings(void)
+{
+	pid_t pid = fork();
+	if (pid < 0)
+		return;
+	if (pid == 0) {
+		setsid();
+		if (fork() == 0) {
+			int nul = open("/dev/null", O_RDWR);
+			if (nul >= 0) {
+				dup2(nul, 0);
+				dup2(nul, 1);
+				if (!cli_verbose)
+					dup2(nul, 2);
+			}
+			execl("/bin/sh", "sh", "-c", settings_script, (char *)NULL);
+			_exit(127);
+		}
+		_exit(0);
+	}
+	waitpid(pid, NULL, 0);
+	LOG(1, "MENU: asked the active session to open tdx-settings\n");
+}
+
 /* ---- calibration (HIDDev.dll UdDevRezero) ---- */
 
 static int device_rezero(struct dev_ctx *d)
@@ -752,6 +791,8 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 				device_rezero(d);
 			else if (act == TDX_ACT_LCD_NEXT && d->glcd)
 				gio_slide_next(d);
+			else if (act == TDX_ACT_SETTINGS)
+				open_settings();
 			continue;
 		}
 		const struct tdx_keymap *km = tdx_keymap_for(&cfg, d->node.def, i);
