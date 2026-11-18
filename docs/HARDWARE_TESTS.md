@@ -388,3 +388,10 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | Keys per workbench | **Pass after a fix:** with test build `0.3.4+10+gfe16476` nothing changed: FreeCAD is the Flathub Flatpak (`org.freecad.FreeCAD`), which never loaded the add-on from `~/.local/share/FreeCAD`, can't reach `/run/tdxd.sock` and has its own PIDs. With `0.3.4+11+g4310c7a` (`tdx-freecad-addon install` into `~/.var/app/…`, socket override, PID from `SO_PEERCRED`) the LCD shows the active workbench's 3DxWare key names (Part Design key 1 "Create sketch") and the keys run FreeCAD's commands. |
+
+## 2026-11-18: imported 3DxWare application profiles, Firefox (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| Firefox profile (`3dx-firefox`) | **Pass after a fix:** with test build `0.3.4+13+g1d881ba` the keys did Firefox's functions, but the LCD showed the base config's numbered names (`lcd_label_3`, here an early `/etc/tdxd.conf`: key 3 "Front", key 10 "Paste"). With `0.3.4+14+g5e5dd7f` (a profile's key name beats the base's number) key 3 reloads the page and says "Refresh"; hold 5 (key 10) opens a private window and says "In Private Browsing". |
+| Key 2 in Firefox | As expected: 3DxWare's Firefox settings leave key 2 alone, so it keeps the base config's function and name (on this PC still an early config's "Top"). |
