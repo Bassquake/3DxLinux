@@ -382,3 +382,9 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | Settings panel focused | **Pass after a fix:** the LCD header said "python3.14" (the panel is a Python script). tdxd now names a script by its script and ignores focus on its own windows; with test build `0.3.4+8+gf6e1e2a` the header keeps the previous application. |
+
+## 2026-11-18: FreeCAD keys follow the workbench (Kubuntu 26.04, Flatpak FreeCAD)
+
+| Test | Result |
+|---|---|
+| Keys per workbench | **Pass after a fix:** with test build `0.3.4+10+gfe16476` nothing changed: FreeCAD is the Flathub Flatpak (`org.freecad.FreeCAD`), which never loaded the add-on from `~/.local/share/FreeCAD`, can't reach `/run/tdxd.sock` and has its own PIDs. With `0.3.4+11+g4310c7a` (`tdx-freecad-addon install` into `~/.var/app/…`, socket override, PID from `SO_PEERCRED`) the LCD shows the active workbench's 3DxWare key names (Part Design key 1 "Create sketch") and the keys run FreeCAD's commands. |
