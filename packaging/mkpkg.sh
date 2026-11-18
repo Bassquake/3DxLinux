@@ -59,9 +59,11 @@ stage() { # stage LIBDIR -> $STAGE/root
 	install -d "$R/usr/share/polkit-1/actions"
 	sed 's#/usr/local/lib/tdxd#/usr/lib/tdxd#' "$DIST/org.tdxd.settings.policy" \
 		> "$R/usr/share/polkit-1/actions/org.tdxd.settings.policy"
-	install -Dm644 "$DIST/tdxd.conf" "$R/etc/tdxd.conf"
-	install -Dm644 "$DIST/blender.conf.example" "$R/etc/tdxd.d/blender.conf.example"
-	install -Dm644 "$DIST/freecad.conf" "$R/etc/tdxd.d/freecad.conf"
+	# the settings are not package (config) files: the defaults live here and the
+	# install script copies each to /etc only when it is missing (see SETTINGS)
+	install -Dm644 "$DIST/tdxd.conf" "$R/usr/share/tdxd/defaults/tdxd.conf"
+	install -Dm644 "$DIST/blender.conf.example" "$R/usr/share/tdxd/defaults/blender.conf.example"
+	install -Dm644 "$DIST/freecad.conf" "$R/usr/share/tdxd/defaults/freecad.conf"
 	for f in README.md PROTOCOL.md; do
 		install -Dm644 "$DIST/$f" "$R/usr/share/doc/tdxd/$f"
 	done
@@ -73,6 +75,19 @@ stage() { # stage LIBDIR -> $STAGE/root
 
 # ---- what the package does after install / before removal -------------------
 # $1: "install" or "upgrade"
+# The settings in /etc are not dpkg/rpm config files: as those, an uninstall that
+# deleted them (see CLEANUP) left dpkg remembering them as "removed by the user",
+# so a reinstall never brought them back (tdxd ran without its defaults), and an
+# upgrade after the settings panel had changed them stopped at a keep-or-replace
+# question. Instead the package carries the defaults in /usr/share/tdxd/defaults
+# and puts each one in place only where it is missing - your settings stay.
+SETTINGS='D=/usr/share/tdxd/defaults
+if [ -d "$D" ]; then
+	mkdir -p /etc/tdxd.d
+	[ -e /etc/tdxd.conf ] || install -m 644 "$D/tdxd.conf" /etc/tdxd.conf
+	[ -e /etc/tdxd.d/freecad.conf ] || install -m 644 "$D/freecad.conf" /etc/tdxd.d/freecad.conf
+	install -m 644 "$D/blender.conf.example" /etc/tdxd.d/blender.conf.example  # an example: always current
+fi'
 POST_INSTALL='modprobe uinput 2>/dev/null || true
 # a copy of tdxd'"'"'s own rule in /etc (the 0.3.1 workaround, or install.sh) replaces
 # the packaged one of the same name, so later fixes never apply: remove copies of
@@ -182,10 +197,11 @@ Homepage: $HOMEPAGE
 Description: $SUMMARY
 $(echo "$DESC" | sed 's/^/ /')
 EOF
-	printf '/etc/tdxd.conf\n/etc/tdxd.d/blender.conf.example\n/etc/tdxd.d/freecad.conf\n' > "$D/conffiles"
+	# no conffiles: the settings are copied in by SETTINGS (see there)
 	{ echo '#!/bin/sh'; echo 'set -e'
 	  echo '[ "$1" = configure ] || exit 0'
 	  echo 'if [ -n "${2:-}" ]; then set -- upgrade; else set -- install; fi'
+	  echo "$SETTINGS"
 	  echo "$POST_INSTALL"; } > "$D/postinst"
 	{ echo '#!/bin/sh'; echo 'set -e'; echo '[ "$1" = remove ] || exit 0'; echo "$PRE_REMOVE"; } > "$D/prerm"
 	{ echo '#!/bin/sh'; echo 'set -e'; echo "$POST_REMOVE"
@@ -230,15 +246,23 @@ cp -a $STAGE/root/. %{buildroot}/
 %post
 if [ "\$1" -ge 2 ]; then set -- upgrade; else set -- install; fi
 EOF
+	echo "$SETTINGS" | sed 's/%/%%/g'
 	echo "$POST_INSTALL" | sed 's/%/%%/g'
 	echo; echo '%preun'; echo 'if [ "$1" -eq 0 ]; then'; echo "$PRE_REMOVE" | sed 's/%/%%/g'; echo 'fi'
 	echo; echo '%postun'; echo "$POST_REMOVE" | sed 's/%/%%/g'
 	echo 'if [ "$1" -eq 0 ]; then'; echo "$CLEANUP" | sed 's/%/%%/g'; echo 'fi'
+	# after the whole upgrade: an older package listed the settings as %config
+	# files, and removing it after the new one's %post may have deleted them
+	# (unchanged) or moved them to .rpmsave (changed): bring them back
+	echo; echo '%posttrans'
+	echo 'for f in /etc/tdxd.conf /etc/tdxd.d/freecad.conf; do'
+	echo '	[ -e "$f" ] || [ ! -e "$f.rpmsave" ] || mv "$f.rpmsave" "$f"'
+	echo 'done'
+	echo "$SETTINGS" | sed 's/%/%%/g'
+	echo 'if [ -d /run/systemd/system ]; then systemctl try-restart tdxd.service || true; fi'
 	echo; echo '%files'
-	echo '%config(noreplace) /etc/tdxd.conf'
-	echo '%config(noreplace) /etc/tdxd.d/blender.conf.example'
-	echo '%config(noreplace) /etc/tdxd.d/freecad.conf'
-	echo '%dir /etc/tdxd.d'
+	echo '%dir /usr/share/tdxd'
+	echo '%dir /usr/share/tdxd/defaults'
 	echo '%dir /usr/lib/tdxd'
 	echo '%dir /usr/lib/tdxd/python'
 	echo '%dir /usr/share/doc/tdxd'
