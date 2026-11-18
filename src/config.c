@@ -172,8 +172,44 @@ int tdx_config_load(struct tdx_config *c, const char *path) { return config_load
 int tdx_config_load_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 1); }
 int tdx_config_load_user_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 2); }
 
+/* Names set by the file being read, so a profile that rebinds a key drops
+ * only the names earlier files gave it (the base config's "Save" on key 3). */
+struct label_seen {
+	char v3dk[TDX_MAX_NAMED_LABELS * 2][32];
+	int n;
+};
+
+static void seen_add(struct label_seen *ls, const char *v3dk)
+{
+	if (ls->n < (int)(sizeof ls->v3dk / sizeof ls->v3dk[0]))
+		snprintf(ls->v3dk[ls->n++], sizeof ls->v3dk[0], "%s", v3dk);
+}
+
+static int seen_has(const struct label_seen *ls, const char *v3dk)
+{
+	for (int i = 0; i < ls->n; i++)
+		if (!strcasecmp(ls->v3dk[i], v3dk))
+			return 1;
+	return 0;
+}
+
+/* A profile gave @v3dk a new function: forget an earlier file's name for it. */
+static void drop_old_label(struct tdx_config *c, const struct label_seen *ls, const char *v3dk)
+{
+	if (seen_has(ls, v3dk))
+		return;
+	for (int i = 0; i < c->nnamed_label; i++)
+		if (!strcasecmp(c->named_label[i].v3dk, v3dk))
+			c->named_label[i].text[0] = 0;
+	int n = !strncasecmp(v3dk, "V3DK_", 5) && isdigit((unsigned char)v3dk[5]) ? atoi(v3dk + 5) : 0;
+	if (n >= 1 && n <= TDX_MAX_LABELS)
+		c->lcd_label[n - 1][0] = 0;
+}
+
 static int config_load(struct tdx_config *c, const char *path, int profile)
 {
+	static struct label_seen seen; /* config_load is not reentrant */
+	seen.n = 0;
 	FILE *f;
 	if (profile == 2) {
 		/* a profile from a user's own folder: no symlinks, only a plain file */
@@ -294,9 +330,21 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 				snprintf(l->v3dk, sizeof l->v3dk, "%s", k + 10);
 				snprintf(l->text, sizeof l->text, "%s", v);
 			}
+			seen_add(&seen, k + 10);
+			/* lcd_label_V3DK_3 and lcd_label_3 name the same key: the later
+			 * one wins (a profile's name over the base config's number) */
+			int n = isdigit((unsigned char)k[15]) ? atoi(k + 15) : 0;
+			if (n >= 1 && n <= TDX_MAX_LABELS)
+				c->lcd_label[n - 1][0] = 0;
 		} else if (!strncmp(k, "lcd_label_", 10)) {
 			int n = atoi(k + 10);
 			if (n >= 1 && n <= TDX_MAX_LABELS) {
+				char named[32];
+				snprintf(named, sizeof named, "V3DK_%d", n);
+				for (int i = 0; i < c->nnamed_label; i++)
+					if (!strcmp(c->named_label[i].v3dk, named))
+						c->named_label[i].text[0] = 0;
+				seen_add(&seen, named);
 				snprintf(c->lcd_label[n - 1], sizeof c->lcd_label[0], "%s", v);
 				if (n > c->lcd_label_max)
 					c->lcd_label_max = n;
@@ -315,6 +363,8 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 				a = &c->actions[c->nactions++];
 			if (a) {
 				snprintf(a->v3dk, sizeof a->v3dk, "%s", k + 7);
+				if (profile)
+					drop_old_label(c, &seen, k + 7);
 				a->action = act; /* "none" (0) clears a base action */
 			}
 		} else if (!strncmp(k, "key_", 4)) {
@@ -350,6 +400,8 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 				continue;
 			memset(m, 0, sizeof *m);
 			snprintf(m->v3dk, sizeof m->v3dk, "%s", k + 4);
+			if (profile)
+				drop_old_label(c, &seen, k + 4);
 			memcpy(m->keys, keys, sizeof keys);
 			memcpy(m->step, step, sizeof step);
 			m->seq = ns > 1;

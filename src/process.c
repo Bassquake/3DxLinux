@@ -240,6 +240,7 @@ static const struct { const char *text; int keys[3]; } key_presets[] = {
 	{"Redo", {29, 42, 44}}, {"Save", {29, 31}}, {"Select All", {29, 30}}, {"Find", {29, 33}},
 	{"Align Window Left", {125, 105}}, {"Align Window Right", {125, 106}},
 	{"Cycle Apps", {56, 15}}, {"Show Desktop", {125, 32}},
+	{"Redo", {29, 21}}, {"Task Switcher", {29, 56, 15}}, {"New", {29, 49}}, {"Open", {29, 24}},
 };
 
 static const char *key_short(int code)

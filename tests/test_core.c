@@ -943,6 +943,42 @@ static void test_imported_profiles(void)
 	tdx_button_text(&c, spp, k1, t, sizeof t);
 	CHECK(!strcmp(t, "Arrange"));
 	CHECK(tdx_config_load_user_profile(&c, "test_user.d/3dx-link.conf") < 0); /* no symlinks */
+
+	/* key names: the base config names keys 1-10 by number; a profile's name for
+	 * a key wins, and a key it rebinds without a name loses the base's name */
+	write_file("test_base_lab.conf", "key_V3DK_3 = KEY_LEFTCTRL + KEY_S\nlcd_label_3 = Save\n"
+					 "key_V3DK_4 = KEY_LEFTCTRL + KEY_C\nlcd_label_4 = Copy\n"
+					 "key_V3DK_5 = KEY_LEFTCTRL + KEY_X\nlcd_label_5 = Cut\n"
+					 "lcd_label_V3DK_TOP = Base Top\n");
+	write_file("test_imp.d/3dx-lab.conf", "match = lab\n"
+					      "key_V3DK_3 = KEY_LEFTCTRL + KEY_LEFTSHIFT + KEY_R\n"
+					      "lcd_label_V3DK_3 = Refresh\n"
+					      "key_V3DK_4 = KEY_LEFTCTRL + KEY_Y\n"
+					      "key_V3DK_TOP = KEY_LEFTSHIFT + KEY_KP7\n");
+	write_file("test_imp.d/3dx-lab2.conf", "match = lab2\nlcd_label_3 = Mine\n"
+					       "key_V3DK_3 = KEY_F5\n");
+	CHECK(tdx_profiles_scan("test_imp.d", &ps) == 0);
+	tdx_config_compose(&c, "test_base_lab.conf", &ps, tdx_profile_match(&ps, "lab"));
+	int k4 = -1, k5 = -1, top = -1;
+	for (int i = 0; i < spp->nbuttons; i++) {
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_4")) k4 = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_5")) k5 = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_TOP")) top = i;
+	}
+	tdx_button_text(&c, spp, k3, t, sizeof t);
+	CHECK(!strcmp(t, "Refresh"));               /* the profile's name, not "Save" */
+	tdx_button_text(&c, spp, k4, t, sizeof t);
+	CHECK(!strcmp(t, "Redo"));                  /* rebound, no name: not "Copy" */
+	tdx_button_text(&c, spp, k5, t, sizeof t);
+	CHECK(!strcmp(t, "Cut"));                   /* untouched: the base's name */
+	tdx_button_text(&c, spp, top, t, sizeof t);
+	CHECK(strcmp(t, "Base Top") != 0);          /* named keys too */
+	tdx_config_compose(&c, "test_base_lab.conf", &ps, tdx_profile_match(&ps, "lab2"));
+	tdx_button_text(&c, spp, k3, t, sizeof t);
+	CHECK(!strcmp(t, "Mine"));                  /* named before the key line: kept */
+	remove("test_base_lab.conf");
+	remove("test_imp.d/3dx-lab.conf");
+	remove("test_imp.d/3dx-lab2.conf");
 	remove("test_etc.d/blender.conf");
 	remove("test_imp.d/blender.conf");
 	remove("test_imp.d/3dx-blender.conf");
