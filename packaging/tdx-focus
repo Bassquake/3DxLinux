@@ -12,6 +12,9 @@ TDXCTL=${TDXCTL:-tdxctl}
 export TDXCTL
 last=""
 
+# FreeCAD: keep tdxd's add-on loader in place (the keys follow the workbench)
+command -v tdx-freecad-addon >/dev/null 2>&1 && tdx-freecad-addon install >/dev/null 2>&1
+
 kwin_helper() { # tdx-focus-kwin: installed in lib/tdxd, or next to us in the source tree
 	here=$(dirname "$(readlink -f "$0")")
 	for p in "$here/../lib/tdxd/tdx-focus-kwin" /usr/lib/tdxd/tdx-focus-kwin \

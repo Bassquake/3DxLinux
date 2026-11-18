@@ -1,0 +1,42 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# tdx-freecad-addon - put tdxd's FreeCAD add-on loader into your FreeCAD add-on
+# folders (or take it out again), so the SpacePilot's keys follow FreeCAD's
+# active workbench. The add-on itself is installed with tdxd
+# (/usr/share/tdxd/freecad); only a small loader goes into each FreeCAD folder.
+#
+#   tdx-freecad-addon [install]   for every FreeCAD found in your home
+#   tdx-freecad-addon remove
+#
+# FreeCAD as a Flatpak or Snap can't see /usr/share, so it isn't covered.
+set -u
+NAME=TdxdSpaceMouse
+here=$(dirname "$(readlink -f "$0")")
+src=""
+for d in "$here/../share/tdxd/freecad" /usr/share/tdxd/freecad /usr/local/share/tdxd/freecad "$here/freecad"; do
+	[ -f "$d/$NAME/InitGui.py" ] && { src="$d/$NAME"; break; }
+done
+base=${XDG_DATA_HOME:-$HOME/.local/share}/FreeCAD
+
+# FreeCAD's user add-on folders: Mod (FreeCAD <= 1.0) and v1-1/Mod etc. (1.1+)
+mods() {
+	[ -d "$base" ] || return 0
+	echo "$base/Mod"
+	for v in "$base"/v*; do [ -d "$v" ] && echo "$v/Mod"; done
+}
+
+case "${1:-install}" in
+install)
+	[ -n "$src" ] || { echo "tdx-freecad-addon: the add-on files are missing" >&2; exit 1; }
+	[ -d "$base" ] || { echo "tdx-freecad-addon: no FreeCAD settings in $base (start FreeCAD once)"; exit 0; }
+	mods | while read -r m; do
+		mkdir -p "$m/$NAME" && cp "$src/InitGui.py" "$m/$NAME/InitGui.py" && echo "installed in $m"
+	done ;;
+remove)
+	mods | while read -r m; do
+		[ -d "$m/$NAME" ] && rm -rf "${m:?}/$NAME" && echo "removed from $m"
+	done ;;
+*)
+	echo "usage: tdx-freecad-addon [install|remove]" >&2; exit 2 ;;
+esac
+exit 0

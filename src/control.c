@@ -55,7 +55,7 @@ int tdx_ctl_serve(int lfd, tdx_ctl_handler h)
 	struct timeval tv = {.tv_sec = 0, .tv_usec = 300000}; /* never stall the daemon */
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
-	char cmd[512];
+	char cmd[2048]; /* app-buttons carries up to a dozen key names */
 	size_t n = 0;
 	while (n < sizeof cmd - 1) {
 		ssize_t r = read(fd, cmd + n, sizeof cmd - 1 - n);

@@ -539,6 +539,56 @@ def devices_json(base_xml):
     return out
 
 
+def freecad_buttons(navlib_xml):
+    """3DxWare's FreeCAD key setup (FreeCAD_Navlib.xml, for FreeCAD 0.22+ through
+    NavLib) -> what the tdxd FreeCAD add-on needs:
+      banks:   workbench (FreeCAD's name, "Default" otherwise) -> {V3DK id: action id}
+      actions: action id -> {name, command, index} (FreeCAD command, a group
+               command's entry number) or {name, menu} (a radial menu)
+      menus:   menu id -> {name, items: [action ids]}
+    Only FreeCAD commands and radial menus: 3DxWare's own functions on a key
+    (or a key a workbench leaves out) stay with tdxd's configuration."""
+    root = ET.parse(navlib_xml).getroot()
+    names = {a.findtext("ID"): a.findtext("Name") or "" for a in root.iter("ButtonAction")}
+    menu_of = {a.findtext("ID"): a.findtext("MenuID") for a in root.iter("ButtonAction")
+               if a.findtext("MenuID")}
+    actions, menus, banks = {}, {}, {}
+
+    def action(aid):
+        if aid in actions:
+            return True
+        if aid.startswith("AppCommand_"):
+            parts = aid[len("AppCommand_"):].split("|")
+            if len(parts) < 2 or not parts[1]:
+                return False
+            idx = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
+            actions[aid] = {"name": names.get(aid) or parts[1], "command": parts[1], "index": idx}
+            return True
+        if aid.startswith("RadialMenu_") and menu_of.get(aid):
+            mid = menu_of[aid]
+            m = next((m for m in root.iter("Menu") if m.findtext("ID") == mid), None)
+            if m is None:
+                return False
+            items = [b.findtext("Output/ActionID") for b in m.findall("Button")]
+            items = [i for i in items if i and action(i)]
+            menus[mid] = {"name": m.findtext("Name") or names.get(aid, ""), "items": items}
+            actions[aid] = {"name": names.get(aid) or menus[mid]["name"], "menu": mid}
+            return True
+        return False
+
+    for dev in root.iter("Device"):
+        if dev.findtext("ID") != "ID_Standard_3D_Mouse":
+            continue
+        for bank in dev.iter("ButtonBank"):
+            keys = {}
+            for b in bank.findall("Button"):
+                key, aid = b.findtext("Input/ActionID"), b.findtext("Output/ActionID")
+                if key and key.startswith("V3DK_") and aid and action(aid):
+                    keys[key] = aid
+            banks[bank.findtext("ID") or "Default"] = keys
+    return {"banks": banks, "actions": actions, "menus": menus}
+
+
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         print(__doc__)
@@ -607,6 +657,15 @@ def main():
         if base:
             with open(os.path.join(out, "devices.json"), "w") as f:
                 json.dump(devices_json(base), f, indent=1, sort_keys=True)
+        nav = by_name.get("FreeCAD_Navlib.xml")
+        if nav:  # FreeCAD's per-workbench keys, for the tdxd FreeCAD add-on
+            fc = freecad_buttons(nav)
+            fc["source"] = os.path.basename(installer)
+            os.makedirs(os.path.join(out, "freecad"), exist_ok=True)
+            with open(os.path.join(out, "freecad", "buttons.json"), "w") as f:
+                json.dump(fc, f, indent=1, sort_keys=True)
+            print("FreeCAD keys: %d workbenches, %d commands, %d menus"
+                  % (len(fc["banks"]), len(fc["actions"]), len(fc["menus"])))
         with open(os.path.join(out, "SOURCE"), "w") as f:
             f.write("Extracted from %s for local use by tdx-settings.\n"
                     "Artwork (c) 3Dconnexion; do not redistribute.\n" % os.path.basename(installer))

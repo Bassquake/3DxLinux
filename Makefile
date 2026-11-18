@@ -99,6 +99,10 @@ test-lcdmgr: $(BUILD)/tdx-lcdmgr $(BUILD)/tdx-lcd-demo
 test-lcdapplets: $(BUILD)/tdx-lcdmgr
 	python3 tests/test_lcdapplets.py $(BUILD)
 
+# FreeCAD key sets: the importer and the FreeCAD add-on (stand-ins, no FreeCAD needed)
+test-freecad:
+	python3 tests/test_freecad.py
+
 # Regenerate src/font_aa.c (needs python3-gi with Pango and the DejaVu fonts)
 font:
 	python3 tools/gen_font.py > src/font_aa.c
@@ -113,6 +117,9 @@ install: all
 	install -Dm755 $(BUILD)/tdx-lcd  $(DESTDIR)$(PREFIX)/bin/tdx-lcd
 	install -Dm755 $(BUILD)/tdxctl   $(DESTDIR)$(PREFIX)/bin/tdxctl
 	install -Dm755 packaging/tdx-focus $(DESTDIR)$(PREFIX)/bin/tdx-focus
+	install -Dm755 packaging/tdx-freecad-addon $(DESTDIR)$(PREFIX)/bin/tdx-freecad-addon
+	install -Dm644 packaging/freecad/tdxd_freecad.py $(DESTDIR)$(PREFIX)/share/tdxd/freecad/tdxd_freecad.py
+	install -Dm644 packaging/freecad/TdxdSpaceMouse/InitGui.py $(DESTDIR)$(PREFIX)/share/tdxd/freecad/TdxdSpaceMouse/InitGui.py
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-settings
 	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
 	install -Dm755 packaging/tdx-focus-kwin $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-focus-kwin
@@ -153,7 +160,10 @@ dist:
 	rm -rf $(BUILD)   # rebuild everything so the embedded version is current
 	$(MAKE) STATIC=1 ARCH=$(ARCH) VERSION=$(VERSION) all
 	rm -rf $(DIST) && mkdir -p $(DIST)/bin $(DIST)/lib
-	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl packaging/tdx-focus $(DIST)/bin/
+	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl packaging/tdx-focus packaging/tdx-freecad-addon $(DIST)/bin/
+	mkdir -p $(DIST)/freecad/TdxdSpaceMouse
+	cp packaging/freecad/tdxd_freecad.py $(DIST)/freecad/
+	cp packaging/freecad/TdxdSpaceMouse/InitGui.py $(DIST)/freecad/TdxdSpaceMouse/
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings > $(DIST)/bin/tdx-settings
 	cp gui/tdx-settings-helper packaging/tdx-focus-kwin $(DIST)/lib/
 	cp tools/extract_3dxware_ui.py $(DIST)/bin/tdx-extract-3dxware-ui
@@ -203,4 +213,4 @@ release:
 clean:
 	rm -rf build
 
-.PHONY: all test test-gui test-lcdmgr test-lcdapplets font install clean devices dist packages release
+.PHONY: all test test-gui test-lcdmgr test-lcdapplets test-freecad font install clean devices dist packages release

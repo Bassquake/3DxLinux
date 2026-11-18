@@ -284,6 +284,12 @@ void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *
 {
 	const char *v3dk = (dev && idx < dev->nbuttons) ? dev->buttons[idx].v3dk : NULL;
 	out[0] = 0;
+	/* 0. the focused application's own name for the key (tdxctl app-buttons) */
+	for (int i = 0; v3dk && i < cfg->napp_label; i++)
+		if (!strcmp(cfg->app_label[i].v3dk, v3dk) && cfg->app_label[i].text[0]) {
+			snprintf(out, len, "%s", cfg->app_label[i].text);
+			return;
+		}
 	/* 1. explicit LCD label (lcd_label_N for V3DK_N, when set in the configuration) */
 	if (v3dk && !strncmp(v3dk, "V3DK_", 5) && v3dk[5] >= '1' && v3dk[5] <= '9') {
 		int n = atoi(v3dk + 5);

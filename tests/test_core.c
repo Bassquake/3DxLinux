@@ -1121,6 +1121,13 @@ static void test_freecad_profile(void)
 	tdx_button_text(&c, spp, fit, t, sizeof t);
 	CHECK(!strcmp(t, "Fit All"));
 	CHECK(c.nnamed_label == 10);
+	/* the focused application's own name for a key comes first (app-buttons) */
+	snprintf(c.app_label[0].v3dk, sizeof c.app_label[0].v3dk, "V3DK_TOP");
+	snprintf(c.app_label[0].text, sizeof c.app_label[0].text, "Create sketch");
+	c.napp_label = 1;
+	tdx_button_text(&c, spp, top, t, sizeof t);
+	CHECK(!strcmp(t, "Create sketch"));
+	c.napp_label = 0;
 	/* without a label a sequence reads "V, F" */
 	c.nnamed_label = 0;
 	tdx_button_text(&c, spp, fit, t, sizeof t);

@@ -39,6 +39,9 @@ stage() { # stage LIBDIR -> $STAGE/root
 	done
 	install -Dm755 "$DIST/lib/tdx-settings-helper" "$R/usr/lib/tdxd/tdx-settings-helper"
 	install -Dm755 "$DIST/lib/tdx-focus-kwin" "$R/usr/lib/tdxd/tdx-focus-kwin"
+	install -Dm755 "$DIST/bin/tdx-freecad-addon" "$R/usr/bin/tdx-freecad-addon"
+	install -Dm644 "$DIST/freecad/tdxd_freecad.py" "$R/usr/share/tdxd/freecad/tdxd_freecad.py"
+	install -Dm644 "$DIST/freecad/TdxdSpaceMouse/InitGui.py" "$R/usr/share/tdxd/freecad/TdxdSpaceMouse/InitGui.py"
 	install -Dm644 "$DIST/lib/python/tdxlcd.py" "$R/usr/lib/tdxd/python/tdxlcd.py"
 	install -Dm644 "$DIST/lib/python/lcdapplet.py" "$R/usr/lib/tdxd/python/lcdapplet.py"
 	install -Dm755 "$DIST/lib/libtdxlcd.so.1" "$R$L/libtdxlcd.so.1"
@@ -166,6 +169,11 @@ getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
 	case "$home" in *..*) continue ;; esac
 	[ -d "$home" ] || continue
 	rm -rf "$home/.config/tdxd" "$home/.local/share/tdxd"
+	# the FreeCAD add-on loader (tdx-freecad-addon), in each FreeCAD version'"'"'s folder
+	rm -rf "$home/.local/share/FreeCAD/Mod/TdxdSpaceMouse"
+	for m in "$home"/.local/share/FreeCAD/v*/Mod/TdxdSpaceMouse; do
+		[ -d "$m" ] && rm -rf "$m"
+	done
 	rm -f "$home"/.local/share/icons/hicolor/*/apps/tdxd-*.png
 	for e in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
 		rm -f "$home/.local/share/applications/$e.desktop"

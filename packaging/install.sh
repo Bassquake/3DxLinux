@@ -13,7 +13,9 @@ fi
 
 if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
+	rm -rf "$PREFIX/share/tdxd/freecad"
 	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
+	      "$PREFIX/bin/tdx-freecad-addon" \
 	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
 	      "$PREFIX/lib/tdxd/tdx-focus-kwin" \
 	      "$PREFIX/bin/tdx-extract-3dxware-ui" \
@@ -42,6 +44,11 @@ install -Dm755 bin/tdxd    "$PREFIX/bin/tdxd"
 install -Dm755 bin/tdx-lcd "$PREFIX/bin/tdx-lcd"
 install -Dm755 bin/tdxctl  "$PREFIX/bin/tdxctl"
 install -Dm755 bin/tdx-focus "$PREFIX/bin/tdx-focus"
+# FreeCAD add-on: the keys follow the active workbench (tdx-freecad-addon puts
+# its loader into each user's FreeCAD folder, at login via tdx-focus)
+install -Dm755 bin/tdx-freecad-addon "$PREFIX/bin/tdx-freecad-addon"
+install -Dm644 freecad/tdxd_freecad.py "$PREFIX/share/tdxd/freecad/tdxd_freecad.py"
+install -Dm644 freecad/TdxdSpaceMouse/InitGui.py "$PREFIX/share/tdxd/freecad/TdxdSpaceMouse/InitGui.py"
 # settings panel (Python 3 + GTK 3: python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)
 install -Dm755 bin/tdx-settings "$PREFIX/bin/tdx-settings"
 install -Dm755 lib/tdx-settings-helper "$PREFIX/lib/tdxd/tdx-settings-helper"

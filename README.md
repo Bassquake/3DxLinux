@@ -277,6 +277,27 @@ tdxd learns which application is focused in one of two ways:
 `tdxctl status` shows the active profile and how the application was detected.
 `tdxctl profiles` lists the profiles.
 
+### FreeCAD: keys that follow the workbench
+
+On Windows, 3DxWare gives FreeCAD a different set of key functions for each
+workbench (Part Design key 1 is "Create sketch", Sketcher has its own set, and
+so on), with radial menus on some keys. tdxd does the same with a small FreeCAD
+add-on:
+
+1. Import the 3DxWare look (above). Besides the artwork this reads the key sets
+   out of 3DxWare's `FreeCAD_Navlib.xml` into `freecad/buttons.json`, and puts
+   the add-on loader in `~/.local/share/FreeCAD/Mod/TdxdSpaceMouse` (also done
+   by `tdx-focus` at login, or by hand with `tdx-freecad-addon install`).
+2. Restart FreeCAD.
+
+The add-on tells tdxd which keys the active workbench uses and what to call them
+on the LCD (`tdxctl app-buttons`); tdxd then sends those keys only to FreeCAD,
+which runs the command. A radial menu opens as a pop-up menu at the mouse
+pointer. Keys a workbench leaves out keep their usual functions, and a command
+you set yourself in FreeCAD's Spaceball button settings is left alone.
+`tdx-freecad-addon remove` takes the add-on out again. Nothing from 3DxWare is
+shipped with tdxd: the key sets come from your own installer.
+
 ## LCD
 
 ### LCD Manager and applets

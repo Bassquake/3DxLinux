@@ -92,6 +92,13 @@ static int lcdcfg_dirty;
 static long long info_until;      /* when to clear them again */
 static int focus_pid;
 static int focus_known;           /* a focus helper has reported at least once */
+/* Keys an application handles itself while it has the focus, with its names for
+ * them (tdxctl app-buttons; the FreeCAD add-on, per workbench): tdxd shows the
+ * names on the LCD and leaves the keys to it - no shortcut, no action, only the
+ * spacenav button event the application acts on. */
+static char appkeys_app[64];
+static struct tdx_named_label appkeys[TDX_MAX_NAMED_LABELS];
+static int nappkeys;
 static int ctl_fd = -1;
 static int lcdmgr_fd = -1; /* held "lcd-release" connection from tdx-lcdmgr */
 static char ctl_path[108];
@@ -549,6 +556,28 @@ static const char *current_app(const char **source)
 }
 
 /* LCDCfg.xml for the LCD applets (Function Keys), as 3DxService writes it. */
+static int appkeys_active(void)
+{
+	return nappkeys && focus_known && !strcasecmp(focus_app, appkeys_app);
+}
+
+/* cfg is recomposed on every profile switch: put the application's names back */
+static void appkeys_to_cfg(void)
+{
+	cfg.napp_label = appkeys_active() ? nappkeys : 0;
+	memcpy(cfg.app_label, appkeys, sizeof appkeys);
+}
+
+static int appkeys_claims(const char *v3dk)
+{
+	if (!v3dk || !appkeys_active())
+		return 0;
+	for (int i = 0; i < nappkeys; i++)
+		if (!strcmp(appkeys[i].v3dk, v3dk))
+			return 1;
+	return 0;
+}
+
 static void lcdcfg_write(void)
 {
 	if (!cfg.lcd_cfg[0] || !ndev)
@@ -559,6 +588,7 @@ static void lcdcfg_write(void)
 			d = &devs[i];
 			break;
 		}
+	appkeys_to_cfg();
 	const char *src;
 	const char *app = current_app(&src);
 	char exe[256] = "";
@@ -699,6 +729,42 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 	} else if (!strcmp(verb, "reload")) {
 		g_reload = 1;
 		snprintf(reply, len, "ok reloading\n");
+	} else if (!strcmp(verb, "buttons")) {
+		/* each key's number (= the spacenav button number apps get) and V3DK id */
+		const struct dev_ctx *d = NULL;
+		for (int i = 0; i < ndev && !d; i++)
+			if (devs[i].node.def->nbuttons)
+				d = &devs[i];
+		size_t o = 0;
+		for (int i = 0; d && i < d->node.def->nbuttons && o < len; i++)
+			if (d->node.def->buttons[i].v3dk)
+				o += (size_t)snprintf(reply + o, len - o, "%d %s\n", i,
+						      d->node.def->buttons[i].v3dk);
+		if (!d)
+			snprintf(reply, len, "error: no device\n");
+	} else if (!strcmp(verb, "app-buttons")) {
+		/* app-buttons PID [TAB V3DK TAB name]...  (fields split by tabs: names
+		 * have spaces). The application is named from PID like focus; no pairs
+		 * clears. */
+		char *rest = save ? save : (char *)"";
+		char *tsave = NULL, *pid = strtok_r(rest, "\t", &tsave);
+		char name[64];
+		if (!pid || atoi(pid) <= 0 || tdx_app_from_pid(atoi(pid), name, sizeof name)) {
+			snprintf(reply, len, "error: app-buttons needs the process id of the application\n");
+			return;
+		}
+		snprintf(appkeys_app, sizeof appkeys_app, "%s", name);
+		nappkeys = 0;
+		for (char *k; (k = strtok_r(NULL, "\t", &tsave)) && nappkeys < TDX_MAX_NAMED_LABELS;) {
+			char *t = strtok_r(NULL, "\t", &tsave);
+			if (strncmp(k, "V3DK_", 5))
+				continue;
+			snprintf(appkeys[nappkeys].v3dk, sizeof appkeys[0].v3dk, "%s", k);
+			snprintf(appkeys[nappkeys].text, sizeof appkeys[0].text, "%s", t ? t : "");
+			nappkeys++;
+		}
+		lcdcfg_write();
+		snprintf(reply, len, "ok %s: %d keys\n", appkeys_app, nappkeys);
 	} else if (!strcmp(verb, "profiles")) {
 		size_t o = (size_t)snprintf(reply, len, "profile_dir %s (%d profiles)\n", cfg.profile_dir,
 					    profiles.n);
@@ -778,10 +844,17 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 		int p = d->st.btn[i];
 		const char *v3dk = d->node.def->nbuttons ? d->node.def->buttons[i].v3dk : NULL;
 		LOG(2, "button %d (%s) %s\n", i + 1, v3dk ? v3dk : "-", p ? "down" : "up");
+		appkeys_to_cfg();
 		if (p && cfg.lcd_cfg[0]) { /* LCDCfg.xml <ButtonPressed>, cleared after 3 s */
 			tdx_button_text(&cfg, d->node.def, i, info_pressed, sizeof info_pressed);
 			info_until = now_ms() + 3000;
 			lcdcfg_dirty = 1;
+		}
+		if (appkeys_claims(v3dk)) { /* the application runs its own command for it */
+			tdx_uinput_button(&d->ui, i, p);
+			if (spnav.lfd >= 0)
+				tdx_spnav_button(&spnav, i, p);
+			continue;
 		}
 		int act = tdx_action_for(&cfg, d->node.def, i);
 		if (act != TDX_ACT_NONE) {

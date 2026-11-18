@@ -74,6 +74,10 @@ struct tdx_config {
 	int lcd_label_max;        /* highest lcd_label_N set in the file */
 	struct tdx_named_label named_label[TDX_MAX_NAMED_LABELS];
 	int nnamed_label;
+	/* runtime, not from a file: names the focused application gave its keys
+	 * (tdxctl app-buttons, e.g. the FreeCAD add-on); first in tdx_button_text */
+	struct tdx_named_label app_label[TDX_MAX_NAMED_LABELS];
+	int napp_label;
 	char lcd_slide_button[32];/* V3DK id that slides the Giotto LCD to the next page */
 	char lcd_bmp_dir[256];    /* Giotto legacy path: watch DIR/sp4LCD.bmp (0x13) */
 	int lcd_slide_step;       /* slide speed, pixels per 25 ms step */
