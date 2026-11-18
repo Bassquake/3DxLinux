@@ -16,3 +16,12 @@ SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="256f", ATTR{idPro
 
 # uinput for the virtual output device
 KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"
+
+# The kernel's own input device for the 3D mouse (hid-generic) is classed as a
+# mouse (ID_INPUT_MOUSE), so the desktop moved the cursor with the cap. tdxd
+# reads the device through hidraw and makes its own; hide this one from
+# libinput. Only real USB/Bluetooth devices: tdxd's virtual ones have no
+# USB/Bluetooth parent and stay visible.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c6[0-2][0-9a-f]", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="256f", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+SUBSYSTEM=="input", KERNEL=="event*", KERNELS=="0005:256F:*", ENV{LIBINPUT_IGNORE_DEVICE}="1"
