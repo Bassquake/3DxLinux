@@ -375,4 +375,4 @@ itself when 1-5 are held past about half a second.
 |---|---|
 | Keys 1-5 (taps) | **Pass:** New Ctrl+N, Open Ctrl+O, Save Ctrl+S, Copy Ctrl+C, Cut Ctrl+X on the "(tdxd keys)" device. |
 | Keys 6-10 (hold 1-5) | **Pass:** Paste Ctrl+V, window left Super+Left, window right Super+Right, switch app Alt+Tab, Undo Ctrl+Z. |
-| MENU → settings panel | Not tested here (WSL's root has no desktop session to open it in). |
+| MENU → settings panel | **Pass** on the Kubuntu 26.04 PC (KDE Plasma, test build `0.3.4+5+g69a5e51`): with `action_V3DK_MENU = settings`, MENU opens tdx-settings on the desktop. (Not testable in WSL: root has no desktop session there.) |
