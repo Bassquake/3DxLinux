@@ -49,7 +49,7 @@ stage() { # stage LIBDIR -> $STAGE/root
 	for u in tdx-lcdmgr tdx-focus; do
 		sed 's#/usr/local/bin#/usr/bin#' "$DIST/$u.service" > "$R/usr/lib/systemd/user/$u.service"
 	done
-	install -Dm644 "$DIST/99-3dconnexion-tdxd.rules" "$R/usr/lib/udev/rules.d/99-3dconnexion-tdxd.rules"
+	install -Dm644 "$DIST/70-3dconnexion-tdxd.rules" "$R/usr/lib/udev/rules.d/70-3dconnexion-tdxd.rules"
 	install -d "$R/usr/lib/modules-load.d"
 	echo uinput > "$R/usr/lib/modules-load.d/tdxd.conf"
 	for d in "$DIST"/*.desktop; do

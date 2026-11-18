@@ -133,7 +133,8 @@ install: all
 	sed 's#/usr/local/lib/tdxd#$(PREFIX)/lib/tdxd#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
 	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/tdxd.d/blender.conf.example
-	install -Dm644 packaging/99-3dconnexion-tdxd.rules $(DESTDIR)/etc/udev/rules.d/99-3dconnexion-tdxd.rules
+	install -Dm644 packaging/70-3dconnexion-tdxd.rules $(DESTDIR)/etc/udev/rules.d/70-3dconnexion-tdxd.rules
+	rm -f $(DESTDIR)/etc/udev/rules.d/99-3dconnexion-tdxd.rules  # old name, too late for uaccess
 	install -Dm644 packaging/tdxd.service $(DESTDIR)/etc/systemd/system/tdxd.service
 	test -e $(DESTDIR)/etc/tdxd.conf || install -Dm644 packaging/tdxd.conf $(DESTDIR)/etc/tdxd.conf
 
@@ -164,7 +165,7 @@ dist:
 	cp $(BUILD)/libtdxlcd.so $(DIST)/lib/libtdxlcd.so.1
 	cp src/tdxlcd.h $(DIST)/include/
 	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
-	cp packaging/99-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
+	cp packaging/70-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
 	   packaging/tdx-focus.service packaging/profiles/blender.conf.example \
 	   packaging/install.sh packaging/tdx-lcdmgr.service gui/*.desktop gui/org.tdxd.settings.policy \
 	   README.md docs/PROTOCOL.md $(DIST)/

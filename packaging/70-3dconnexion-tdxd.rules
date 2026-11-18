@@ -1,4 +1,8 @@
 # tdxd: access to 3Dconnexion devices for the logged-in user and the tdxd service.
+# Numbered before 73-seat-late.rules: that is where systemd turns TAG+="uaccess"
+# into the logged-in user's ACL. In a later file (it was 99-) the tag comes too
+# late and only root can open the LCD - tdx-lcdmgr, which runs as the user,
+# then can't draw and the LCD keeps its idle "SpacePilot PRO" picture.
 # hidraw nodes (motion + buttons) for Logitech-era (046d) and 3Dconnexion (256f) devices
 KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c6[0-2][0-9a-f]", MODE="0660", GROUP="input", TAG+="uaccess"
 KERNEL=="hidraw*", ATTRS{idVendor}=="256f", MODE="0660", GROUP="input", TAG+="uaccess"

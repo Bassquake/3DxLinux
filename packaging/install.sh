@@ -27,7 +27,8 @@ if [ "${1:-}" = "--remove" ]; then
 	      "$PREFIX/share/applications/tdx-lcd-rss.desktop" \
 	      "$PREFIX/share/applications/tdx-lcd-pictures.desktop" \
 	      /usr/share/polkit-1/actions/org.tdxd.settings.policy \
-	      /etc/udev/rules.d/99-3dconnexion-tdxd.rules /etc/systemd/system/tdxd.service \
+	      /etc/udev/rules.d/70-3dconnexion-tdxd.rules /etc/udev/rules.d/99-3dconnexion-tdxd.rules \
+	      /etc/systemd/system/tdxd.service \
 	      /etc/systemd/user/tdx-focus.service /etc/tdxd.d/blender.conf.example
 	rmdir "$PREFIX/lib/tdxd/python" "$PREFIX/lib/tdxd" 2>/dev/null || true
 	udevadm control --reload 2>/dev/null || true
@@ -69,7 +70,8 @@ mkdir -p /etc/systemd/user /etc/tdxd.d
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-focus.service > /etc/systemd/user/tdx-focus.service
 chmod 644 /etc/systemd/user/tdx-focus.service
 install -Dm644 blender.conf.example /etc/tdxd.d/blender.conf.example
-install -Dm644 99-3dconnexion-tdxd.rules /etc/udev/rules.d/99-3dconnexion-tdxd.rules
+install -Dm644 70-3dconnexion-tdxd.rules /etc/udev/rules.d/70-3dconnexion-tdxd.rules
+rm -f /etc/udev/rules.d/99-3dconnexion-tdxd.rules   # its name before 0.3.2: too late for uaccess
 sed "s#/usr/local/bin/tdxd#$PREFIX/bin/tdxd#" tdxd.service > /etc/systemd/system/tdxd.service
 chmod 644 /etc/systemd/system/tdxd.service
 [ -e /etc/tdxd.conf ] || install -Dm644 tdxd.conf /etc/tdxd.conf
