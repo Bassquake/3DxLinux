@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.dont_write_bytecode = True
 
@@ -185,6 +186,46 @@ def gui_tests(d, tdxd):
            "wrote /home/u/.local/share/tdxd/3dxware-ui"]
     check(ts.import_summary(out) == "485 images into /home/u/.local/share/tdxd/3dxware-ui",
           "import summary: %s" % ts.import_summary(out))
+
+    # ---- changes apply right away, also for a root-owned /etc/tdxd.conf
+    # (pkexec faked): saved in the background, then on close after a cancel
+    from gi.repository import GLib
+    app.store.select(None)
+    orig = ts.writable, ts.write_file_data
+    saved = []
+    answer = [None]
+    ts.writable = lambda p: False
+    ts.write_file_data = lambda conf, data: (saved.append(data), answer[0])[1]
+    app.args.no_save = False
+
+    def settle(cond, secs=5):
+        end = time.time() + secs
+        ctx = GLib.MainContext.default()
+        while time.time() < end and not cond():
+            ctx.iteration(False)
+            time.sleep(0.01)
+        return cond()
+    a, b = ("yes", "no") if app.store.base.get("led", "yes") == "no" else ("no", "yes")
+    app.store.set("led", a)
+    check(settle(lambda: saved and not app.saving and app.save_state.startswith("Saved")),
+          "a change to a root-owned file is saved right away: %r" % app.save_state)
+    check(saved and "led = " + a in saved[-1] and not app.store.base.dirty,
+          "the change written once")
+    answer[0] = ts.PKEXEC_CANCELLED
+    n = len(saved)
+    app.store.set("led", b)
+    check(settle(lambda: app.pw_declined), "a cancelled password is noticed")
+    app.store.set("led", a)
+    settle(lambda: False, 1.5)
+    check(len(saved) == n + 1 and app.store.base.dirty and
+          app.save_state == "Saved when you close (password)",
+          "after a cancel: no more prompts, saved on close (%d writes)" % (len(saved) - n))
+    answer[0] = None
+    app.flush()
+    check(not app.store.base.dirty and "led = " + a in saved[-1], "saved on close")
+    ts.writable, ts.write_file_data = orig
+    app.args.no_save = True
+    app.pw_declined = False
 
     # ---- restore button defaults in the base
     app.store.select(None)

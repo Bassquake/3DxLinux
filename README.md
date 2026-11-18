@@ -164,9 +164,12 @@ attached, Windows and 3DxWare cannot use it.
 `tdx-settings` is a GTK 3 port of the 3DxWare control panel with the same
 windows, layout and controls: the main window (device, Speed), **Advanced
 Settings**, **Buttons**, **LCD Manager** and **About** ("More ›"). It edits the
-same files as the table below, keeps their comments, and runs `tdxctl reload`
-after each change. Files in `/etc` that you cannot write are saved through
-`pkexec tdx-settings-helper` when you close a window (one administrator prompt).
+same files as the table below and keeps their comments. As in 3DxWare, every
+change takes effect right away: the panel saves it and runs `tdxctl reload`.
+Files in `/etc` that you cannot write are saved through `pkexec
+tdx-settings-helper`: the system asks for your password at the first change and
+then remembers it for a few minutes. If you cancel the password prompt, the
+panel stops asking and saves when you close the window instead.
 The window title names the profile being edited; click it to switch between the
 defaults and the per-application profiles, or to create one for the focused
 application.

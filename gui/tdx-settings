@@ -406,7 +406,16 @@ class Daemon:
 
 def write_file(conf, parent=None):
     """Write @conf, falling back to the pkexec helper. Returns an error string or None."""
-    data = conf.text()
+    err = write_file_data(conf, conf.text())
+    if not err:
+        conf.dirty = False
+        conf.exists = True
+    return err
+
+
+def write_file_data(conf, data):
+    """Write @data to @conf's file (pkexec if it is root's); leaves @conf itself
+    alone, so a save thread can call it. An error string or None."""
     d = os.path.dirname(conf.path) or "."
     try:
         if not os.path.isdir(d):
@@ -420,21 +429,31 @@ def write_file(conf, parent=None):
             os.chmod(tmp, 0o644)
         os.replace(tmp, conf.path)
     except PermissionError:
-        helper = find_program("tdx-settings-helper")
-        pkexec = shutil.which("pkexec")
-        if not helper or not pkexec:
-            return "%s is not writable (and pkexec / tdx-settings-helper is missing)" % conf.path
-        try:
-            p = subprocess.run([pkexec, helper, "write", conf.path], input=data, text=True,
-                               capture_output=True, timeout=300)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            return str(e)
-        if p.returncode:
-            return (p.stderr or p.stdout or "pkexec failed (%d)" % p.returncode).strip()
+        return pkexec_write(conf.path, data)
     except OSError as e:
         return "%s: %s" % (conf.path, e.strerror)
-    conf.dirty = False
-    conf.exists = True
+    return None
+
+
+PKEXEC_CANCELLED = "password cancelled"
+
+
+def pkexec_write(path, data):
+    """Write @data to the root-owned @path through `pkexec tdx-settings-helper`.
+    None, PKEXEC_CANCELLED (the user dismissed the password dialog) or an error."""
+    helper = find_program("tdx-settings-helper")
+    pkexec = shutil.which("pkexec")
+    if not helper or not pkexec:
+        return "%s is not writable (and pkexec / tdx-settings-helper is missing)" % path
+    try:
+        p = subprocess.run([pkexec, helper, "write", path], input=data, text=True,
+                           capture_output=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return str(e)
+    if p.returncode in (126, 127):  # pkexec: dialog dismissed / not authorized
+        return PKEXEC_CANCELLED
+    if p.returncode:
+        return (p.stderr or p.stdout or "pkexec failed (%d)" % p.returncode).strip()
     return None
 
 
@@ -1885,6 +1904,9 @@ class App:
         self.windows = {}
         self.save_state = ""
         self.save_timer = None
+        self.saving = False        # a pkexec save is running (in a thread)
+        self.save_again = False    # ... and more changes came in meanwhile
+        self.pw_declined = False   # the password was cancelled: save on close instead
         self.main = self.win = None
         prof = args.profile
         if prof is None and self.status.get("profile") not in (None, "default"):
@@ -1895,15 +1917,72 @@ class App:
 
     # ---- saving
     def on_changed(self):
+        """Like 3DxWare, a change takes effect right away: saved shortly after
+        (a slider sends many changes), then tdxd reloads. Root-owned files go
+        through pkexec - one password, which polkit keeps for a few minutes
+        (auth_admin_keep) - unless the user cancelled it: then on close."""
         for p in self.panels:
             p.refresh()
-        if all(writable(f.path) for f in self.store.files() if f.dirty):
-            if self.save_timer:
-                GLib.source_remove(self.save_timer)
-            self.save_timer = GLib.timeout_add(600, self.flush)
-            self.set_save_state("")
-        else:
+        needs_pw = not all(writable(f.path) for f in self.store.files() if f.dirty)
+        if needs_pw and self.pw_declined:
             self.set_save_state("Saved when you close (password)")
+            return
+        if self.save_timer:
+            GLib.source_remove(self.save_timer)
+        self.save_timer = GLib.timeout_add(900 if needs_pw else 600, self.flush_async)
+        self.set_save_state("")
+
+    def flush_async(self, *_):
+        """flush() for live changes: files that need the password are written in
+        a thread, so the panel stays responsive while the password dialog is up."""
+        self.save_timer = None
+        if self.args.no_save:
+            return False
+        if self.saving:
+            self.save_again = True
+            return False
+        dirty = [f for f in self.store.files() if f.dirty]
+        if not dirty:
+            return False
+        if all(writable(f.path) for f in dirty):
+            return self.flush()
+        jobs = [(f, f.text()) for f in dirty]
+        self.saving = True
+        self.set_save_state("Saving…")
+
+        def run():
+            errors = []
+            for f, data in jobs:
+                err = write_file_data(f, data)
+                if err:
+                    errors.append(err)
+                    break
+            GLib.idle_add(done, errors)
+
+        def done(errors):
+            self.saving = False
+            for f, data in jobs:  # changed again while saving: still dirty
+                if not errors and f.text() == data:
+                    f.dirty = False
+                    f.exists = True
+            if errors and errors[0] == PKEXEC_CANCELLED:
+                self.pw_declined = True
+                self.set_save_state("Saved when you close (password)")
+            elif errors:
+                self.set_save_state("Not saved: " + errors[0])
+            else:
+                rc, _out = self.daemon.request("reload")
+                self.set_save_state("Saved" if rc == 0 else "Saved; tdxd not reloaded")
+                GLib.timeout_add(800, self.poll_status)
+            if self.save_again or (not errors and self.store.dirty()):
+                self.save_again = False
+                self.save_timer = GLib.timeout_add(300, self.flush_async)
+            return False
+
+        import threading
+        self.save_thread = threading.Thread(target=run, daemon=True)
+        self.save_thread.start()
+        return False
 
     def set_save_state(self, text):
         self.save_state = text
@@ -1914,6 +1993,9 @@ class App:
         self.save_timer = None
         if self.args.no_save:
             return False
+        t = getattr(self, "save_thread", None)
+        if self.saving and t:  # let a live save finish first, or it could land after this one
+            t.join()
         errors = [e for e in (write_file(f) for f in self.store.files() if f.dirty) if e]
         if errors:
             self.set_save_state("Not saved: " + errors[0])
