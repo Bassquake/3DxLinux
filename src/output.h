@@ -6,15 +6,20 @@
 #include "devices.h"
 
 /* ---- uinput ---- */
+/* Two virtual devices: the 3D mouse (6 ABS axes + its buttons) and, apart, a
+ * keyboard for the keys that bindings send. In one device the keyboard keys
+ * made libinput take it for an absolute pointer instead of ignoring it as a
+ * joystick, so the cursor jumped around whenever the cap moved. */
 struct tdx_uinput {
-	int fd;
+	int fd;   /* 3D mouse */
+	int kfd;  /* keyboard, -1 when no key bindings */
 	int nbuttons;
 };
 int tdx_uinput_open(struct tdx_uinput *u, const struct tdx_device_def *dev,
 		    const struct tdx_config *cfg);
 void tdx_uinput_axes(struct tdx_uinput *u, const int axes[6]);
 void tdx_uinput_button(struct tdx_uinput *u, int idx, int pressed);
-void tdx_uinput_keys(struct tdx_uinput *u, const int *keys, int pressed);
+void tdx_uinput_keys(struct tdx_uinput *u, const int *keys, int seq, int pressed);
 void tdx_uinput_close(struct tdx_uinput *u);
 
 /* ---- spacenavd v0 protocol server ---- */

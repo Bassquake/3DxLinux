@@ -7,8 +7,18 @@
 
 struct tdx_keymap {
 	char v3dk[32];  /* e.g. V3DK_ESC, or "BUTTON_7" for generic devices */
-	int keys[4];    /* evdev KEY_* codes, chord, 0-terminated */
+	int keys[4];    /* evdev KEY_* codes, 0-terminated */
+	int seq;        /* 0: a chord held with the button ("KEY_LEFTCTRL + KEY_C");
+			 * 1: tapped one after another on press ("KEY_V, KEY_F") */
 };
+
+/* lcd_label_<V3DK id> = text: the LCD name of any key, e.g. a view key that a
+ * profile binds to an application's own shortcut */
+struct tdx_named_label {
+	char v3dk[32];
+	char text[24];
+};
+#define TDX_MAX_NAMED_LABELS 32
 
 /* Built-in button actions (3DxWare's driver actions), set with action_<V3DK> = NAME */
 enum tdx_action {
@@ -61,6 +71,8 @@ struct tdx_config {
 	char lcd_label[TDX_MAX_LABELS][24]; /* key labels; SPP 1..10, Enterprise 1..12,
 					     * Giotto 12 per slide page (up to 4 pages) */
 	int lcd_label_max;        /* highest lcd_label_N set in the file */
+	struct tdx_named_label named_label[TDX_MAX_NAMED_LABELS];
+	int nnamed_label;
 	char lcd_slide_button[32];/* V3DK id that slides the Giotto LCD to the next page */
 	char lcd_bmp_dir[256];    /* Giotto legacy path: watch DIR/sp4LCD.bmp (0x13) */
 	int lcd_slide_step;       /* slide speed, pixels per 25 ms step */

@@ -696,7 +696,7 @@ static void rescan(void)
 		struct dev_ctx *d = &devs[ndev];
 		memset(d, 0, sizeof *d);
 		d->node = nodes[i];
-		d->ui.fd = -1;
+		d->ui.fd = d->ui.kfd = -1;
 		d->slide_target = -1;
 		d->fd = open(d->node.devnode, O_RDWR | O_NONBLOCK | O_CLOEXEC);
 		if (d->fd < 0)
@@ -756,7 +756,7 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 		}
 		const struct tdx_keymap *km = tdx_keymap_for(&cfg, d->node.def, i);
 		if (km)
-			tdx_uinput_keys(&d->ui, km->keys, p);
+			tdx_uinput_keys(&d->ui, km->keys, km->seq, p);
 		else
 			tdx_uinput_button(&d->ui, i, p);
 		if (spnav.lfd >= 0)

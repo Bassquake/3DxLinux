@@ -250,6 +250,18 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			snprintf(c->lcd_slide_button, sizeof c->lcd_slide_button, "%s", v);
 		} else if (!strcmp(k, "lcd_slide_step")) {
 			c->lcd_slide_step = atoi(v) > 0 ? atoi(v) : c->lcd_slide_step;
+		} else if (!strncmp(k, "lcd_label_V3DK_", 15)) {
+			/* named: lcd_label_V3DK_TOP = Top View (later files override) */
+			struct tdx_named_label *l = NULL;
+			for (int i = 0; i < c->nnamed_label; i++)
+				if (!strcmp(c->named_label[i].v3dk, k + 10))
+					l = &c->named_label[i];
+			if (!l && c->nnamed_label < TDX_MAX_NAMED_LABELS)
+				l = &c->named_label[c->nnamed_label++];
+			if (l) {
+				snprintf(l->v3dk, sizeof l->v3dk, "%s", k + 10);
+				snprintf(l->text, sizeof l->text, "%s", v);
+			}
 		} else if (!strncmp(k, "lcd_label_", 10)) {
 			int n = atoi(k + 10);
 			if (n >= 1 && n <= TDX_MAX_LABELS) {
@@ -274,10 +286,14 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 				a->action = act; /* "none" (0) clears a base action */
 			}
 		} else if (!strncmp(k, "key_", 4)) {
-			/* later files override earlier ones; "none" removes the binding */
+			/* later files override earlier ones; "none" removes the binding.
+			 * "A + B" is a chord held with the button, "A, B" a sequence
+			 * tapped on press (e.g. FreeCAD's Fit All: V, F) */
 			int keys[4] = {0}, nk = 0, bad = 0;
+			int seq = strchr(v, ',') != NULL;
 			if (strcasecmp(v, "none"))
-				for (char *tok = strtok(v, "+ "); tok && nk < 3; tok = strtok(NULL, "+ ")) {
+				for (char *tok = strtok(v, seq ? ", " : "+ "); tok && nk < (seq ? 4 : 3);
+				     tok = strtok(NULL, seq ? ", " : "+ ")) {
 					int code = tdx_key_from_name(tok);
 					if (code < 0) {
 						fprintf(stderr, "%s:%d: unknown key '%s'\n", path, ln, tok);
@@ -293,6 +309,7 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			memset(m, 0, sizeof *m);
 			snprintf(m->v3dk, sizeof m->v3dk, "%s", k + 4);
 			memcpy(m->keys, keys, sizeof keys);
+			m->seq = seq && nk > 1;
 		} else
 			fprintf(stderr, "%s:%d: unknown option '%s'\n", path, ln, k);
 	}

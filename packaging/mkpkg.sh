@@ -61,6 +61,7 @@ stage() { # stage LIBDIR -> $STAGE/root
 		> "$R/usr/share/polkit-1/actions/org.tdxd.settings.policy"
 	install -Dm644 "$DIST/tdxd.conf" "$R/etc/tdxd.conf"
 	install -Dm644 "$DIST/blender.conf.example" "$R/etc/tdxd.d/blender.conf.example"
+	install -Dm644 "$DIST/freecad.conf" "$R/etc/tdxd.d/freecad.conf"
 	for f in README.md PROTOCOL.md; do
 		install -Dm644 "$DIST/$f" "$R/usr/share/doc/tdxd/$f"
 	done
@@ -162,7 +163,7 @@ Homepage: $HOMEPAGE
 Description: $SUMMARY
 $(echo "$DESC" | sed 's/^/ /')
 EOF
-	printf '/etc/tdxd.conf\n/etc/tdxd.d/blender.conf.example\n' > "$D/conffiles"
+	printf '/etc/tdxd.conf\n/etc/tdxd.d/blender.conf.example\n/etc/tdxd.d/freecad.conf\n' > "$D/conffiles"
 	{ echo '#!/bin/sh'; echo 'set -e'
 	  echo '[ "$1" = configure ] || exit 0'
 	  echo 'if [ -n "${2:-}" ]; then set -- upgrade; else set -- install; fi'
@@ -217,6 +218,7 @@ EOF
 	echo; echo '%files'
 	echo '%config(noreplace) /etc/tdxd.conf'
 	echo '%config(noreplace) /etc/tdxd.d/blender.conf.example'
+	echo '%config(noreplace) /etc/tdxd.d/freecad.conf'
 	echo '%dir /etc/tdxd.d'
 	echo '%dir /usr/lib/tdxd'
 	echo '%dir /usr/lib/tdxd/python'

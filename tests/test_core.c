@@ -1085,6 +1085,41 @@ static void test_lcdcfg(void)
 	CHECK(tdx_lcdcfg_xml(xml, 64, &c, spp, 0x46d, 0xc629, &info) == -1);
 }
 
+/* The shipped FreeCAD profile: view keys -> FreeCAD's shortcuts, a tapped
+ * sequence for Fit All, and the LCD keeps the view names. */
+static void test_freecad_profile(void)
+{
+	static struct tdx_config c;
+	tdx_config_defaults(&c);
+	CHECK(tdx_config_load(&c, "packaging/profiles/freecad.conf") == 0);
+	const struct tdx_device_def *spp = tdx_device_lookup(0x046D, 0xC629);
+	int top = -1, fit = -1, roll = -1, iso = -1;
+	for (int i = 0; i < spp->nbuttons; i++) {
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_TOP")) top = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_FIT")) fit = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_ROLL_CW")) roll = i;
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_ISO1")) iso = i;
+	}
+	const struct tdx_keymap *k = tdx_keymap_for(&c, spp, top);
+	CHECK(k && k->keys[0] == KEY_2 && !k->keys[1] && !k->seq);
+	k = tdx_keymap_for(&c, spp, iso);
+	CHECK(k && k->keys[0] == KEY_0);
+	k = tdx_keymap_for(&c, spp, fit);   /* "KEY_V, KEY_F": tapped one after the other */
+	CHECK(k && k->seq && k->keys[0] == KEY_V && k->keys[1] == KEY_F && !k->keys[2]);
+	k = tdx_keymap_for(&c, spp, roll);  /* "KEY_LEFTSHIFT + KEY_RIGHT": a held chord */
+	CHECK(k && !k->seq && k->keys[0] == KEY_LEFTSHIFT && k->keys[1] == KEY_RIGHT);
+	char t[64];
+	tdx_button_text(&c, spp, top, t, sizeof t);
+	CHECK(!strcmp(t, "Top View"));      /* lcd_label_V3DK_TOP, not "2" */
+	tdx_button_text(&c, spp, fit, t, sizeof t);
+	CHECK(!strcmp(t, "Fit All"));
+	CHECK(c.nnamed_label == 10);
+	/* without a label a sequence reads "V, F" */
+	c.nnamed_label = 0;
+	tdx_button_text(&c, spp, fit, t, sizeof t);
+	CHECK(!strcmp(t, "V, F"));
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
@@ -1092,6 +1127,7 @@ int main(int argc, char **argv)
 	test_actions();
 	test_lcdmgr();
 	test_lcdcfg();
+	test_freecad_profile();
 	test_profiles();
 	test_control();
 	test_enterprise_lcd();

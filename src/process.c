@@ -295,6 +295,12 @@ void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *
 			return;
 		}
 	}
+	/* 1b. named LCD label (lcd_label_V3DK_TOP = Top View) */
+	for (int i = 0; v3dk && i < cfg->nnamed_label; i++)
+		if (!strcmp(cfg->named_label[i].v3dk, v3dk) && cfg->named_label[i].text[0]) {
+			snprintf(out, len, "%s", cfg->named_label[i].text);
+			return;
+		}
 	/* 2. driver action */
 	int act = tdx_action_for(cfg, dev, idx);
 	if (act > TDX_ACT_NONE && act < TDX_ACT_COUNT) {
@@ -325,7 +331,7 @@ void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *
 		for (int k = 0; k < n && o < len; k++) {
 			char kn[24];
 			key_name(km->keys[k], kn, sizeof kn);
-			o += (size_t)snprintf(out + o, len - o, "%s%s", k ? "+" : "", kn);
+			o += (size_t)snprintf(out + o, len - o, "%s%s", k ? (km->seq ? ", " : "+") : "", kn);
 		}
 		return;
 	}

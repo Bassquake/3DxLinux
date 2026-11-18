@@ -35,9 +35,40 @@ static void emit(int fd, int type, int code, int val)
 	}
 }
 
+/* The keyboard half: only the keys any binding may send. -1 if none / failed. */
+static int open_keyboard(const struct tdx_device_def *dev, const struct tdx_config *cfg)
+{
+	int any = 0;
+	for (int i = 0; i < cfg->nkeymap && !any; i++)
+		any = cfg->keymap[i].keys[0] != 0;
+	if (!any)
+		return -1;
+	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	ioctl(fd, UI_SET_EVBIT, EV_KEY);
+	ioctl(fd, UI_SET_EVBIT, EV_SYN);
+	for (int i = 0; i < cfg->nkeymap; i++)
+		for (int k = 0; k < 4 && cfg->keymap[i].keys[k]; k++)
+			ioctl(fd, UI_SET_KEYBIT, cfg->keymap[i].keys[k]);
+	struct uinput_setup s;
+	memset(&s, 0, sizeof s);
+	s.id.bustype = BUS_VIRTUAL;
+	s.id.vendor = dev ? dev->vid : 0;
+	s.id.product = dev ? dev->pid : 0;
+	s.id.version = 1;
+	snprintf(s.name, sizeof s.name, "3Dconnexion %s (tdxd keys)", dev ? dev->name : "device");
+	if (ioctl(fd, UI_DEV_SETUP, &s) < 0 || ioctl(fd, UI_DEV_CREATE) < 0) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
 int tdx_uinput_open(struct tdx_uinput *u, const struct tdx_device_def *dev,
 		    const struct tdx_config *cfg)
 {
+	u->kfd = -1;
 	u->fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
 	if (u->fd < 0)
 		return -errno;
@@ -59,9 +90,6 @@ int tdx_uinput_open(struct tdx_uinput *u, const struct tdx_device_def *dev,
 	}
 	for (int i = 0; i < nb; i++)
 		ioctl(u->fd, UI_SET_KEYBIT, button_code(i));
-	for (int i = 0; i < cfg->nkeymap; i++)
-		for (int k = 0; k < 4 && cfg->keymap[i].keys[k]; k++)
-			ioctl(u->fd, UI_SET_KEYBIT, cfg->keymap[i].keys[k]);
 
 	struct uinput_setup s;
 	memset(&s, 0, sizeof s);
@@ -76,6 +104,7 @@ int tdx_uinput_open(struct tdx_uinput *u, const struct tdx_device_def *dev,
 		u->fd = -1;
 		return e;
 	}
+	u->kfd = open_keyboard(dev, cfg);
 	return 0;
 }
 
@@ -101,20 +130,32 @@ void tdx_uinput_button(struct tdx_uinput *u, int idx, int pressed)
 	emit(u->fd, EV_SYN, SYN_REPORT, 0);
 }
 
-void tdx_uinput_keys(struct tdx_uinput *u, const int *keys, int pressed)
+void tdx_uinput_keys(struct tdx_uinput *u, const int *keys, int seq, int pressed)
 {
-	if (u->fd < 0)
+	int fd = u->kfd;  /* the keyboard device */
+	if (fd < 0)
 		return;
+	if (seq) { /* tap each key in turn when the button goes down */
+		if (!pressed)
+			return;
+		for (int k = 0; k < 4 && keys[k]; k++) {
+			emit(fd, EV_KEY, keys[k], 1);
+			emit(fd, EV_SYN, SYN_REPORT, 0);
+			emit(fd, EV_KEY, keys[k], 0);
+			emit(fd, EV_SYN, SYN_REPORT, 0);
+		}
+		return;
+	}
 	if (pressed) {
 		for (int k = 0; k < 4 && keys[k]; k++)
-			emit(u->fd, EV_KEY, keys[k], 1);
+			emit(fd, EV_KEY, keys[k], 1);
 	} else {
 		int n = 0;
 		while (n < 4 && keys[n]) n++;
 		for (int k = n - 1; k >= 0; k--)
-			emit(u->fd, EV_KEY, keys[k], 0);
+			emit(fd, EV_KEY, keys[k], 0);
 	}
-	emit(u->fd, EV_SYN, SYN_REPORT, 0);
+	emit(fd, EV_SYN, SYN_REPORT, 0);
 }
 
 void tdx_uinput_close(struct tdx_uinput *u)
@@ -123,7 +164,11 @@ void tdx_uinput_close(struct tdx_uinput *u)
 		ioctl(u->fd, UI_DEV_DESTROY);
 		close(u->fd);
 	}
-	u->fd = -1;
+	if (u->kfd >= 0) {
+		ioctl(u->kfd, UI_DEV_DESTROY);
+		close(u->kfd);
+	}
+	u->fd = u->kfd = -1;
 }
 
 /*

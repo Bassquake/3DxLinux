@@ -1350,25 +1350,33 @@ class KeyCaptureDialog(Gtk.Dialog):
 
 
 def chord_names(value):
-    """'KEY_LEFTCTRL + KEY_C' -> ['LEFTCTRL', 'C']; 'none' -> []."""
+    """'KEY_LEFTCTRL + KEY_C' -> ['LEFTCTRL', 'C']; 'none' -> [].
+    A sequence ('KEY_V, KEY_F', keys tapped one after another) keeps its
+    steps apart with ',' entries: ['V', ',', 'F']."""
     if not value or value.strip().lower() == "none":
         return []
     out = []
-    for t in value.split("+"):
-        t = t.strip().upper()
-        if t.startswith("KEY_"):
-            t = t[4:]
-        if t:
-            out.append(t)
+    for i, step in enumerate(value.split(",")):
+        if i and out:
+            out.append(",")
+        for t in step.split("+"):
+            t = t.strip().upper()
+            if t.startswith("KEY_"):
+                t = t[4:]
+            if t:
+                out.append(t)
     return out
 
 
 def pretty_chord(names):
-    return "+".join(PRETTY_KEY.get(n, n.title() if len(n) > 1 else n) for n in names)
+    pretty = (PRETTY_KEY.get(n, n.title() if len(n) > 1 else n) for n in names)
+    return "+".join(pretty).replace("+,+", ", ")
 
 
 def chord_value(names):
-    return "+".join("KEY_" + n if not n.isdigit() or n in KEY_CODES else n for n in names)
+    keys = ("," if n == "," else "KEY_" + n if not n.isdigit() or n in KEY_CODES else n
+            for n in names)
+    return "+".join(keys).replace("+,+", ", ")
 
 
 # key-cap image per button (3DxSmartUi.exe resources) and the 3DxWare column layout
@@ -1472,7 +1480,11 @@ class ButtonsPanel(Panel):
         if kind == "action":
             return ACTION_LABEL.get(val, val)
         if kind == "keys":
-            return self.preset_of(val) or pretty_chord(val)
+            # a profile that sends an application's shortcut can name it for the
+            # LCD (lcd_label_V3DK_TOP = Top View): "Top View (2)"
+            name = self.store.get("lcd_label_" + v3dk)
+            keys = self.preset_of(val) or pretty_chord(val)
+            return "%s (%s)" % (name, keys) if name else keys
         return fn
 
     def icon_for(self, v3dk):

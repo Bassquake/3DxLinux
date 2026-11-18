@@ -72,6 +72,7 @@ mkdir -p /etc/systemd/user /etc/tdxd.d
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-focus.service > /etc/systemd/user/tdx-focus.service
 chmod 644 /etc/systemd/user/tdx-focus.service
 install -Dm644 blender.conf.example /etc/tdxd.d/blender.conf.example
+[ -e /etc/tdxd.d/freecad.conf ] || install -Dm644 freecad.conf /etc/tdxd.d/freecad.conf  # FreeCAD's view keys
 install -Dm644 70-3dconnexion-tdxd.rules /etc/udev/rules.d/70-3dconnexion-tdxd.rules
 rm -f /etc/udev/rules.d/99-3dconnexion-tdxd.rules   # its name before 0.3.2: too late for uaccess
 sed "s#/usr/local/bin/tdxd#$PREFIX/bin/tdxd#" tdxd.service > /etc/systemd/system/tdxd.service
