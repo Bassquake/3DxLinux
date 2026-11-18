@@ -35,6 +35,12 @@ LCD_KIND = {(0x046D, 0xC629): "TDX_LCD_QVGA",    # LGPBTDD.inf (Logitech G19-cla
             (0x256F, 0xC633): "TDX_LCD_ENT640",  # HIDDev.dll CWinUSBLCDMgr
             (0x256F, 0xC63C): "TDX_LCD_GIO1280"} # HIDDev.dll DAT_1800de3e0 descriptor
 
+# Corrections to Base.xml's <Mask> values, checked on real hardware:
+# (VID, PID) -> {mask in Base.xml: mask the key really sends}.
+#   SpacePilot PRO: the DOM key sends 0x08000000 and the PAN ZOOM key 0x10000000,
+#   the other way round from Base.xml (tdxctl status on firmware 4.11, 2026-11-18).
+MASK_FIXES = {(0x046D, 0xC629): {0x08000000: 0x10000000, 0x10000000: 0x08000000}}
+
 # Devices older than this 3DxWare release (absent from Base.xml).  Their IDs
 # are publicly documented; buttons are exposed generically (bit n -> n+1).
 LEGACY = [
@@ -97,6 +103,10 @@ def main(path):
         if vid == 0 or did == "ID_PseudoDevice":
             continue
         btns = resolved_buttons(d)
+        fix = MASK_FIXES.get((vid, pid), {})
+        btns = [(rid, kind, fix.get(value, value) if kind == "TDX_BTN_MASK" else value,
+                 lpm, led, bid, v3dk, label)
+                for rid, kind, value, lpm, led, bid, v3dk, label in btns]
         sym = "btn_" + did.replace("ID_", "").lower()
         if btns:
             print(f"static const struct tdx_button_def {sym}[] = {{")

@@ -930,6 +930,14 @@ static void test_actions(void)
 		if (!strcmp(spp->buttons[i].v3dk, "V3DK_MENU")) menu = i;
 		if (!strcmp(spp->buttons[i].v3dk, "V3DK_FIT")) fit = i;
 	}
+	/* SpacePilot PRO hardware: the DOM key sends 0x08000000 and PAN ZOOM
+	 * 0x10000000, swapped from Base.xml (MASK_FIXES in tools/extract_devices.py) */
+	for (int i = 0; i < spp->nbuttons; i++) {
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_DOMINANT"))
+			CHECK(spp->buttons[i].value == 0x08000000u);
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_PANZOOM"))
+			CHECK(spp->buttons[i].value == 0x10000000u);
+	}
 	CHECK(tdx_action_for(&c, spp, plus) == TDX_ACT_SPEED_UP);
 	CHECK(tdx_action_for(&c, spp, minus) == TDX_ACT_SPEED_DOWN);
 	CHECK(tdx_action_for(&c, spp, menu) == TDX_ACT_NONE); /* "none" replaced calibrate */
