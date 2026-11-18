@@ -313,3 +313,14 @@ session), `tdxd_0.3.1-1_amd64.deb` installed.
 | Upgrade 0.3.1 → `0.3.2+1+g1417a66` | **Fail, then pass after a fix:** afterwards tdxd was enabled but stopped (`inactive (dead)`), so nothing detected the device; the package only *try-restarted* tdxd, which leaves a stopped one stopped. Now it restarts (also starts) tdxd and the users' LCD Managers. With `0.3.2+2+gaa46a75` the device is detected again. Why tdxd had stopped is unknown (the system journal needs root to read). |
 | Settings apply immediately | **Pass:** toggling LEDs in Advanced Settings asked for the password (pkexec) and the LED changed straight away, with the window still open. |
 | Menu after uninstall/upgrade | **Fixed:** "3D Mouse Settings" and "LCD Manager" stayed in the menu from the importer's copies in `~/.local/share/applications` (they win over the package's entries and nothing removes them). The entries and those copies now carry `TryExec=`, so the menu hides a copy once its program is gone. |
+
+## 2026-11-18: uninstall leaves nothing behind (Ubuntu 22.04, WSL)
+
+The 0.3.3 `.deb` installed, then the files users and tools create: an edited
+`/etc/tdxd.conf`, a profile in `/etc/tdxd.d`, `~/.config/tdxd`, a per-user and a
+system-wide 3DxWare-look import with its icons and menu copy, Python's
+`__pycache__`. After `apt-get remove tdxd` (Discover's Uninstall, no purge) a
+search of the whole filesystem found nothing of tdxd; unrelated files in the
+same folders were kept. dpkg lists the package as `rc` (its record of the
+config files), which `apt purge tdxd` clears. An upgrade over it kept the
+config edit, the profile and the applet settings.

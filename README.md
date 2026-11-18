@@ -67,7 +67,10 @@ packages (Fedora, openSUSE) for x86_64 and arm64. Double-click the one for your
 system, click **Install** and enter your password. That's all: the package
 pulls in Python 3 and GTK 3, loads `uinput`, sets up the udev rule, starts
 `tdxd`, and starts the LCD Manager in your session. It replaces `spacenavd` if
-that is installed. Uninstall it from the same software app.
+that is installed. Uninstall it from the same software app: that removes
+everything tdxd added, including your settings (`/etc/tdxd.conf`, the profiles
+in `/etc/tdxd.d`, each user's `~/.config/tdxd`) and the imported 3DxWare look.
+Upgrading keeps your settings.
 
 | File | For |
 |---|---|

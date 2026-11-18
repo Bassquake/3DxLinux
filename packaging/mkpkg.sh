@@ -104,6 +104,33 @@ PRE_REMOVE='if [ -d /run/systemd/system ]; then
 fi'
 POST_REMOVE='if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi
 if command -v udevadm >/dev/null 2>&1; then udevadm control --reload-rules 2>/dev/null || true; fi'
+# Uninstalling (Discover's Uninstall = a remove, not a purge) leaves nothing of
+# tdxd behind, settings included - the user's choice. Never on an upgrade. Only
+# tdxd's own, exactly named files: the settings and profiles, and what the
+# 3DxWare-look importer wrote system-wide (as root) and in each home.
+CLEANUP='rm -f /etc/tdxd.conf /etc/tdxd.conf.rpmsave /etc/tdxd.conf.rpmnew /etc/tdxd.conf.dpkg-old \
+	/etc/tdxd.conf.dpkg-dist /etc/tdxd.conf.dpkg-new /etc/tdxd.conf.tdx-settings.tmp
+rm -rf /etc/tdxd.d /usr/local/share/tdxd
+# Python bytecode caches written when the programs ran (not package files):
+# without this /usr/lib/tdxd stays behind
+rm -rf /usr/lib/tdxd/python/__pycache__
+rmdir /usr/lib/tdxd/python /usr/lib/tdxd 2>/dev/null || true
+rm -f /usr/local/share/icons/hicolor/*/apps/tdxd-*.png
+for e in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+	rm -f "/usr/local/share/applications/$e.desktop"
+done
+getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
+	case "$uid" in ""|*[!0-9]*) continue ;; esac
+	[ "$uid" -eq 0 ] || { [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ]; } || continue
+	case "$home" in /?*) ;; *) continue ;; esac
+	case "$home" in *..*) continue ;; esac
+	[ -d "$home" ] || continue
+	rm -rf "$home/.config/tdxd" "$home/.local/share/tdxd"
+	rm -f "$home"/.local/share/icons/hicolor/*/apps/tdxd-*.png
+	for e in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+		rm -f "$home/.local/share/applications/$e.desktop"
+	done
+done'
 
 # ---- .deb ---------------------------------------------------------------------
 # Recommends are installed by default, and so are theirs: xdg-utils (RSS "open
@@ -136,7 +163,8 @@ EOF
 	  echo 'if [ -n "${2:-}" ]; then set -- upgrade; else set -- install; fi'
 	  echo "$POST_INSTALL"; } > "$D/postinst"
 	{ echo '#!/bin/sh'; echo 'set -e'; echo '[ "$1" = remove ] || exit 0'; echo "$PRE_REMOVE"; } > "$D/prerm"
-	{ echo '#!/bin/sh'; echo 'set -e'; echo "$POST_REMOVE"; } > "$D/postrm"
+	{ echo '#!/bin/sh'; echo 'set -e'; echo "$POST_REMOVE"
+	  echo 'case "$1" in remove|purge) ;; *) exit 0 ;; esac'; echo "$CLEANUP"; } > "$D/postrm"
 	chmod 755 "$D/postinst" "$D/prerm" "$D/postrm"
 	local f=$OUT/tdxd_${PV}-1_$DEB_ARCH.deb
 	dpkg-deb --root-owner-group -Zxz --build "$R" "$f" >/dev/null
@@ -180,6 +208,7 @@ EOF
 	echo "$POST_INSTALL" | sed 's/%/%%/g'
 	echo; echo '%preun'; echo 'if [ "$1" -eq 0 ]; then'; echo "$PRE_REMOVE" | sed 's/%/%%/g'; echo 'fi'
 	echo; echo '%postun'; echo "$POST_REMOVE" | sed 's/%/%%/g'
+	echo 'if [ "$1" -eq 0 ]; then'; echo "$CLEANUP" | sed 's/%/%%/g'; echo 'fi'
 	echo; echo '%files'
 	echo '%config(noreplace) /etc/tdxd.conf'
 	echo '%config(noreplace) /etc/tdxd.d/blender.conf.example'
