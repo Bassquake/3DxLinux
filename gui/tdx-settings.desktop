@@ -4,6 +4,7 @@ Name=3D Mouse Settings (tdxd)
 GenericName=3D Mouse Settings
 Comment=Speed, buttons, LCD and per-application profiles for 3Dconnexion devices
 Exec=tdx-settings
+TryExec=tdx-settings
 Icon=input-mouse
 Terminal=false
 Categories=Settings;HardwareSettings;

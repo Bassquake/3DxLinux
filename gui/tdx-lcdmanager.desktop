@@ -4,6 +4,7 @@ Name=LCD Manager (tdxd)
 GenericName=3D Mouse LCD Manager
 Comment=Programs, brightness and contrast for the SpacePilot PRO LCD
 Exec=tdx-lcdmanager
+TryExec=tdx-lcdmanager
 Icon=input-mouse
 Terminal=false
 Categories=Settings;HardwareSettings;

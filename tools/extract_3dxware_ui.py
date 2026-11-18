@@ -511,6 +511,10 @@ def install_theme_icons(out, theme_root, apps_dir, system_apps=("/usr/local/shar
             # search /usr/share/icons, but every desktop accepts a file here
             with open(src) as f:
                 text = re.sub(r"(?m)^Icon=.*$", "Icon=" + largest[key][1], f.read())
+            # this copy outlives an uninstall (nothing removes files in $HOME):
+            # TryExec makes the menu hide it once the program is gone
+            if not re.search(r"(?m)^TryExec=", text):
+                text = re.sub(r"(?m)^(Exec=(\S+).*)$", r"\1\nTryExec=\2", text, count=1)
             # as root this rewrites the installed entry; as a user it is the
             # ~/.local/share/applications override, which wins over the system one
             os.makedirs(apps_dir, exist_ok=True)

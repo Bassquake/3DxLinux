@@ -3,6 +3,7 @@ Type=Application
 Name=Function Keys (tdxd LCD applet)
 Comment=Settings of the Function Keys applet on the SpacePilot PRO LCD
 Exec=tdx-lcd-functionkeys --configure
+TryExec=tdx-lcd-functionkeys
 Icon=input-mouse
 Terminal=false
 NoDisplay=true

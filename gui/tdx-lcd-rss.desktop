@@ -3,6 +3,7 @@ Type=Application
 Name=RSS Feeds (tdxd LCD applet)
 Comment=Settings of the RSS Feeds applet on the SpacePilot PRO LCD
 Exec=tdx-lcd-rss --configure
+TryExec=tdx-lcd-rss
 Icon=input-mouse
 Terminal=false
 NoDisplay=true

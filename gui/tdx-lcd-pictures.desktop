@@ -3,6 +3,7 @@ Type=Application
 Name=Picture Viewer (tdxd LCD applet)
 Comment=Settings of the Picture Viewer applet on the SpacePilot PRO LCD
 Exec=tdx-lcd-pictures --configure
+TryExec=tdx-lcd-pictures
 Icon=input-mouse
 Terminal=false
 NoDisplay=true

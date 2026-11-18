@@ -79,19 +79,16 @@ fi
 if [ -d /run/systemd/system ]; then
 	systemctl daemon-reload || true
 	systemctl enable tdxd.service >/dev/null 2>&1 || true
-	if [ "$1" = upgrade ]; then
-		systemctl try-restart tdxd.service || true
-	else
-		systemctl start tdxd.service || true
-	fi
-	# the LCD Manager runs in every user session; start it now for those logged in
+	# restart, not try-restart: also starts a tdxd that was stopped, so after an
+	# install or upgrade the new version always runs (seen: an upgrade left it dead)
+	systemctl restart tdxd.service || true
+	# the LCD Manager runs in every user session; (re)start it now for those logged
+	# in, unless that user has turned it off
 	systemctl --global enable tdx-lcdmgr.service >/dev/null 2>&1 || true
 	for u in $(loginctl list-users --no-legend 2>/dev/null | awk "{print \$2}"); do
 		systemctl --user -M "$u@" daemon-reload >/dev/null 2>&1 || true
-		if [ "$1" = upgrade ]; then
-			systemctl --user -M "$u@" try-restart tdx-lcdmgr.service >/dev/null 2>&1 || true
-		else
-			systemctl --user -M "$u@" start tdx-lcdmgr.service >/dev/null 2>&1 || true
+		if systemctl --user -M "$u@" is-enabled tdx-lcdmgr.service >/dev/null 2>&1; then
+			systemctl --user -M "$u@" restart tdx-lcdmgr.service >/dev/null 2>&1 || true
 		fi
 	done
 fi
