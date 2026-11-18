@@ -15,6 +15,7 @@ if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
 	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
 	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
+	      "$PREFIX/lib/tdxd/tdx-focus-kwin" \
 	      "$PREFIX/bin/tdx-extract-3dxware-ui" \
 	      "$PREFIX/bin/tdx-lcdmgr" "$PREFIX/bin/tdx-lcdmanager" "$PREFIX/bin/tdx-lcd-demo" \
 	      "$PREFIX/lib/tdxd/python/tdxlcd.py" "$PREFIX/lib/tdxd/python/lcdapplet.py" \
@@ -44,6 +45,7 @@ install -Dm755 bin/tdx-focus "$PREFIX/bin/tdx-focus"
 # settings panel (Python 3 + GTK 3: python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)
 install -Dm755 bin/tdx-settings "$PREFIX/bin/tdx-settings"
 install -Dm755 lib/tdx-settings-helper "$PREFIX/lib/tdxd/tdx-settings-helper"
+install -Dm755 lib/tdx-focus-kwin "$PREFIX/lib/tdxd/tdx-focus-kwin"   # focus tracking on KDE Plasma
 install -Dm755 bin/tdx-extract-3dxware-ui "$PREFIX/bin/tdx-extract-3dxware-ui"
 # LCD Manager (Linux LCDMon), its window, the applet library and a demo applet
 install -Dm755 bin/tdx-lcdmgr "$PREFIX/bin/tdx-lcdmgr"
@@ -87,7 +89,7 @@ echo "  or as a service:           sudo systemctl enable --now tdxd"
 echo "  (stop spacenavd first if it is running: sudo systemctl disable --now spacenavd)"
 echo "  calibrate (re-zero) the cap:   tdxctl calibrate"
 echo "  per-application profiles:      /etc/tdxd.d/*.conf (see blender.conf.example)"
-echo "  focus tracking (X11 / sway), as your user:  systemctl --user enable --now tdx-focus"
+echo "  focus tracking (KDE Plasma, sway, X11), as your user:  systemctl --user enable --now tdx-focus"
 echo "  settings panel:                tdx-settings   (needs python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)"
 echo "  LCD Manager (LCD applets), as your user:  systemctl --user enable --now tdx-lcdmgr"
 echo "  3DxWare look for the panel:    sudo tdx-extract-3dxware-ui 3DxWare64_v10-9-14_b745.exe   (needs 7z)"

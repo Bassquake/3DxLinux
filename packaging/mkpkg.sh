@@ -38,6 +38,7 @@ stage() { # stage LIBDIR -> $STAGE/root
 		install -Dm755 "$DIST/bin/$b" "$R/usr/bin/$b"
 	done
 	install -Dm755 "$DIST/lib/tdx-settings-helper" "$R/usr/lib/tdxd/tdx-settings-helper"
+	install -Dm755 "$DIST/lib/tdx-focus-kwin" "$R/usr/lib/tdxd/tdx-focus-kwin"
 	install -Dm644 "$DIST/lib/python/tdxlcd.py" "$R/usr/lib/tdxd/python/tdxlcd.py"
 	install -Dm644 "$DIST/lib/python/lcdapplet.py" "$R/usr/lib/tdxd/python/lcdapplet.py"
 	install -Dm755 "$DIST/lib/libtdxlcd.so.1" "$R$L/libtdxlcd.so.1"
@@ -84,12 +85,16 @@ if [ -d /run/systemd/system ]; then
 	systemctl restart tdxd.service || true
 	# the LCD Manager runs in every user session; (re)start it now for those logged
 	# in, unless that user has turned it off
-	systemctl --global enable tdx-lcdmgr.service >/dev/null 2>&1 || true
+	# and so does tdx-focus (which app has the focus: per-application profiles and
+	# the name on the LCD; KDE Plasma, sway, X11 - it exits quietly elsewhere)
+	systemctl --global enable tdx-lcdmgr.service tdx-focus.service >/dev/null 2>&1 || true
 	for u in $(loginctl list-users --no-legend 2>/dev/null | awk "{print \$2}"); do
 		systemctl --user -M "$u@" daemon-reload >/dev/null 2>&1 || true
-		if systemctl --user -M "$u@" is-enabled tdx-lcdmgr.service >/dev/null 2>&1; then
-			systemctl --user -M "$u@" restart tdx-lcdmgr.service >/dev/null 2>&1 || true
-		fi
+		for s in tdx-lcdmgr tdx-focus; do
+			if systemctl --user -M "$u@" is-enabled $s.service >/dev/null 2>&1; then
+				systemctl --user -M "$u@" restart $s.service >/dev/null 2>&1 || true
+			fi
+		done
 	done
 fi
 if [ -x /usr/local/bin/tdxd ]; then

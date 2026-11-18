@@ -115,6 +115,7 @@ install: all
 	install -Dm755 packaging/tdx-focus $(DESTDIR)$(PREFIX)/bin/tdx-focus
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-settings
 	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
+	install -Dm755 packaging/tdx-focus-kwin $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-focus-kwin
 	install -Dm755 tools/extract_3dxware_ui.py $(DESTDIR)$(PREFIX)/bin/tdx-extract-3dxware-ui
 	install -Dm755 $(BUILD)/tdx-lcdmgr $(DESTDIR)$(PREFIX)/bin/tdx-lcdmgr
 	install -Dm755 $(BUILD)/tdx-lcd-demo $(DESTDIR)$(PREFIX)/bin/tdx-lcd-demo
@@ -153,7 +154,7 @@ dist:
 	rm -rf $(DIST) && mkdir -p $(DIST)/bin $(DIST)/lib
 	cp $(BUILD)/tdxd $(BUILD)/tdx-lcd $(BUILD)/tdxctl packaging/tdx-focus $(DIST)/bin/
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings > $(DIST)/bin/tdx-settings
-	cp gui/tdx-settings-helper $(DIST)/lib/
+	cp gui/tdx-settings-helper packaging/tdx-focus-kwin $(DIST)/lib/
 	cp tools/extract_3dxware_ui.py $(DIST)/bin/tdx-extract-3dxware-ui
 	cp $(BUILD)/tdx-lcdmgr $(BUILD)/tdx-lcd-demo $(DIST)/bin/
 	$(STRIP) $(DIST)/bin/tdx-lcdmgr $(DIST)/bin/tdx-lcd-demo
@@ -178,6 +179,7 @@ dist:
 	find $(STAGE) -type d -exec chmod 755 {} + && find $(STAGE) -type f -exec chmod 644 {} +
 	find $(STAGE)/$(notdir $(DIST))/lib -type d -exec chmod 755 {} +
 	chmod 755 $(STAGE)/$(notdir $(DIST))/bin/* $(STAGE)/$(notdir $(DIST))/lib/tdx-settings-helper \
+	   $(STAGE)/$(notdir $(DIST))/lib/tdx-focus-kwin \
 	   $(STAGE)/$(notdir $(DIST))/lib/libtdxlcd.so.1 \
 	   $(STAGE)/$(notdir $(DIST))/install.sh
 	tar -C $(STAGE) --owner=0 --group=0 --numeric-owner -czf $(DIST).tar.gz $(notdir $(DIST))

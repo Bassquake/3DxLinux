@@ -3,11 +3,23 @@
 # switch per-application profiles (/etc/tdxd.d/*.conf), like 3DxWare does.
 #
 # Runs in your desktop session (see tdx-focus.service). Supported:
-#   X11 / XWayland desktops   needs xprop   (Debian/Ubuntu: x11-utils)
-#   sway                      needs swaymsg and jq
-# Elsewhere tdxd falls back to the newest spacenavd client (e.g. Blender).
+#   KDE Plasma (Wayland or X11)  through a KWin script (tdx-focus-kwin)
+#   sway                         needs swaymsg and jq
+#   other X11 desktops           needs xprop   (Debian/Ubuntu: x11-utils)
+# Elsewhere (e.g. GNOME on Wayland) tdxd falls back to the newest spacenavd
+# client (e.g. Blender), and tdx-focus exits quietly.
 TDXCTL=${TDXCTL:-tdxctl}
+export TDXCTL
 last=""
+
+kwin_helper() { # tdx-focus-kwin: installed in lib/tdxd, or next to us in the source tree
+	here=$(dirname "$(readlink -f "$0")")
+	for p in "$here/../lib/tdxd/tdx-focus-kwin" /usr/lib/tdxd/tdx-focus-kwin \
+		 /usr/local/lib/tdxd/tdx-focus-kwin "$here/tdx-focus-kwin"; do
+		[ -f "$p" ] && { echo "$p"; return 0; }
+	done
+	return 1
+}
 
 app_of_pid() {
 	[ -n "$1" ] || return 0
@@ -21,7 +33,11 @@ send() { # send APP [PID], skipping repeats
 	$TDXCTL focus "$1" ${2:+"$2"} >/dev/null 2>&1 || true
 }
 
-if [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+if [ -z "${SWAYSOCK:-}" ] && k=$(kwin_helper) && python3 "$k" --check 2>/dev/null; then
+	# KDE: on Wayland only KWin knows the active window (xprop below would see
+	# XWayland windows only)
+	exec python3 "$k" "$@"
+elif [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
 	swaymsg -m -t subscribe '["window"]' |
 	jq --unbuffered -r 'select(.change == "focus") |
 		"\(.container.pid // "") \(.container.app_id // .container.window_properties.class // "")"' |
@@ -41,7 +57,7 @@ elif [ -n "${DISPLAY:-}" ] && command -v xprop >/dev/null 2>&1; then
 		send "$app" "$pid"
 	done
 else
-	echo "tdx-focus: needs X11 (xprop) or sway (swaymsg + jq); without it tdxd follows" \
-	     "the newest spacenavd client instead" >&2
-	exit 1
+	echo "tdx-focus: this desktop is not supported (KDE Plasma, sway, or X11 with xprop);" \
+	     "tdxd follows the newest spacenavd client instead" >&2
+	exit 0 # not a failure: the service must not restart it over and over
 fi

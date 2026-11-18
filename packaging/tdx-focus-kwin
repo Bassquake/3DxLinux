@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""tdx-focus-kwin - tell tdxd which application has the focus on KDE Plasma.
+
+On Plasma (Wayland, also X11) only KWin knows which window is active. This
+helper loads a small KWin script that, whenever another window becomes active,
+calls back over the session D-Bus with the window's process id and resource
+class; the helper then runs `tdxctl focus <app> <pid>`, like tdx-focus does on
+X11 and sway. The app name is the process's executable (/proc/<pid>/exe), as
+3DxWare uses the .exe name, else the window's resource class (Flatpak, ...).
+
+    tdx-focus-kwin            run (started by tdx-focus)
+    tdx-focus-kwin --check    exit 0 if KWin scripting is available
+    tdx-focus-kwin --serve    only the D-Bus side, no KWin script (tests)
+
+Needs python3-gi (Gio). Started by tdx-focus, which tdx-focus.service runs.
+"""
+import os
+import signal
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+
+BUS_NAME = "org.tdxd.Focus"
+OBJ_PATH = "/Focus"
+IFACE = "org.tdxd.Focus"
+PLUGIN = "tdxd-focus"
+INTROSPECTION = """
+<node>
+  <interface name="org.tdxd.Focus">
+    <method name="Window">
+      <arg type="s" name="pid" direction="in"/>
+      <arg type="s" name="resource_class" direction="in"/>
+    </method>
+  </interface>
+</node>"""
+
+# KWin 6 (windowActivated / activeWindow) and KWin 5 (clientActivated /
+# activeClient). Numbers go as strings: callDBus would send a JS number as a double.
+KWIN_SCRIPT = """
+function report(w) {
+    if (!w)
+        return;
+    callDBus("%(bus)s", "%(path)s", "%(iface)s", "Window",
+             String(w.pid), String(w.resourceClass || ""));
+}
+if (workspace.windowActivated) {
+    workspace.windowActivated.connect(report);
+    report(workspace.activeWindow);
+} else {
+    workspace.clientActivated.connect(report);
+    report(workspace.activeClient);
+}
+""" % {"bus": BUS_NAME, "path": OBJ_PATH, "iface": IFACE}
+
+TDXCTL = os.environ.get("TDXCTL", "tdxctl")
+verbose = "-v" in sys.argv
+last = [None]
+
+
+def log(*a):
+    if verbose:
+        print("tdx-focus-kwin:", *a, file=sys.stderr, flush=True)
+
+
+def app_of_pid(pid):
+    try:
+        exe = os.readlink("/proc/%d/exe" % pid)
+    except (OSError, ValueError):
+        return ""
+    exe = exe[:-len(" (deleted)")] if exe.endswith(" (deleted)") else exe
+    return os.path.basename(exe)
+
+
+def focused(pid_s, resource_class):
+    try:
+        pid = int(pid_s)
+    except ValueError:
+        pid = 0
+    app = app_of_pid(pid) if pid > 0 else ""
+    if not app:  # no pid, or another pid namespace (Flatpak): the window's class
+        app = resource_class.split(".")[-1] if resource_class else ""
+        pid = 0  # a pid we can't see is no use to tdxd
+    if not app or app == last[0]:
+        return
+    last[0] = app
+    log("focus", app, pid or "")
+    cmd = [TDXCTL, "focus", app] + ([str(pid)] if pid > 0 else [])
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def on_call(conn, sender, path, iface, method, params, invocation):
+    if method == "Window":
+        pid_s, cls = params.unpack()
+        focused(pid_s, cls)
+        invocation.return_value(None)
+    else:
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+
+
+def kwin(bus, method, args, reply="()"):
+    return bus.call_sync("org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting", method,
+                         args, GLib.VariantType(reply), Gio.DBusCallFlags.NONE, 5000, None)
+
+
+def kwin_available(bus):
+    try:
+        kwin(bus, "isScriptLoaded", GLib.Variant("(s)", (PLUGIN,)), "(b)")
+        return True
+    except GLib.Error:
+        return False
+
+
+def load_script(bus):
+    rt = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    path = os.path.join(rt, "tdxd-focus-kwin.js")
+    with open(path, "w") as f:
+        f.write(KWIN_SCRIPT)
+    try:  # a copy left by an earlier run (KWin keeps scripts until unloaded)
+        kwin(bus, "unloadScript", GLib.Variant("(s)", (PLUGIN,)), "(b)")
+    except GLib.Error:
+        pass
+    sid, = kwin(bus, "loadScript", GLib.Variant("(ss)", (path, PLUGIN)), "(i)").unpack()
+    log("KWin script loaded, id", sid)
+    started = False
+    for obj in ("/Scripting/Script%d" % sid, "/%d" % sid):  # KWin 6 / older KWin 5
+        try:
+            bus.call_sync("org.kde.KWin", obj, "org.kde.kwin.Script", "run", None, None,
+                          Gio.DBusCallFlags.NONE, 5000, None)
+            started = True
+            break
+        except GLib.Error:
+            continue
+    if not started:
+        kwin(bus, "start", None, None)
+
+
+def unload_script(bus):
+    try:
+        kwin(bus, "unloadScript", GLib.Variant("(s)", (PLUGIN,)), "(b)")
+        log("KWin script unloaded")
+    except GLib.Error:
+        pass
+
+
+def main():
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    except GLib.Error as e:
+        print("tdx-focus-kwin: no session D-Bus: %s" % e.message, file=sys.stderr)
+        return 2
+    if "--check" in sys.argv:
+        return 0 if kwin_available(bus) else 3
+    serve_only = "--serve" in sys.argv
+    if not serve_only and not kwin_available(bus):
+        print("tdx-focus-kwin: KWin scripting not available", file=sys.stderr)
+        return 3
+    node = Gio.DBusNodeInfo.new_for_xml(INTROSPECTION)
+    bus.register_object(OBJ_PATH, node.interfaces[0], on_call, None, None)
+    loop = GLib.MainLoop()
+    owned = []
+
+    def acquired(*_):
+        owned.append(1)
+        if not serve_only:
+            try:
+                load_script(bus)
+            except GLib.Error as e:
+                print("tdx-focus-kwin: cannot load the KWin script: %s" % e.message,
+                      file=sys.stderr)
+                loop.quit()
+
+    def lost(*_):
+        if not owned:
+            print("tdx-focus-kwin: %s is taken (already running?)" % BUS_NAME, file=sys.stderr)
+        loop.quit()
+
+    Gio.bus_own_name_on_connection(bus, BUS_NAME, Gio.BusNameOwnerFlags.NONE, acquired, lost)
+    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, s, lambda *_: loop.quit() or False)
+    loop.run()
+    if not serve_only and owned:
+        unload_script(bus)
+    return 0 if owned else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

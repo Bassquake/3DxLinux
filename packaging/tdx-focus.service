@@ -1,7 +1,7 @@
 # systemd *user* unit: reports the focused application to tdxd for
 # per-application profiles. Enable with:  systemctl --user enable --now tdx-focus
 [Unit]
-Description=Report the focused application to tdxd (per-application profiles)
+Description=Report the focused application to tdxd (per-application profiles, LCD)
 PartOf=graphical-session.target
 After=graphical-session.target
 
