@@ -744,12 +744,16 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 			snprintf(reply, len, "error: no device\n");
 	} else if (!strcmp(verb, "app-buttons")) {
 		/* app-buttons PID [TAB V3DK TAB name]...  (fields split by tabs: names
-		 * have spaces). The application is named from PID like focus; no pairs
-		 * clears. */
+		 * have spaces). The application is named from PID like focus; PID 0 is
+		 * the caller (the FreeCAD add-on: inside a Flatpak its own PID means
+		 * nothing here). No pairs clears. */
 		char *rest = save ? save : (char *)"";
 		char *tsave = NULL, *pid = strtok_r(rest, "\t", &tsave);
+		int p = pid ? atoi(pid) : -1;
+		if (p == 0 && pid && pid[0] == '0')
+			p = tdx_ctl_peer_pid();
 		char name[64];
-		if (!pid || atoi(pid) <= 0 || tdx_app_from_pid(atoi(pid), name, sizeof name)) {
+		if (p <= 0 || tdx_app_from_pid(p, name, sizeof name)) {
 			snprintf(reply, len, "error: app-buttons needs the process id of the application\n");
 			return;
 		}

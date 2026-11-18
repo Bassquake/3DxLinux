@@ -170,10 +170,14 @@ getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
 	[ -d "$home" ] || continue
 	rm -rf "$home/.config/tdxd" "$home/.local/share/tdxd"
 	# the FreeCAD add-on loader (tdx-freecad-addon), in each FreeCAD version'"'"'s folder
-	rm -rf "$home/.local/share/FreeCAD/Mod/TdxdSpaceMouse"
-	for m in "$home"/.local/share/FreeCAD/v*/Mod/TdxdSpaceMouse; do
+	fp="$home/.var/app/org.freecad.FreeCAD/data/FreeCAD"
+	rm -rf "$home/.local/share/FreeCAD/Mod/TdxdSpaceMouse" "$fp/Mod/TdxdSpaceMouse"
+	for m in "$home"/.local/share/FreeCAD/v*/Mod/TdxdSpaceMouse "$fp"/v*/Mod/TdxdSpaceMouse; do
 		[ -d "$m" ] && rm -rf "$m"
 	done
+	# and the Flatpak FreeCAD permission for tdxd socket it added
+	o="$home/.local/share/flatpak/overrides/org.freecad.FreeCAD"
+	[ -f "$o" ] && sed -i "s|/run/tdxd.sock;||; /^filesystems=\$/d" "$o"
 	rm -f "$home"/.local/share/icons/hicolor/*/apps/tdxd-*.png
 	for e in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
 		rm -f "$home/.local/share/applications/$e.desktop"

@@ -298,6 +298,12 @@ you set yourself in FreeCAD's Spaceball button settings is left alone.
 `tdx-freecad-addon remove` takes the add-on out again. Nothing from 3DxWare is
 shipped with tdxd: the key sets come from your own installer.
 
+FreeCAD from Flathub works too: `tdx-freecad-addon install` also puts the loader
+in `~/.var/app/org.freecad.FreeCAD/data/FreeCAD/…/Mod` and lets the sandbox
+reach tdxd's socket (`flatpak override --user --filesystem=/run/tdxd.sock
+org.freecad.FreeCAD`; `remove` takes that back). FreeCAD as a Snap isn't
+supported.
+
 ## LCD
 
 ### LCD Manager and applets

@@ -34,7 +34,9 @@ def asset_dirs():
     env = os.environ.get("TDX_UI_ASSETS")
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
-        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui",
+        # FreeCAD as a Flatpak sees the host's /usr here
+        "/run/host/usr/local/share/tdxd/3dxware-ui", "/run/host/usr/share/tdxd/3dxware-ui"]
 
 
 def load_buttons(dirs=None):
@@ -156,7 +158,10 @@ class Addon:
             return
         self.numbers = parse_buttons(tdxd("buttons"))
         if not self.numbers:
-            self.log("tdxd not reachable or no device; keys not set up")
+            self.FreeCAD.Console.PrintWarning(
+                "tdxd: can't reach tdxd at %s or no 3D mouse connected; the keys keep "
+                "their usual functions (FreeCAD as a Flatpak: run tdx-freecad-addon "
+                "install, then restart FreeCAD)\n" % SOCKET)
         params = "User parameter:BaseApp/Spaceball/Buttons/%d"
         for key, num in self.numbers.items():
             if not any(key in b for b in self.data.get("banks", {}).values()):
@@ -175,6 +180,10 @@ class Addon:
             self.timer.timeout.connect(self.poll)
             self.timer.start(1000)
         self.workbench_changed(self.active_workbench())
+        if self.numbers:
+            self.FreeCAD.Console.PrintMessage(
+                "tdxd: 3D mouse keys follow the workbench (%d key sets)\n"
+                % len(self.data.get("banks", {})))
         app = self.QtGui.QApplication.instance()
         if app:
             app.aboutToQuit.connect(self.stop)
@@ -196,10 +205,10 @@ class Addon:
     def workbench_changed(self, name):
         self.workbench = str(name or "")
         names = key_names(self.data, self.workbench, self.numbers.keys())
-        self.log("%s: %s" % (self.workbench, tdxd(app_buttons_message(os.getpid(), names)).strip()))
+        self.log("%s: %s" % (self.workbench, tdxd(app_buttons_message(0, names)).strip()))
 
     def stop(self):
-        tdxd(app_buttons_message(os.getpid(), []))
+        tdxd(app_buttons_message(0, []))
 
     def press(self, key):
         what = resolve(self.data, self.workbench, key)

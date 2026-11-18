@@ -225,7 +225,7 @@ def main():
     check(params.get(("User parameter:BaseApp/Spaceball/Buttons/13", "Command")) == "Std_ViewFitAll",
           "the user's own button command is kept")
     check(srv.got[-1] == "app-buttons\t%d\tV3DK_1\tCreate sketch\tV3DK_2\tPart Design Modeling\t"
-          "V3DK_6\tCreate a local coordinate system" % os.getpid(), "names sent: %r" % srv.got[-1])
+          "V3DK_6\tCreate a local coordinate system" % 0, "names sent: %r" % srv.got[-1])
     commands["Tdxd_Key_V3DK_6"].Activated()
     check(ran[-1] == ("PartDesign_CompDatums", 3), "key 6 runs the group command's entry 3")
     commands["Tdxd_Key_V3DK_2"].Activated()
@@ -233,11 +233,11 @@ def main():
           "key 2 pops up the radial menu, its entry runs")
     check(menus[-1].items[2].enabled is False, "an entry FreeCAD lacks is greyed out (Pocket)")
     mw.workbenchActivated.f("SketcherWorkbench")  # no set: the default one
-    check(srv.got[-1] == "app-buttons\t%d\tV3DK_1\tNew" % os.getpid(), "workbench change: %r" % srv.got[-1])
+    check(srv.got[-1] == "app-buttons\t%d\tV3DK_1\tNew" % 0, "workbench change: %r" % srv.got[-1])
     commands["Tdxd_Key_V3DK_1"].Activated()
     check(ran[-1] == ("Std_New", None), "the default set's command")
     addon.stop()
-    check(srv.got[-1] == "app-buttons\t%d" % os.getpid(), "on exit the keys go back to tdxd")
+    check(srv.got[-1] == "app-buttons\t%d" % 0, "on exit the keys go back to tdxd")
 
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0

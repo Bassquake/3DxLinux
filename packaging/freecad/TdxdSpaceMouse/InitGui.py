@@ -5,7 +5,9 @@
 import os as _os
 import sys as _sys
 
-for _d in ("/usr/share/tdxd/freecad", "/usr/local/share/tdxd/freecad"):
+# (/run/host/usr: the host's /usr, as FreeCAD in a Flatpak sees it)
+for _d in ("/usr/share/tdxd/freecad", "/usr/local/share/tdxd/freecad",
+           "/run/host/usr/share/tdxd/freecad", "/run/host/usr/local/share/tdxd/freecad"):
     if _os.path.isfile(_os.path.join(_d, "tdxd_freecad.py")):
         if _d not in _sys.path:
             _sys.path.insert(0, _d)

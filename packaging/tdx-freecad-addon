@@ -8,34 +8,62 @@
 #   tdx-freecad-addon [install]   for every FreeCAD found in your home
 #   tdx-freecad-addon remove
 #
-# FreeCAD as a Flatpak or Snap can't see /usr/share, so it isn't covered.
+# FreeCAD from Flathub (org.freecad.FreeCAD) is covered too: it sees the host's
+# /usr as /run/host/usr, and install lets it reach tdxd's socket
+# (flatpak override --user --filesystem=/run/tdxd.sock; remove takes that back).
+# A Snap can't see /usr, so it isn't covered.
 set -u
 NAME=TdxdSpaceMouse
+FLATPAK_ID=org.freecad.FreeCAD
+SOCK=/run/tdxd.sock
 here=$(dirname "$(readlink -f "$0")")
 src=""
 for d in "$here/../share/tdxd/freecad" /usr/share/tdxd/freecad /usr/local/share/tdxd/freecad "$here/freecad"; do
 	[ -f "$d/$NAME/InitGui.py" ] && { src="$d/$NAME"; break; }
 done
 base=${XDG_DATA_HOME:-$HOME/.local/share}/FreeCAD
+fpapp=$HOME/.var/app/$FLATPAK_ID
+fpbase=$fpapp/data/FreeCAD
 
-# FreeCAD's user add-on folders: Mod (FreeCAD <= 1.0) and v1-1/Mod etc. (1.1+)
+# FreeCAD's user add-on folders: Mod (FreeCAD <= 1.0) and v1-1/Mod etc. (1.1+),
+# for FreeCAD from the distribution and from Flathub
 mods() {
-	[ -d "$base" ] || return 0
-	echo "$base/Mod"
-	for v in "$base"/v*; do [ -d "$v" ] && echo "$v/Mod"; done
+	for b in "$base" "$fpbase"; do
+		[ -d "$b" ] || continue
+		echo "$b/Mod"
+		for v in "$b"/v*; do [ -d "$v" ] && echo "$v/Mod"; done
+	done
+}
+
+flatpak_freecad() {
+	command -v flatpak >/dev/null 2>&1 && flatpak info "$FLATPAK_ID" >/dev/null 2>&1
 }
 
 case "${1:-install}" in
 install)
 	[ -n "$src" ] || { echo "tdx-freecad-addon: the add-on files are missing" >&2; exit 1; }
-	[ -d "$base" ] || { echo "tdx-freecad-addon: no FreeCAD settings in $base (start FreeCAD once)"; exit 0; }
+	# a Flatpak FreeCAD that hasn't been started yet: make its folder
+	[ -d "$fpapp" ] && [ ! -d "$fpbase" ] && mkdir -p "$fpbase/Mod"
+	if [ ! -d "$base" ] && [ ! -d "$fpbase" ]; then
+		echo "tdx-freecad-addon: no FreeCAD settings found (start FreeCAD once)"
+		exit 0
+	fi
 	mods | while read -r m; do
 		mkdir -p "$m/$NAME" && cp "$src/InitGui.py" "$m/$NAME/InitGui.py" && echo "installed in $m"
-	done ;;
+	done
+	if flatpak_freecad; then
+		flatpak override --user --filesystem="$SOCK" "$FLATPAK_ID" &&
+			echo "FreeCAD (Flatpak) may now reach $SOCK"
+	fi ;;
 remove)
 	mods | while read -r m; do
 		[ -d "$m/$NAME" ] && rm -rf "${m:?}/$NAME" && echo "removed from $m"
-	done ;;
+	done
+	# take back only our entry in the Flatpak override
+	o=${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/overrides/$FLATPAK_ID
+	if [ -f "$o" ] && grep -q "$SOCK;" "$o"; then
+		sed -i "s|$SOCK;||; /^filesystems=\$/d" "$o" && echo "FreeCAD (Flatpak) no longer reaches $SOCK"
+	fi ;;
 *)
 	echo "usage: tdx-freecad-addon [install|remove]" >&2; exit 2 ;;
 esac

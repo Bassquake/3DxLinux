@@ -40,6 +40,12 @@ int tdx_ctl_listen(const char *path)
 }
 
 static int keep_conn;
+static int peer_pid;
+
+int tdx_ctl_peer_pid(void)
+{
+	return peer_pid;
+}
 
 void tdx_ctl_keep_connection(void)
 {
@@ -52,6 +58,9 @@ int tdx_ctl_serve(int lfd, tdx_ctl_handler h)
 	if (fd < 0)
 		return -1;
 	keep_conn = 0;
+	struct ucred cr;
+	socklen_t crl = sizeof cr;
+	peer_pid = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cr, &crl) == 0 ? (int)cr.pid : 0;
 	struct timeval tv = {.tv_sec = 0, .tv_usec = 300000}; /* never stall the daemon */
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
