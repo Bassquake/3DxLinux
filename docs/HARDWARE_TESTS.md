@@ -349,3 +349,17 @@ windows only).
 | View keys in FreeCAD | **Pass after a fix:** Top, Front, Right, ISO1 and Roll + did nothing (FreeCAD gets only numbered spacenav buttons and has no default commands for them). The new `/etc/tdxd.d/freecad.conf` sends FreeCAD's own shortcuts while it has the focus; all work. |
 | Cap navigation in FreeCAD | **Pass:** works after restarting FreeCAD (installing a package restarts tdxd and FreeCAD does not reconnect to the spacenav socket). |
 | Mouse cursor | **Pass after two fixes:** the cursor moved with the cap. The kernel's own input device for the SpacePilot (`3Dconnexion  SpacePilot PRO`) is classed `ID_INPUT_MOUSE`, so libinput used it as a pointer; the udev rule now sets `LIBINPUT_IGNORE_DEVICE` on it. That only took effect after removing the old workaround copy `/etc/udev/rules.d/70-3dconnexion-tdxd.rules`, which shadowed the packaged rule (the packages now remove such copies). tdxd's own 3D mouse is now a separate joystick-only device (`ID_INPUT_JOYSTICK`) and the keys a separate keyboard. |
+
+## 2026-11-18: DOM / PAN ZOOM correction (WSL, SpacePilot PRO)
+
+**Correction to the entry above:** the DOM and PAN ZOOM keys were never
+swapped. Raw report 0x03 from the device: DOM sends `0x10000000`, PAN ZOOM
+`0x08000000`, as 3DxWare's `Base.xml` says. What was swapped were the Function
+Keys header icons (Dominant = bitmaps 114/115, Pan/Zoom = 116/117) and their
+order; with wrong icons the right keys looked swapped, and the key "fix" in
+0.3.4 made DOM toggle pan/zoom. Undone (`52505f4`), icons fixed (`9a71efe`).
+
+| Test | Result |
+|---|---|
+| Header icons vs Windows | **Pass:** Rotation, Pan/Zoom, Dominant, left to right, with the Windows pictures. |
+| DOM / PAN ZOOM | **Pass:** DOM switches the Dominant icon and setting, PAN ZOOM the Pan/Zoom ones (`tdxctl status`). |
