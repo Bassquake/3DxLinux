@@ -305,3 +305,10 @@ session), `tdxd_0.3.1-1_amd64.deb` installed.
 | Settings panel | **Pass:** shows the device as connected. |
 | LCD | **Fail, then pass after a fix:** the LCD kept its idle "SpacePilot PRO" picture. The udev rule was `99-3dconnexion-tdxd.rules`, after `73-seat-late.rules`, so its `uaccess` tag never became the user's ACL and tdx-lcdmgr (running as the user) could not open the LCD. Copied as `/etc/udev/rules.d/70-3dconnexion-tdxd.rules` plus `udevadm trigger` and restarting tdx-lcdmgr: the LCD works. Fixed for the next release (rule renamed to `70-`). |
 | LED toggle in the panel | Not a fault: `/etc/tdxd.conf` is root's, so the panel saves (one password) when its window closes and tdxd applies the LED then. |
+
+### Upgrade to the test build (same Kubuntu 26.04 PC)
+
+| Test | Result |
+|---|---|
+| Upgrade 0.3.1 → `0.3.2+1+g1417a66` | **Fail, then pass after a fix:** afterwards tdxd was enabled but stopped (`inactive (dead)`), so nothing detected the device; the package only *try-restarted* tdxd, which leaves a stopped one stopped. Now it restarts (also starts) tdxd and the users' LCD Managers. With `0.3.2+2+gaa46a75` the device is detected again. Why tdxd had stopped is unknown (the system journal needs root to read). |
+| Menu after uninstall/upgrade | **Fixed:** "3D Mouse Settings" and "LCD Manager" stayed in the menu from the importer's copies in `~/.local/share/applications` (they win over the package's entries and nothing removes them). The entries and those copies now carry `TryExec=`, so the menu hides a copy once its program is gone. |
