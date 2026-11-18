@@ -145,8 +145,8 @@ static const struct tdx_button_def btn_productc629[] = {
   {0x03, TDX_BTN_MASK, 0x01000000u, 0x00000000u, -1, "HIDButton_25", "V3DK_SHIFT", "STR_Shift"},
   {0x03, TDX_BTN_MASK, 0x02000000u, 0x00000000u, -1, "HIDButton_26", "V3DK_CTRL", "STR_Ctrl"},
   {0x03, TDX_BTN_MASK, 0x04000000u, 0x00000000u, -1, "HIDButton_27", "V3DK_ROTATE", "STR_Rot"},
-  {0x03, TDX_BTN_MASK, 0x10000000u, 0x00000000u, -1, "HIDButton_28", "V3DK_PANZOOM", "STR_PanZoom"},
-  {0x03, TDX_BTN_MASK, 0x08000000u, 0x00000000u, -1, "HIDButton_29", "V3DK_DOMINANT", "STR_Dom"},
+  {0x03, TDX_BTN_MASK, 0x08000000u, 0x00000000u, -1, "HIDButton_28", "V3DK_PANZOOM", "STR_PanZoom"},
+  {0x03, TDX_BTN_MASK, 0x10000000u, 0x00000000u, -1, "HIDButton_29", "V3DK_DOMINANT", "STR_Dom"},
   {0x03, TDX_BTN_MASK, 0x20000000u, 0x00000000u, -1, "HIDButton_30", "V3DK_PLUS", "STR_Plus"},
   {0x03, TDX_BTN_MASK, 0x40000000u, 0x00000000u, -1, "HIDButton_31", "V3DK_MINUS", "STR_Minus"},
 };
