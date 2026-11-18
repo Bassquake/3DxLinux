@@ -335,3 +335,9 @@ windows only).
 | Test | Result |
 |---|---|
 | Focus tracking | **Pass:** with `tdx-focus` started by the package and its new KWin path (`tdx-focus-kwin` loads a KWin script that reports each activated window over D-Bus), the Function Keys header follows the app switched to. |
+
+## 2026-11-18: SpacePilot PRO DOM / PAN ZOOM keys (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| DOM and PAN ZOOM keys | **Fail, then pass after a fix:** with `tdxctl status`, pressing DOM flipped `panzoom` and PAN ZOOM flipped `dominant`. The DOM key sends `0x08000000` and PAN ZOOM `0x10000000`, swapped from 3DxWare's `Base.xml` (whose defaults in `SharedCfg.xml` match tdxd's actions). Corrected for the SpacePilot PRO (`MASK_FIXES` in `tools/extract_devices.py`); with test build `0.3.3+3+gfdd0812` each key switches its own setting. |
