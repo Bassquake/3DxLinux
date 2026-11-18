@@ -363,3 +363,16 @@ order; with wrong icons the right keys looked swapped, and the key "fix" in
 |---|---|
 | Header icons vs Windows | **Pass:** Rotation, Pan/Zoom, Dominant, left to right, with the Windows pictures. |
 | DOM / PAN ZOOM | **Pass:** DOM switches the Dominant icon and setting, PAN ZOOM the Pan/Zoom ones (`tdxctl status`). |
+
+## 2026-11-18: every key, and keys 1-10 with 3DxWare's defaults (WSL, SpacePilot PRO)
+
+Raw report 0x03, pressing every key around the device: MENU, FIT, T, R, F,
+Roll +, 1-5, ESC, ALT, SHIFT, CTRL, ROT, PAN ZOOM, DOM, +, − each send the bit
+`devices_gen.c` (Base.xml) gives that key. The firmware sends keys 6-10
+itself when 1-5 are held past about half a second.
+
+| Test | Result |
+|---|---|
+| Keys 1-5 (taps) | **Pass:** New Ctrl+N, Open Ctrl+O, Save Ctrl+S, Copy Ctrl+C, Cut Ctrl+X on the "(tdxd keys)" device. |
+| Keys 6-10 (hold 1-5) | **Pass:** Paste Ctrl+V, window left Super+Left, window right Super+Right, switch app Alt+Tab, Undo Ctrl+Z. |
+| MENU → settings panel | Not tested here (WSL's root has no desktop session to open it in). |
