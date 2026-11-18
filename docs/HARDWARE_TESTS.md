@@ -341,3 +341,11 @@ windows only).
 | Test | Result |
 |---|---|
 | DOM and PAN ZOOM keys | **Fail, then pass after a fix:** with `tdxctl status`, pressing DOM flipped `panzoom` and PAN ZOOM flipped `dominant`. The DOM key sends `0x08000000` and PAN ZOOM `0x10000000`, swapped from 3DxWare's `Base.xml` (whose defaults in `SharedCfg.xml` match tdxd's actions). Corrected for the SpacePilot PRO (`MASK_FIXES` in `tools/extract_devices.py`); with test build `0.3.3+3+gfdd0812` each key switches its own setting. |
+
+## 2026-11-18: FreeCAD on Kubuntu 26.04 (view keys, cursor)
+
+| Test | Result |
+|---|---|
+| View keys in FreeCAD | **Pass after a fix:** Top, Front, Right, ISO1 and Roll + did nothing (FreeCAD gets only numbered spacenav buttons and has no default commands for them). The new `/etc/tdxd.d/freecad.conf` sends FreeCAD's own shortcuts while it has the focus; all work. |
+| Cap navigation in FreeCAD | **Pass:** works after restarting FreeCAD (installing a package restarts tdxd and FreeCAD does not reconnect to the spacenav socket). |
+| Mouse cursor | **Pass after two fixes:** the cursor moved with the cap. The kernel's own input device for the SpacePilot (`3Dconnexion  SpacePilot PRO`) is classed `ID_INPUT_MOUSE`, so libinput used it as a pointer; the udev rule now sets `LIBINPUT_IGNORE_DEVICE` on it. That only took effect after removing the old workaround copy `/etc/udev/rules.d/70-3dconnexion-tdxd.rules`, which shadowed the packaged rule (the packages now remove such copies). tdxd's own 3D mouse is now a separate joystick-only device (`ID_INPUT_JOYSTICK`) and the keys a separate keyboard. |
