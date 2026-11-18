@@ -82,6 +82,15 @@ chmod 644 /etc/systemd/system/tdxd.service
 modprobe uinput 2>/dev/null || true
 udevadm control --reload
 udevadm trigger
+udevadm settle 2>/dev/null || true
+# libinput reads LIBINPUT_IGNORE_DEVICE only when a device is added: re-add the
+# 3D mouse event nodes the rule now hides, so the cursor stops following the cap
+for ev in /sys/class/input/event*; do
+	udevadm info -q property -p "$ev" 2>/dev/null | grep -q "^LIBINPUT_IGNORE_DEVICE=1" || continue
+	case "$(cat "$ev/device/name" 2>/dev/null)" in *3Dconnexion*|*SpaceMouse*|*SpacePilot*|*SpaceNavigator*) ;; *) continue ;; esac
+	udevadm trigger --action=remove "$ev" 2>/dev/null || true
+	udevadm trigger --action=add "$ev" 2>/dev/null || true
+done
 systemctl daemon-reload
 
 echo "installed tdxd $(cat VERSION 2>/dev/null) to $PREFIX/bin"

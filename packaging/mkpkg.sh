@@ -76,7 +76,17 @@ stage() { # stage LIBDIR -> $STAGE/root
 POST_INSTALL='modprobe uinput 2>/dev/null || true
 if command -v udevadm >/dev/null 2>&1; then
 	udevadm control --reload-rules 2>/dev/null || true
-	udevadm trigger --subsystem-match=hidraw --subsystem-match=usb --subsystem-match=misc 2>/dev/null || true
+	udevadm trigger --subsystem-match=hidraw --subsystem-match=usb --subsystem-match=misc \
+		--subsystem-match=input 2>/dev/null || true
+	udevadm settle 2>/dev/null || true
+	# libinput reads LIBINPUT_IGNORE_DEVICE only when a device is added: re-add the
+	# 3D mouse event nodes the rule now hides, as a replug would
+	for ev in /sys/class/input/event*; do
+		udevadm info -q property -p "$ev" 2>/dev/null | grep -q "^LIBINPUT_IGNORE_DEVICE=1" || continue
+		case "$(cat "$ev/device/name" 2>/dev/null)" in *3Dconnexion*|*SpaceMouse*|*SpacePilot*|*SpaceNavigator*) ;; *) continue ;; esac
+		udevadm trigger --action=remove "$ev" 2>/dev/null || true
+		udevadm trigger --action=add "$ev" 2>/dev/null || true
+	done
 fi
 if [ -d /run/systemd/system ]; then
 	systemctl daemon-reload || true
