@@ -414,4 +414,4 @@ itself when 1-5 are held past about half a second.
 
 | Test | Result |
 |---|---|
-| System > 3D Mouse Settings clicked repeatedly | **Pass after a fix:** each click opened another panel. With test build `0.3.4+23+g58b60b5` (session bus name org.tdxd.Settings) only one panel opens; further clicks bring it forward. The LCD Manager got the same (org.tdxd.LcdManager), checked in WSL. |
+| System > 3D Mouse Settings clicked repeatedly | **Pass after a fix:** each click opened another panel. With test build `0.3.4+23+g58b60b5` (session bus name org.tdxd.Settings) only one panel opens; further clicks bring it forward. The LCD Manager got the same (org.tdxd.LcdManager): **Pass** with `0.3.4+24+g59b676a`, one window, further starts bring it forward. |
