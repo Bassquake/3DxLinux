@@ -757,6 +757,13 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 			session_uid = uid;
 		g_reload = 1;
 		snprintf(reply, len, "ok reloading\n");
+	} else if (!strcmp(verb, "app-keys")) {
+		/* the names an application gave its keys (app-buttons), for the
+		 * settings panel: "app NAME" then "V3DK<TAB>name" lines */
+		size_t o = (size_t)snprintf(reply, len, "app %s\n", nappkeys ? appkeys_app : "-");
+		for (int i = 0; i < nappkeys && o < len; i++)
+			o += (size_t)snprintf(reply + o, len - o, "%s\t%s\n", appkeys[i].v3dk,
+					      appkeys[i].text);
 	} else if (!strcmp(verb, "buttons")) {
 		/* each key's number (= the spacenav button number apps get) and V3DK id */
 		const struct dev_ctx *d = NULL;

@@ -7,6 +7,7 @@
  *   tdxctl calibrate           re-zero every device (like 3DxWare's "Calibrate")
  *   tdxctl reload              re-read /etc/tdxd.conf and the profiles
  *   tdxctl buttons             each key's number (the spacenav button) and V3DK id
+ *   tdxctl app-keys            the names the application gave its keys (app-buttons)
  *   tdxctl app-buttons PID [V3DK NAME]...
  *                              the keys application PID handles itself, with its
  *                              names for the LCD (none: give them back to tdxd)
@@ -26,7 +27,7 @@
 static int usage(void)
 {
 	fputs("usage: tdxctl [-s SOCKET] status | profiles | focus APP [PID] | calibrate | reload\n"
-	      "       tdxctl [-s SOCKET] buttons | app-buttons PID [V3DK NAME]...\n"
+	      "       tdxctl [-s SOCKET] buttons | app-keys | app-buttons PID [V3DK NAME]...\n"
 	      "       tdxctl -V\n", stderr);
 	return 2;
 }
@@ -48,7 +49,7 @@ int main(int argc, char **argv)
 	const char *cmd = argv[ai];
 	if (strcmp(cmd, "status") && strcmp(cmd, "profiles") && strcmp(cmd, "focus") &&
 	    strcmp(cmd, "calibrate") && strcmp(cmd, "reload") && strcmp(cmd, "buttons") &&
-	    strcmp(cmd, "app-buttons"))
+	    strcmp(cmd, "app-buttons") && strcmp(cmd, "app-keys"))
 		return usage();
 	if ((!strcmp(cmd, "focus") || !strcmp(cmd, "app-buttons")) && ai + 1 >= argc)
 		return usage();

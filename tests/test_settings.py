@@ -254,6 +254,48 @@ def gui_tests(d, tdxd):
           all(ship.get("lcd_label_%d" % (i + 1)) == v for i, v in enumerate(ts.DEFAULT_LABELS)),
           "Restore Defaults matches packaging/tdxd.conf")
 
+    # ---- the application's own key names (tdxctl app-keys; the FreeCAD add-on)
+    d0 = ts.Daemon("/nonexistent")
+    d0.request = lambda *a: (0, "app FreeCAD\nV3DK_1\tCreate sketch\nV3DK_2\tPart Design Modeling\n")
+    check(d0.app_keys() == ("FreeCAD", {"V3DK_1": "Create sketch", "V3DK_2": "Part Design Modeling"}),
+          "app-keys parsed: %r" % (d0.app_keys(),))
+    d0.request = lambda *a: (0, "app -\n")
+    check(d0.app_keys() == (None, {}), "no application names")
+    with open(os.path.join(pdir, "freecad.conf"), "w") as f:
+        f.write("match = freecad*\nkey_V3DK_TOP = KEY_2\nlcd_label_V3DK_TOP = Top View\n")
+    app.daemon.app_keys = lambda: ("FreeCAD", {"V3DK_1": "Create sketch", "V3DK_6": "Create a local"})
+    app.store.select("freecad")
+    btn.refresh()
+    check(btn.rows["V3DK_1"][0].get_text() == "Create sketch" and
+          btn.rows["V3DK_6"][0].get_text() == "Create a local", "FreeCAD's names on its keys")
+    check(btn.rows["V3DK_TOP"][0].get_text().startswith("Top View"), "the profile's own keys unchanged")
+    app.store.select(None)
+    btn.refresh()
+    check(btn.rows["V3DK_1"][0].get_text() != "Create sketch", "not on All Applications")
+
+    # ---- a profile imported from 3DxWare: shown, copied to profile_dir on change
+    imp = os.path.join(d, "imported")
+    os.makedirs(imp)
+    with open(os.path.join(imp, "3dx-firefox.conf"), "w") as f:
+        f.write("# imported\nmatch = firefox\nkey_V3DK_3 = KEY_LEFTCTRL + KEY_LEFTSHIFT + KEY_R\n"
+                "lcd_label_V3DK_3 = Refresh\n")
+    orig_dirs = ts.Store.import_dirs
+    ts.Store.import_dirs = staticmethod(lambda: [imp])
+    app.daemon.app_keys = lambda: (None, {})
+    app.store.select("3dx-firefox")
+    p = app.store.profile
+    check(p.imported_from and not p.exists and p.path == os.path.join(pdir, "3dx-firefox.conf"),
+          "imported profile, not yet in profile_dir")
+    btn.refresh()
+    check(btn.rows["V3DK_3"][0].get_text().startswith("Refresh"), "imported keys shown")
+    p.set("key_V3DK_4", "KEY_F5")
+    check(ts.write_file(p) is None and os.path.isfile(p.path), "first change saves a copy")
+    with open(p.path) as f:
+        saved = f.read()
+    check("match = firefox" in saved and "lcd_label_V3DK_3 = Refresh" in saved and "KEY_F5" in saved,
+          "the copy keeps 3DxWare's keys")
+    ts.Store.import_dirs = orig_dirs
+
 
 def main():
     tdxd = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build",

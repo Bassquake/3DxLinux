@@ -14,6 +14,7 @@ cairo; no 3Dconnexion images are used.
 """
 
 import argparse
+import fnmatch
 import math
 import os
 import re
@@ -289,8 +290,36 @@ class Store:
     def profile_path(self, name):
         return os.path.join(self.profile_dir, name + ".conf")
 
+    @staticmethod
+    def import_dirs():
+        """Where tdxd finds the profiles imported from 3DxWare (after profile_dir),
+        in tdxd's order (profile.h)."""
+        return ["/usr/local/share/tdxd/3dxware-ui/profiles", "/usr/share/tdxd/3dxware-ui/profiles",
+                os.path.expanduser("~/.local/share/tdxd/3dxware-ui/profiles")]
+
+    def imported_path(self, name):
+        for d in self.import_dirs():
+            p = os.path.join(d, name + ".conf")
+            if os.path.isfile(p):
+                return p
+        return None
+
     def select(self, name):
-        self.profile = ConfFile(self.profile_path(name)) if name else None
+        """Edit profile @name (None: the base file). A profile imported from
+        3DxWare that isn't in profile_dir yet is shown as it is; the first
+        change saves a copy there (tdxd then uses that one, as for 3DxWare's
+        own copy of a changed application configuration)."""
+        if not name:
+            self.profile = None
+            return
+        f = ConfFile(self.profile_path(name))
+        f.imported_from = None
+        if not f.exists:
+            src = self.imported_path(name)
+            if src:
+                f.lines = ConfFile(src).lines[:]
+                f.imported_from = src
+        self.profile = f
 
     def create_profile(self, name, match):
         f = ConfFile(self.profile_path(name))
@@ -385,6 +414,15 @@ class Daemon:
         except (OSError, subprocess.TimeoutExpired) as e:
             return 1, str(e) + "\n"
         return p.returncode, p.stdout + p.stderr
+
+    def app_keys(self):
+        """(application, {V3DK: name}): the names the focused application gave
+        its keys (the FreeCAD add-on, per workbench), or (None, {})."""
+        rc, out = self.request("app-keys")
+        lines = out.splitlines() if rc == 0 else []
+        app = lines[0][4:].strip() if lines and lines[0].startswith("app ") else "-"
+        keys = dict(l.split("\t", 1) for l in lines[1:] if "\t" in l)
+        return (None, {}) if app == "-" or not keys else (app, keys)
 
     def status(self):
         rc, out = self.request("status")
@@ -1441,6 +1479,7 @@ class ButtonsPanel(Panel):
         devs = self.app.status.get("devices", [])
         self.put(device_image(devs[0] if devs else None), 594, 42)
         self.rows = {}
+        self.own_app, self.own = None, {}  # the application's own key names (app_keys)
         for c, col in enumerate(SPP_COLUMNS):
             capx, bx = self.COLS[c]
             for r, item in enumerate(col):
@@ -1488,7 +1527,22 @@ class ButtonsPanel(Panel):
                 return name
         return None
 
+    def app_keys(self):
+        """The application's own names for its keys, when that application is
+        the profile shown here: {V3DK: name}."""
+        app, keys = self.app.daemon.app_keys()
+        prof = self.store.profile
+        if not app or not prof:
+            return app, {}
+        name = os.path.basename(prof.path)[:-5]
+        pats = re.split(r"[,\s]+", prof.get("match") or name)
+        if any(p and fnmatch.fnmatch(app.lower(), p.lower()) for p in pats):
+            return app, keys
+        return app, {}
+
     def describe(self, v3dk, fn):
+        if v3dk in self.own:  # the application runs its own command for this key
+            return self.own[v3dk]
         kind, val = self.assignment(v3dk)
         if kind == "action":
             return ACTION_LABEL.get(val, val)
@@ -1511,11 +1565,16 @@ class ButtonsPanel(Panel):
 
     def refresh(self):
         self.refresh_header()
+        self.own_app, self.own = self.app_keys()
         for v3dk, (l, fn, slot) in self.rows.items():
             kind, _ = self.assignment(v3dk)
             l.set_text(self.describe(v3dk, fn))
-            l.get_parent().get_parent().set_tooltip_text(
-                "Sent to the application" if kind == "app" else None)
+            if v3dk in self.own:
+                tip = ("%s's own command for this key (its tdxd add-on; it changes with "
+                       "the workbench)" % self.own_app)
+            else:
+                tip = "Sent to the application" if kind == "app" else None
+            l.get_parent().get_parent().set_tooltip_text(tip)
             for c in slot.get_children():
                 slot.remove(c)
             img = image_widget(self.icon_for(v3dk), 16)
@@ -2075,7 +2134,10 @@ class App:
             menu.append(mi)
 
         item("All Applications (default)", lambda: self.switch_profile(None), cur is None)
-        for n in self.store.profile_names():
+        names = self.store.profile_names()
+        if cur and cur not in names:  # imported from 3DxWare, not changed yet
+            names = sorted(names + [cur])
+        for n in names:
             item(n, lambda n=n: self.switch_profile(n), n == cur)
         menu.append(Gtk.SeparatorMenuItem())
         mi = Gtk.MenuItem(label="New profile…")

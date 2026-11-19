@@ -6,6 +6,7 @@
  *   calibrate              re-zero every device (feature report 0x07)
  *   reload                 re-read the configuration and profiles (like SIGHUP)
  *   buttons                each key's number and V3DK id
+ *   app-keys               the names the application gave its keys (app-buttons)
  *   app-buttons PID [TAB V3DK TAB NAME]...
  *                          keys the application handles itself (PID 0: the
  *                          process on the other end of this connection)
