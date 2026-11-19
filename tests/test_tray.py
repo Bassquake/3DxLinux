@@ -82,8 +82,11 @@ def main():
     labels = [c[1].get("label", c[1].get("type")) for c in lay[1][2]]
     check(labels == ["Open 3Dconnexion Settings", "Write Log File", "separator",
                      "Start with the Desktop", "Quit"], "menu: %s" % labels)
-    check(lay[1][2][3][1]["toggle-type"] == "checkmark" and lay[1][2][3][1]["toggle-state"] == 1 and
-          t.menu_layout(autostart=False).unpack()[1][2][3][1]["toggle-state"] == 0, "tick box")
+    on, off = lay[1][2][3][1], t.menu_layout(autostart=False).unpack()[1][2][3][1]
+    check("toggle-type" not in on and on["toggle-state"] == 1 and off["toggle-state"] == 0,
+          "tick box: an entry with on/off state, not a check item (its own column in KDE)")
+    check(bytes(on["icon-data"][:8]) == b"\x89PNG\r\n\x1a\n" and on["icon-data"] != off["icon-data"],
+          "the tick box drawn as its icon, ticked and empty")
     os.makedirs(os.path.join(d, "Desktop"))
     fake_ctl = os.path.join(d, "tdxctl")
     with open(fake_ctl, "w") as f:

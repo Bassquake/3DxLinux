@@ -260,6 +260,49 @@ def write_log(directory=None, tdxctl=None):
 
 # ---- the tray icon ---------------------------------------------------------------
 
+_tick_png = {}
+
+
+def tick_png(on, size=32):
+    """A tick box as PNG bytes, for the menu's icon column: KDE's Breeze puts a
+    real check item's box in a column of its own, left of the other entries'
+    icons. Blue with a white tick when on, an empty grey-edged box when off."""
+    if on in _tick_png:
+        return _tick_png[on]
+    try:
+        import io
+        import cairo
+    except ImportError:
+        return None
+    s = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
+    cr = cairo.Context(s)
+    m, r, w = size * 0.12, size * 0.16, size - 2 * size * 0.12
+    cr.new_sub_path()
+    for cx, cy, a in ((m + w - r, m + r, -1.5708), (m + w - r, m + w - r, 0),
+                      (m + r, m + w - r, 1.5708), (m + r, m + r, 3.1416)):
+        cr.arc(cx, cy, r, a, a + 1.5708)
+    cr.close_path()
+    if on:
+        cr.set_source_rgb(0x3D / 255.0, 0xAE / 255.0, 0xE9 / 255.0)  # Breeze's highlight blue
+        cr.fill()
+        cr.set_source_rgb(1, 1, 1)
+        cr.set_line_width(size * 0.11)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        cr.move_to(size * 0.29, size * 0.52)
+        cr.line_to(size * 0.44, size * 0.67)
+        cr.line_to(size * 0.72, size * 0.36)
+        cr.stroke()
+    else:
+        cr.set_source_rgba(0.5, 0.5, 0.5, 1)
+        cr.set_line_width(size * 0.07)
+        cr.stroke()
+    buf = io.BytesIO()
+    s.write_to_png(buf)
+    _tick_png[on] = buf.getvalue()
+    return _tick_png[on]
+
+
 def item_props(i, autostart=True):
     label, icon, kind = MENU[i]
     if kind == "separator":
@@ -269,7 +312,13 @@ def item_props(i, autostart=True):
     if icon:
         props["icon-name"] = GLib.Variant("s", icon)
     if kind == "check":
-        props["toggle-type"] = GLib.Variant("s", "checkmark")
+        # the tick box as this entry's icon, in line with the others' (not a
+        # dbusmenu check item); toggle-state still says on/off
+        png = tick_png(autostart)
+        if png:
+            props["icon-data"] = GLib.Variant("ay", png)
+        else:
+            props["icon-name"] = GLib.Variant("s", "checkmark" if autostart else "")
         props["toggle-state"] = GLib.Variant("i", 1 if autostart else 0)
     return props
 
