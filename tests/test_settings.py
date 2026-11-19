@@ -279,7 +279,7 @@ def gui_tests(d, tdxd):
     with open(os.path.join(imp, "3dx-firefox.conf"), "w") as f:
         f.write("# imported\nmatch = firefox\nkey_V3DK_3 = KEY_LEFTCTRL + KEY_LEFTSHIFT + KEY_R\n"
                 "lcd_label_V3DK_3 = Refresh\n")
-    orig_dirs = ts.Store.import_dirs
+    orig_dirs = ts.Store.__dict__["import_dirs"]  # the staticmethod itself
     ts.Store.import_dirs = staticmethod(lambda: [imp])
     app.daemon.app_keys = lambda: (None, {})
     app.store.select("3dx-firefox")
@@ -294,7 +294,25 @@ def gui_tests(d, tdxd):
         saved = f.read()
     check("match = firefox" in saved and "lcd_label_V3DK_3 = Refresh" in saved and "KEY_F5" in saved,
           "the copy keeps 3DxWare's keys")
+    # Restore Defaults on an imported profile: back to 3DxWare's keys
+    btn.restore.clicked()
+    check(p.get("key_V3DK_3") == "KEY_LEFTCTRL + KEY_LEFTSHIFT + KEY_R" and not p.has("key_V3DK_4") and
+          p.get("lcd_label_V3DK_3") == "Refresh", "Restore Defaults: the imported keys")
     ts.Store.import_dirs = orig_dirs
+    # ... and on tdxd's FreeCAD profile: its view keys, not nothing
+    with open(os.path.join(pdir, "freecad.conf"), "w") as f:
+        f.write("match = freecad*\n")  # what an earlier Restore Defaults left
+    app.store.select("freecad")
+    btn.restore.clicked()
+    ship = ts.ConfFile(os.path.join(ROOT, "packaging", "profiles", "freecad.conf"))
+    check(app.store.profile.get("key_V3DK_TOP") == ship.get("key_V3DK_TOP") and
+          app.store.profile.get("key_V3DK_FIT") == ship.get("key_V3DK_FIT") and
+          app.store.profile.get("lcd_label_V3DK_TOP") == "Top View", "Restore Defaults: FreeCAD's view keys")
+    # a profile you made yourself: no keys of its own (the base's apply)
+    app.store.create_profile("mine", "mine")
+    app.store.profile.set("key_V3DK_1", "KEY_F1")
+    btn.restore.clicked()
+    check(not app.store.profile.keys_with_prefix("key_"), "Restore Defaults: your own profile")
 
 
 def main():

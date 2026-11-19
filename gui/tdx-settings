@@ -304,6 +304,18 @@ class Store:
                 return p
         return None
 
+    def shipped_path(self, name):
+        """The settings profile @name came with, for Restore Defaults: tdxd's own
+        (freecad.conf, kept in /usr/share/tdxd/defaults by the packages) or the
+        one imported from 3DxWare. None for a profile you made yourself."""
+        here = os.path.dirname(os.path.realpath(__file__))
+        for d in ("/usr/share/tdxd/defaults", "/usr/local/share/tdxd/defaults",
+                  os.path.join(here, "..", "packaging", "profiles")):
+            p = os.path.join(d, name + ".conf")
+            if os.path.isfile(p):
+                return p
+        return self.imported_path(name)
+
     def select(self, name):
         """Edit profile @name (None: the base file). A profile imported from
         3DxWare that isn't in profile_dir yet is shown as it is; the first
@@ -1645,10 +1657,20 @@ class ButtonsPanel(Panel):
 
     def on_restore(self, _b):
         t = self.store.target
-        for k in (t.keys_with_prefix("key_") + t.keys_with_prefix("action_") +
-                  t.keys_with_prefix("lcd_label_")):  # and the names that went with them
+        prefixes = ("key_", "action_", "lcd_label_")  # and the names that went with them
+        for k in [k for p in prefixes for k in t.keys_with_prefix(p)]:
             t.remove(k)
-        if not self.store.profile:
+        if self.store.profile:
+            # back to the keys the profile came with (FreeCAD's view keys, an
+            # imported 3DxWare profile), as 3DxWare restores an application's own
+            # defaults; a profile you made yourself has none: the base's keys
+            name = os.path.basename(self.store.profile.path)[:-5]
+            src = self.store.shipped_path(name)
+            if src:
+                for k, v in ConfFile(src).items():
+                    if k.lower().startswith(prefixes):
+                        t.set(k, v)
+        else:
             for k, v in DEFAULT_KEYS.items():
                 t.set("key_" + k, v)
             for k, v in DEFAULT_ACTIONS.items():
