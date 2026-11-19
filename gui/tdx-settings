@@ -33,7 +33,7 @@ if os.path.isdir("/mnt/wslg") and "GDK_BACKEND" not in os.environ:
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 APP_VERSION = "dev"  # set by make install / make dist
 PROJECT_URL = "https://github.com/Bassquake/SpacePilot-Pro-Linux"
@@ -2273,6 +2273,12 @@ class App:
             self.flush()
         Gtk.main_quit()
 
+    def present(self):
+        """Another start of tdx-settings: show this panel instead."""
+        if self.win:
+            self.win.deiconify()
+            self.win.present()
+
     def run(self):
         set_window_icons(window_icon_files(ASSETS.dir and os.path.join(ASSETS.dir, "appicons"),
                                            "3dxware"), "tdxd-3dxware")
@@ -2330,12 +2336,44 @@ def main():
     args = ap.parse_args()
     ASSETS = Assets(args.assets) if not args.no_assets else Assets("/nonexistent")
     install_css(ASSETS)
-    app = App(args)
     if args.snapshot:
-        app.snapshot(args.snapshot)
+        App(args).snapshot(args.snapshot)
         return 0
+    single = single_instance(args)
+    if single is None:
+        return 0  # the open panel came to the front
+    app = App(args)
+    if single:
+        single.connect("activate", lambda *_: app.present())
     app.run()
     return 0
+
+
+APP_ID = "org.tdxd.Settings"
+
+
+def single_instance(args):
+    """One settings panel per desktop session, like 3DxWare's: when one is open,
+    starting another (the menu entry again, the 3D mouse's MENU key) brings it
+    to the front. Returns the Gtk.Application holding the name, None when
+    another panel has it (told to come forward; exit), or False without a
+    session bus (run anyway)."""
+    gapp = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+    # restarted after an import (os.execv): the bus may not have released the
+    # old process's name yet
+    tries = 20 if getattr(args, "show_about", False) else 1
+    for i in range(tries):
+        try:
+            gapp.register(None)
+        except GLib.Error:
+            return False
+        if not gapp.get_is_remote():
+            return gapp
+        if i + 1 < tries:
+            time.sleep(0.1)
+            gapp = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+    gapp.activate()  # the panel that's open: present()
+    return None
 
 
 if __name__ == "__main__":
