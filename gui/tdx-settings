@@ -1467,6 +1467,9 @@ class ButtonsPanel(Panel):
                 self.rows[v3dk] = (l, fn, icon)
         note = lab("Buttons left at their default are sent to the application.", "tdx-small")
         self.put(note, 31, 655 - 6)
+        # beside Close, as in Advanced Settings (it had no button to call on_restore)
+        self.restore = self.put(flat_button("Restore Defaults", 156), 519, 688)
+        self.restore.connect("clicked", self.on_restore)
         self.close = self.put(flat_button("Close", 94), 686, 688)
 
     def assignment(self, v3dk):
@@ -1583,7 +1586,8 @@ class ButtonsPanel(Panel):
 
     def on_restore(self, _b):
         t = self.store.target
-        for k in t.keys_with_prefix("key_") + t.keys_with_prefix("action_"):
+        for k in (t.keys_with_prefix("key_") + t.keys_with_prefix("action_") +
+                  t.keys_with_prefix("lcd_label_")):  # and the names that went with them
             t.remove(k)
         if not self.store.profile:
             for k, v in DEFAULT_KEYS.items():

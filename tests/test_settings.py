@@ -237,7 +237,11 @@ def gui_tests(d, tdxd):
 
     # ---- restore button defaults in the base
     app.store.select(None)
-    btn.on_restore(None)
+    app.store.base.set("lcd_label_V3DK_TOP", "Old Top")  # an old config's name
+    app.store.base.set("lcd_label_3", "Front")
+    btn.restore.clicked()  # the window's button, not just its handler
+    check(not app.store.base.has("lcd_label_V3DK_TOP") and app.store.base.get("lcd_label_3") == "Save",
+          "Restore Defaults drops old key names")
     check(app.store.base.get("action_V3DK_PLUS") == "speed_up" and
           app.store.base.get("key_V3DK_ESC") == "KEY_ESC" and
           app.store.base.get("key_V3DK_1") == "KEY_LEFTCTRL+KEY_N" and
