@@ -254,6 +254,24 @@ def gui_tests(d, tdxd):
           all(ship.get("lcd_label_%d" % (i + 1)) == v for i, v in enumerate(ts.DEFAULT_LABELS)),
           "Restore Defaults matches packaging/tdxd.conf")
 
+    # ---- About: start the tray icon and the LCD Manager with the desktop
+    log = os.path.join(d, "systemctl.log")
+    sysctl = os.path.join(d, "systemctl")
+    with open(sysctl, "w") as f:
+        f.write('#!/bin/sh\necho "$*" >> %s\n[ "$2" = is-enabled ] && echo enabled\nexit 0\n' % log)
+    os.chmod(sysctl, 0o755)
+    os.environ["TDX_SYSTEMCTL"] = sysctl
+    about = [p for p in app.panels if isinstance(p, ts.AboutPanel)][0]
+    about.refresh()
+    check(about.autostart.get_active(), "Start-up ticked when not masked")
+    about.autostart.set_active(False)
+    about.autostart.set_active(True)
+    calls = open(log).read()
+    check("--user mask tdx-tray.service tdx-lcdmgr.service" in calls and
+          "--user unmask tdx-tray.service tdx-lcdmgr.service" in calls and
+          "--user start tdx-tray.service tdx-lcdmgr.service" in calls, "Start-up: %r" % calls)
+    del os.environ["TDX_SYSTEMCTL"]
+
     # ---- the panel follows the application used last (tdxd's active profile)
     app.args.profile = None  # not started with -p
     app.store.select(None)

@@ -6,6 +6,9 @@ on Windows. Left click: the settings panel. Right click:
     Open 3Dconnexion Settings    tdx-settings (brought forward if open)
     Write Log File               what support asks for, in a text file on the
                                  Desktop, and a notification saying where
+    Start with the Desktop       the tray icon and the LCD Manager at login
+    Quit                         the tray icon and the LCD Manager, for now
+                                 (tdxd, the driver, keeps running)
 
 The icon is a StatusNotifierItem with a DBusMenu menu (the D-Bus protocols KDE
 Plasma's tray uses, as do GNOME's AppIndicator extension, Xfce, Cinnamon, ...),
@@ -94,9 +97,12 @@ MENU_XML = """<node>
  </interface>
 </node>"""
 
-# the menu: id -> (label, icon name); 0 is the root
-MENU = {1: ("Open 3Dconnexion Settings", "configure"),
-        2: ("Write Log File", "document-save")}
+# the menu: id -> (label, icon name, kind); 0 is the root
+MENU = {1: ("Open 3Dconnexion Settings", "configure", "item"),
+        2: ("Write Log File", "document-save", "item"),
+        3: ("", "", "separator"),
+        4: ("Start with the Desktop", "", "check"),
+        5: ("Quit", "application-exit", "item")}
 
 
 # ---- finding things ------------------------------------------------------------
@@ -136,6 +142,40 @@ def log_dir():
         if c and os.path.isdir(c) and os.path.realpath(c) != os.path.realpath(home):
             return c
     return home
+
+
+# ---- starting with the desktop -----------------------------------------------
+# The packages enable tdx-tray and tdx-lcdmgr for every user (systemctl --global);
+# a user turns them off for themselves by masking their own copies (no password).
+# tdxd, the driver, is left alone.
+AUTOSTART_UNITS = ["tdx-tray.service", "tdx-lcdmgr.service"]
+
+
+def systemctl():
+    return os.environ.get("TDX_SYSTEMCTL") or "systemctl"  # (tests)
+
+
+def autostart_enabled():
+    """False when the user turned starting with the desktop off (masked)."""
+    try:
+        out = subprocess.run([systemctl(), "--user", "is-enabled", AUTOSTART_UNITS[0]],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return not out.startswith("masked")
+
+
+def set_autostart(on, start_now=False):
+    """Start (or not) the tray icon and the LCD Manager with the desktop; with
+    @start_now also start them now."""
+    try:
+        subprocess.run([systemctl(), "--user", "unmask" if on else "mask"] + AUTOSTART_UNITS,
+                       capture_output=True, timeout=10)
+        if on and start_now:
+            subprocess.run([systemctl(), "--user", "start"] + AUTOSTART_UNITS,
+                           capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 # ---- the log file --------------------------------------------------------------
@@ -220,22 +260,31 @@ def write_log(directory=None, tdxctl=None):
 
 # ---- the tray icon ---------------------------------------------------------------
 
-def menu_layout(icon=True):
+def item_props(i, autostart=True):
+    label, icon, kind = MENU[i]
+    if kind == "separator":
+        return {"type": GLib.Variant("s", "separator"), "visible": GLib.Variant("b", True)}
+    props = {"label": GLib.Variant("s", label), "enabled": GLib.Variant("b", True),
+             "visible": GLib.Variant("b", True)}
+    if icon:
+        props["icon-name"] = GLib.Variant("s", icon)
+    if kind == "check":
+        props["toggle-type"] = GLib.Variant("s", "checkmark")
+        props["toggle-state"] = GLib.Variant("i", 1 if autostart else 0)
+    return props
+
+
+def menu_layout(autostart=True, revision=1):
     """dbusmenu's GetLayout result for the whole menu: (revision, (0, props, items))."""
-    items = []
-    for i, (label, icon_name_) in sorted(MENU.items()):
-        props = {"label": GLib.Variant("s", label), "enabled": GLib.Variant("b", True),
-                 "visible": GLib.Variant("b", True)}
-        if icon:
-            props["icon-name"] = GLib.Variant("s", icon_name_)
-        items.append(GLib.Variant("(ia{sv}av)", (i, props, [])))
+    items = [GLib.Variant("(ia{sv}av)", (i, item_props(i, autostart), [])) for i in sorted(MENU)]
     root = (0, {"children-display": GLib.Variant("s", "submenu")}, items)
-    return GLib.Variant("(u(ia{sv}av))", (1, root))
+    return GLib.Variant("(u(ia{sv}av))", (revision, root))
 
 
 class Tray:
-    def __init__(self, bus):
-        self.bus, self.icon = bus, icon_name()
+    def __init__(self, bus, loop=None):
+        self.bus, self.icon, self.loop = bus, icon_name(), loop
+        self.autostart, self.revision = autostart_enabled(), 1
         self.name = "org.kde.StatusNotifierItem-%d-1" % os.getpid()
         self.notify_paths = {}
         sni = Gio.DBusNodeInfo.new_for_xml(SNI_XML).interfaces[0]
@@ -286,16 +335,18 @@ class Tray:
 
     def on_menu_call(self, _bus, _sender, _path, _iface, method, params, inv):
         if method == "GetLayout":
-            inv.return_value(menu_layout())
+            inv.return_value(menu_layout(self.autostart, self.revision))
         elif method == "GetGroupProperties":
             ids = params.unpack()[0]
-            out = [(i, {"label": GLib.Variant("s", MENU[i][0]), "enabled": GLib.Variant("b", True),
-                        "visible": GLib.Variant("b", True)}) for i in ids if i in MENU]
+            out = [(i, item_props(i, self.autostart)) for i in (ids or sorted(MENU)) if i in MENU]
             inv.return_value(GLib.Variant("(a(ia{sv}))", (out,)))
         elif method == "GetProperty":
             i, name = params.unpack()
-            val = MENU.get(i, ("", ""))[0] if name == "label" else True
-            inv.return_value(GLib.Variant("(v)", (GLib.Variant("s" if name == "label" else "b", val),)))
+            v = item_props(i, self.autostart).get(name) if i in MENU else None
+            if v is None:
+                inv.return_dbus_error("org.freedesktop.DBus.Error.InvalidArgs", name)
+            else:
+                inv.return_value(GLib.Variant("(v)", (v,)))
         elif method == "Event":
             i, event, _data, _ts = params.unpack()
             if event == "clicked":
@@ -307,7 +358,12 @@ class Tray:
                     GLib.idle_add(self.activate, i)
             inv.return_value(GLib.Variant("(ai)", ([],)))
         elif method == "AboutToShow":
-            inv.return_value(GLib.Variant("(b)", (False,)))
+            # the tick box may have changed in the settings panel
+            changed = self.autostart != autostart_enabled()
+            if changed:
+                self.autostart = not self.autostart
+                self.revision += 1
+            inv.return_value(GLib.Variant("(b)", (changed,)))
         elif method == "AboutToShowGroup":
             inv.return_value(GLib.Variant("(aiai)", ([], [])))
         else:
@@ -319,7 +375,30 @@ class Tray:
             self.open_settings()
         elif i == 2:
             self.log_file()
+        elif i == 4:
+            self.toggle_autostart()
+        elif i == 5:
+            self.quit()
         return False
+
+    def toggle_autostart(self):
+        self.autostart = not self.autostart
+        set_autostart(self.autostart)
+        self.revision += 1
+        self.bus.emit_signal(None, MENU_PATH, "com.canonical.dbusmenu", "LayoutUpdated",
+                             GLib.Variant("(ui)", (self.revision, 0)))
+
+    def quit(self):
+        """Quit the tray icon and the LCD Manager for this session; tdxd keeps
+        running, so the 3D mouse works and the LCD shows tdxd's key page. They
+        come back at the next login (unless Start with the Desktop is off)."""
+        try:
+            subprocess.run([systemctl(), "--user", "stop", "tdx-lcdmgr.service"],
+                           capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        if self.loop:
+            self.loop.quit()  # exit 0: systemd doesn't restart us
 
     def open_settings(self):
         prog = os.environ.get("TDX_TRAY_SETTINGS") or find_program("tdx-settings")  # (tests)
@@ -372,8 +451,9 @@ def main():
     except GLib.Error as e:
         print("tdx-tray: no session bus (%s)" % e.message, file=sys.stderr)
         return 0  # nothing to show the icon in
-    Tray(bus)
-    GLib.MainLoop().run()
+    loop = GLib.MainLoop()
+    Tray(bus, loop)
+    loop.run()
     return 0
 
 

@@ -189,11 +189,22 @@ Right-click it for a menu:
   versions, what tdxd sees, your settings files, and the recent messages of tdxd
   and the LCD Manager. A notification says where it is; click it to open the
   folder. The file includes your computer's name and your user name.
+- **Start with the Desktop** (a tick box): untick it and the tray icon and the
+  LCD Manager no longer start when you log in. The same tick box is in the
+  settings panel's About window, where ticking it also starts them again.
+- **Quit** closes the tray icon and the LCD Manager until you next log in.
 
-The packages start it with every desktop session (`systemctl --user disable
---now tdx-tray` turns it off). It uses the StatusNotifierItem tray of KDE
-Plasma, Xfce, Cinnamon and others; GNOME shows it with the AppIndicator
-extension. `tdx-tray --write-log` writes the log file from a terminal.
+tdxd itself, the driver, keeps running either way, so the 3D mouse keeps
+working and the LCD shows tdxd's own key page. To stop the driver too, run
+`sudo systemctl stop tdxd` (and `sudo systemctl disable tdxd` to keep it from
+starting at boot).
+
+The packages start the tray icon with every desktop session. It uses the
+StatusNotifierItem tray of KDE Plasma, Xfce, Cinnamon and others; GNOME shows it
+with the AppIndicator extension. `tdx-tray --write-log` writes the log file from
+a terminal. The tick box works per user: it masks your own copies of
+`tdx-tray.service` and `tdx-lcdmgr.service` (`systemctl --user unmask …` undoes
+it), so it needs no password.
 
 ### The 3DxWare look
 

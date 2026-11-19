@@ -42,6 +42,21 @@ NOTIFY_XML = """<node><interface name="org.freedesktop.Notifications">
 </interface></node>"""
 
 
+def fake_systemctl(d):
+    """A stand-in systemctl --user: is-enabled answers from a state file, every
+    call is logged."""
+    state, log = os.path.join(d, "unit-state"), os.path.join(d, "systemctl.log")
+    with open(state, "w") as f:
+        f.write("enabled\n")
+    p = os.path.join(d, "systemctl")
+    with open(p, "w") as f:
+        f.write('#!/bin/sh\necho "$*" >> %s\ncase "$2" in\n'
+                'is-enabled) cat %s ;;\nmask) echo masked > %s ;;\nunmask) echo enabled > %s ;;\n'
+                'esac\n' % (log, state, state, state))
+    os.chmod(p, 0o755)
+    return p, state, log
+
+
 def load_tray():
     loader = importlib.machinery.SourceFileLoader("tray", os.path.join(ROOT, "gui", "tdx-tray"))
     spec = importlib.util.spec_from_loader("tray", loader)
@@ -64,8 +79,11 @@ def main():
 
     # ---- the parts that need no bus
     lay = t.menu_layout().unpack()
-    labels = [c[1]["label"] for c in lay[1][2]]
-    check(labels == ["Open 3Dconnexion Settings", "Write Log File"], "menu: %s" % labels)
+    labels = [c[1].get("label", c[1].get("type")) for c in lay[1][2]]
+    check(labels == ["Open 3Dconnexion Settings", "Write Log File", "separator",
+                     "Start with the Desktop", "Quit"], "menu: %s" % labels)
+    check(lay[1][2][3][1]["toggle-type"] == "checkmark" and lay[1][2][3][1]["toggle-state"] == 1 and
+          t.menu_layout(autostart=False).unpack()[1][2][3][1]["toggle-state"] == 0, "tick box")
     os.makedirs(os.path.join(d, "Desktop"))
     fake_ctl = os.path.join(d, "tdxctl")
     with open(fake_ctl, "w") as f:
@@ -111,7 +129,9 @@ def main():
     with open(fake_settings, "w") as f:
         f.write("#!/bin/sh\ntouch %s\n" % opened)
     os.chmod(fake_settings, 0o755)
-    env = dict(os.environ, TDX_TRAY_SETTINGS=fake_settings, PATH=d + ":" + os.environ["PATH"])
+    sysctl, state, sclog = fake_systemctl(d)
+    env = dict(os.environ, TDX_TRAY_SETTINGS=fake_settings, TDX_SYSTEMCTL=sysctl,
+               PATH=d + ":" + os.environ["PATH"])
     p = subprocess.Popen([sys.executable, os.path.join(ROOT, "gui", "tdx-tray")], env=env)
     ctx = GLib.MainContext.default()
     try:
@@ -131,8 +151,14 @@ def main():
         lay = bus.call_sync(name, "/MenuBar", "com.canonical.dbusmenu", "GetLayout",
                             GLib.Variant("(iias)", (0, -1, [])), None, Gio.DBusCallFlags.NONE,
                             5000, None).unpack()
-        check([c[1]["label"] for c in lay[1][2]] == ["Open 3Dconnexion Settings", "Write Log File"],
+        check([c[1].get("label", "-") for c in lay[1][2]] ==
+              ["Open 3Dconnexion Settings", "Write Log File", "-", "Start with the Desktop", "Quit"],
               "GetLayout over the bus")
+
+        def layout():
+            return bus.call_sync(name, "/MenuBar", "com.canonical.dbusmenu", "GetLayout",
+                                 GLib.Variant("(iias)", (0, -1, [])), None, Gio.DBusCallFlags.NONE,
+                                 5000, None).unpack()
 
         def click(i):
             bus.call_sync(name, "/MenuBar", "com.canonical.dbusmenu", "Event",
@@ -149,12 +175,36 @@ def main():
         click(2)
         check(wait(ctx, lambda: notes, 20), "Write Log File: a notification")
         new = set(os.listdir(os.path.join(d, "Desktop"))) - before
+        # Start with the Desktop: off masks the tray and the LCD Manager, on unmasks
+        updates = []
+        bus.signal_subscribe(name, "com.canonical.dbusmenu", "LayoutUpdated", "/MenuBar", None,
+                             Gio.DBusSignalFlags.NONE, lambda *a: updates.append(a[5].unpack()))
+        click(4)
+        check(wait(ctx, lambda: updates) and open(state).read().strip() == "masked" and
+              "--user mask tdx-tray.service tdx-lcdmgr.service" in open(sclog).read(),
+              "unticked: masked (%s)" % open(sclog).read().strip().splitlines()[-1:])
+        check(layout()[1][2][3][1]["toggle-state"] == 0, "the menu shows it unticked")
+        with open(state, "w") as f:  # ticked again in the settings panel
+            f.write("enabled\n")
+        need = bus.call_sync(name, "/MenuBar", "com.canonical.dbusmenu", "AboutToShow",
+                             GLib.Variant("(i)", (0,)), None, Gio.DBusCallFlags.NONE, 5000,
+                             None).unpack()[0]
+        check(need and layout()[1][2][3][1]["toggle-state"] == 1, "follows the settings panel")
         check(len(new) == 1 and notes and notes[0][3] == "Log file written" and
               notes[0][4] == os.path.join(d, "Desktop", sorted(new)[0]), "the log and its path: %r %r" %
               (notes[:1], new))
+        # Quit: stops the LCD Manager, then the tray exits (0: not restarted)
+        click(5)
+        try:
+            rc = p.wait(10)
+        except subprocess.TimeoutExpired:
+            rc = None
+        check(rc == 0 and "--user stop tdx-lcdmgr.service" in open(sclog).read(),
+              "Quit: LCD Manager stopped, tray exited (%s)" % rc)
     finally:
-        p.terminate()
-        p.wait(5)
+        if p.poll() is None:
+            p.terminate()
+            p.wait(5)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

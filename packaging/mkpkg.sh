@@ -170,6 +170,11 @@ getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
 	case "$home" in *..*) continue ;; esac
 	[ -d "$home" ] || continue
 	rm -rf "$home/.config/tdxd" "$home/.local/share/tdxd"
+	# "Start with the Desktop" turned off: the user's masks of tdxd's services
+	for u in tdx-tray tdx-lcdmgr tdx-focus; do
+		m="$home/.config/systemd/user/$u.service"
+		[ -L "$m" ] && [ "$(readlink "$m")" = /dev/null ] && rm -f "$m"
+	done
 	# the FreeCAD add-on loader (tdx-freecad-addon), in each FreeCAD version'"'"'s folder
 	fp="$home/.var/app/org.freecad.FreeCAD/data/FreeCAD"
 	rm -rf "$home/.local/share/FreeCAD/Mod/TdxdSpaceMouse" "$fp/Mod/TdxdSpaceMouse"

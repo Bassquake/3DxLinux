@@ -395,6 +395,40 @@ class Store:
 # --------------------------------------------------------------------------
 # talking to the system
 
+# ---- starting with the desktop -----------------------------------------------
+# The packages enable tdx-tray and tdx-lcdmgr for every user (systemctl --global);
+# a user turns them off for themselves by masking their own copies (no password).
+# tdxd, the driver, is left alone.
+AUTOSTART_UNITS = ["tdx-tray.service", "tdx-lcdmgr.service"]
+
+
+def systemctl():
+    return os.environ.get("TDX_SYSTEMCTL") or "systemctl"  # (tests)
+
+
+def autostart_enabled():
+    """False when the user turned starting with the desktop off (masked)."""
+    try:
+        out = subprocess.run([systemctl(), "--user", "is-enabled", AUTOSTART_UNITS[0]],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return not out.startswith("masked")
+
+
+def set_autostart(on, start_now=False):
+    """Start (or not) the tray icon and the LCD Manager with the desktop; with
+    @start_now also start them now."""
+    try:
+        subprocess.run([systemctl(), "--user", "unmask" if on else "mask"] + AUTOSTART_UNITS,
+                       capture_output=True, timeout=10)
+        if on and start_now:
+            subprocess.run([systemctl(), "--user", "start"] + AUTOSTART_UNITS,
+                           capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def find_program(name):
     here = os.path.dirname(os.path.realpath(__file__))
     for cand in (os.path.join(here, name),
@@ -1836,7 +1870,7 @@ class LcdPanel(Panel):
 
 class AboutPanel(Panel):
     title = "About tdxd"
-    size = (450, 580)
+    size = (450, 640)
     header_h = 89
 
     def header(self):  # plain title, like "About 3DxWare"
@@ -1860,13 +1894,23 @@ class AboutPanel(Panel):
         self.look.set_size_request(386, -1)
         self.import_btn = self.put(flat_button("Import 3DxWare look…", 180), 34, 364)
         self.import_btn.connect("clicked", lambda *_: import_look(self.box.get_toplevel(), self.app))
-        self.section("Devices", 33, 420, 418)
-        self.devbox = self.put(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2), 34, 427)
+        self.section("Start-up", 33, 420, 418)
+        self.autostart = self.put(Gtk.CheckButton(
+            label="Start the tray icon and LCD Manager with the desktop"), 37, 428)
+        self.autostart.set_tooltip_text("Off: they don't start at login (tdxd, the driver, still "
+                                        "does). On: they start again, now and at login.")
+        self.autostart.connect("toggled", self.guard(
+            lambda b: set_autostart(b.get_active(), start_now=True)))
+        self.section("Devices", 33, 420, 478)
+        self.devbox = self.put(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2), 34, 487)
         self.put(lab("tdxd is an independent Linux driver, not a 3Dconnexion product.",
-                     "tdx-small"), 34, 494)
-        self.close = self.put(flat_button("Close", 94), 324, 535)
+                     "tdx-small"), 34, 554)
+        self.close = self.put(flat_button("Close", 94), 324, 595)
 
     def refresh(self):
+        self.updating = True
+        self.autostart.set_active(autostart_enabled())
+        self.updating = False
         st = self.app.status
         rows = [("tdxd", st.get("version", "not running")), ("tdx-settings", APP_VERSION)]
         for l, (k, v) in zip(self.ver, rows):
