@@ -69,6 +69,7 @@ class FakeTdxd:
 
     def __init__(self, path):
         self.path, self.got = path, []
+        self.app_keys = "app FreeCAD\nV3DK_1\tNew\n"
         self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.s.bind(path)
         self.s.listen(8)
@@ -81,6 +82,8 @@ class FakeTdxd:
             self.got.append(line)
             if line == "buttons":
                 c.sendall(b"12 V3DK_1\n13 V3DK_2\n17 V3DK_6\n18 V3DK_7\n27 V3DK_PANZOOM\n")
+            elif line == "app-keys":
+                c.sendall(self.app_keys.encode())
             else:
                 c.sendall(b"ok\n")
             c.close()
@@ -236,6 +239,22 @@ def main():
     check(srv.got[-1] == "app-buttons\t%d\tV3DK_1\tNew" % 0, "workbench change: %r" % srv.got[-1])
     commands["Tdxd_Key_V3DK_1"].Activated()
     check(ran[-1] == ("Std_New", None), "the default set's command")
+    # tdxd restarted (forgot the names): sent again, with a hint to restart FreeCAD
+    warnings = []
+    FakeConsole.PrintWarning = staticmethod(warnings.append)
+    n = len(srv.got)
+    addon.check_tdxd()
+    check(len(srv.got) == n + 1 and srv.got[-1] == "app-keys", "tdxd still has them: nothing sent")
+    srv.app_keys = "app -\n"
+    addon.check_tdxd()
+    check(srv.got[-1] == "app-buttons\t0\tV3DK_1\tNew" and len(warnings) == 1 and
+          "restart FreeCAD" in warnings[0], "resent after a tdxd restart: %r" % srv.got[-3:])
+    addon.check_tdxd()
+    check(len(warnings) == 1, "the hint once")
+    srv.app_keys = "error: unknown command 'app-keys'\n"
+    n = len(srv.got)
+    addon.check_tdxd()
+    check(len(srv.got) == n + 1, "an older tdxd: nothing resent")
     addon.stop()
     check(srv.got[-1] == "app-buttons\t%d" % 0, "on exit the keys go back to tdxd")
 

@@ -146,6 +146,8 @@ class Addon:
         self.data = load_buttons()
         self.numbers = {}
         self.workbench = ""
+        self.sent = False    # tdxd has our key names
+        self.warned = False
 
     def log(self, text):
         self.FreeCAD.Console.PrintLog("tdxd: %s\n" % text)
@@ -184,6 +186,10 @@ class Addon:
             self.FreeCAD.Console.PrintMessage(
                 "tdxd: 3D mouse keys follow the workbench (%d key sets)\n"
                 % len(self.data.get("banks", {})))
+        if self.numbers and self.QtCore:  # tdxd keeps them in memory only
+            self.watch = self.QtCore.QTimer(mw)
+            self.watch.timeout.connect(self.check_tdxd)
+            self.watch.start(3000)
         app = self.QtGui.QApplication.instance()
         if app:
             app.aboutToQuit.connect(self.stop)
@@ -205,7 +211,28 @@ class Addon:
     def workbench_changed(self, name):
         self.workbench = str(name or "")
         names = key_names(self.data, self.workbench, self.numbers.keys())
-        self.log("%s: %s" % (self.workbench, tdxd(app_buttons_message(0, names)).strip()))
+        reply = tdxd(app_buttons_message(0, names)).strip()
+        self.sent = bool(names) and reply.startswith("ok")
+        self.log("%s: %s" % (self.workbench, reply))
+
+    def check_tdxd(self):
+        """tdxd keeps the key names in memory: after it restarts (a new tdxd
+        package, say) it has none, so send them again. FreeCAD's spacenav
+        connection went with the restart, and FreeCAD doesn't reopen it."""
+        if not self.sent:
+            return
+        reply = tdxd("app-keys")
+        if not reply.startswith("app "):
+            return  # tdxd away (it comes back), or one without app-keys
+        if reply.split("\n", 1)[0].strip() != "app -":
+            return
+        self.workbench_changed(self.workbench)
+        if not self.warned:
+            self.warned = True
+            self.FreeCAD.Console.PrintWarning(
+                "tdxd: tdxd had forgotten FreeCAD's 3D mouse keys (restarted?) and has them "
+                "again. If the 3D mouse doesn't move the view or its keys do nothing, "
+                "restart FreeCAD.\n")
 
     def stop(self):
         tdxd(app_buttons_message(0, []))
