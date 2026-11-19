@@ -433,3 +433,9 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | Unplug / replug with the panel open, and panel opened while unplugged | **Pass after a fix:** the panel read tdxd's device list only when it opened. With test build `0.3.4+30+gc2f5836` it shows "No device connected" when unplugged and the SpacePilot Pro again when plugged in, without a restart. |
+
+## 2026-11-19: tray icon (Kubuntu 26.04, KDE Plasma Wayland)
+
+| Test | Result |
+|---|---|
+| `tdx-tray` | **Pass** with test build `0.3.4+32+gba8ebe0`: the 3Dconnexion icon shows in Plasma's system tray; left click opens the settings panel; the right-click menu's Open 3Dconnexion Settings and Write Log File work. |
