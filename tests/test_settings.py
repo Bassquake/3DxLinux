@@ -275,6 +275,21 @@ def gui_tests(d, tdxd):
     app.args.profile = ""
     app.follow_tick()  # started with -p: stays
 
+    # ---- a device unplugged and plugged in again while the panel is open
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n")
+    app.follow_tick()
+    check(main.dev_label.get_text() == "No device connected" and
+          main.state_label.get_text() == "Connect a device", "unplugged: %s / %s"
+          % (main.dev_label.get_text(), main.state_label.get_text()))
+    check(main.photo.key is None and btn.photo.key is None, "photos: no device")
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+                "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")
+    app.follow_tick()
+    check(main.dev_label.get_text() == "SpacePilot Pro" and main.photo.key == ("046d", "c629") and
+          btn.photo.key == ("046d", "c629"), "plugged in again: %s" % main.dev_label.get_text())
+
     # ---- the application's own key names (tdxctl app-keys; the FreeCAD add-on)
     d0 = ts.Daemon("/nonexistent")
     d0.request = lambda *a: (0, "app FreeCAD\nV3DK_1\tCreate sketch\nV3DK_2\tPart Design Modeling\n")

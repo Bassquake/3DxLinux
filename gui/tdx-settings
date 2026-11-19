@@ -1031,6 +1031,27 @@ def app_icon(app, size=16):
     return img or Gtk.Image.new_from_icon_name("input-mouse", Gtk.IconSize.MENU)
 
 
+class DevicePhoto(Gtk.Box):
+    """The device photo, redrawn when another device (or none) is connected."""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app, self.key = app, ()
+        self.update()
+
+    def update(self):
+        devs = self.app.status.get("devices", [])
+        key = (devs[0].get("vid"), devs[0].get("pid")) if devs else None
+        if key == self.key:
+            return
+        self.key = key
+        for c in self.get_children():
+            self.remove(c)
+        w = device_image(devs[0] if devs else None)
+        self.add(w)
+        w.show_all()
+
+
 def device_image(dev, w=200, h=120):
     """The device photo from the installer (Base.xml <Image>), else a drawing."""
     info = ASSETS.device(dev.get("pid")) if dev else {}
@@ -1155,10 +1176,8 @@ class MainPanel(Panel):
     header_h = 67
 
     def build(self):
-        devs = self.app.status.get("devices", [])
-        self.dev = devs[0] if devs else None
         self.dev_label = self.put(lab("", "tdx-dev"), 30, 100)
-        self.put(device_image(self.dev), 252, 42)
+        self.photo = self.put(DevicePhoto(self.app), 252, 42)
         self.state_box = Gtk.Box(spacing=5)
         self.state_icon = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
         if self.state_icon:
@@ -1213,6 +1232,7 @@ class MainPanel(Panel):
         self.refresh_header()
         st = self.app.status
         devs = st.get("devices", [])
+        self.photo.update()
         name = devs[0]["name"].replace(" PRO", " Pro") if devs else "No device connected"
         self.dev_label.set_text(name)
         if not st.get("running"):
@@ -1503,8 +1523,7 @@ class ButtonsPanel(Panel):
     COLS = [(31, 81), (291, 342), (551, 601)]
 
     def build(self):
-        devs = self.app.status.get("devices", [])
-        self.put(device_image(devs[0] if devs else None), 594, 42)
+        self.photo = self.put(DevicePhoto(self.app), 594, 42)
         self.rows = {}
         self.own_app, self.own = None, {}  # the application's own key names (app_keys)
         for c, col in enumerate(SPP_COLUMNS):
@@ -1592,6 +1611,7 @@ class ButtonsPanel(Panel):
 
     def refresh(self):
         self.refresh_header()
+        self.photo.update()
         self.own_app, self.own = self.app_keys()
         for v3dk, (l, fn, slot) in self.rows.items():
             kind, _ = self.assignment(v3dk)
@@ -2161,17 +2181,25 @@ class App:
             p.refresh()
         return False
 
+    @staticmethod
+    def device_key(st):
+        return (bool(st.get("running")),
+                tuple((d.get("vid"), d.get("pid"), d.get("node")) for d in st.get("devices", [])))
+
     def follow_tick(self):
         """Like 3DxWare's panel, show the application used last: tdxd ignores
         focus on its own windows, so its active profile is that application's.
         When it changes the panel switches to it (a profile you chose from the
         title menu stays until then). Also refreshes the Buttons window when
         the application renames its keys (FreeCAD's workbench)."""
-        if self.args.profile is not None:
-            return False  # -p: the profile asked for
         st = self.daemon.status()
-        if not st.get("running"):
-            return True
+        if self.device_key(st) != self.device_key(self.status):
+            # a device plugged in or out, or tdxd started / stopped
+            self.status = st
+            for p in self.panels:
+                p.refresh()
+        if self.args.profile is not None or not st.get("running"):
+            return True  # -p: the profile asked for; no tdxd: nothing to follow
         prof = st.get("profile")
         if prof and prof != self.tdxd_profile:
             self.tdxd_profile = prof
