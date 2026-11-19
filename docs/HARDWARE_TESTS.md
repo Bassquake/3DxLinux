@@ -439,3 +439,9 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | `tdx-tray` | **Pass** with test build `0.3.4+32+gba8ebe0`: the 3Dconnexion icon shows in Plasma's system tray; left click opens the settings panel; the right-click menu's Open 3Dconnexion Settings and Write Log File work. |
+
+## 2026-11-19: tray Quit and Start with the Desktop (Kubuntu 26.04, KDE Plasma Wayland)
+
+| Test | Result |
+|---|---|
+| Quit, Start with the Desktop (tray), Start-up tick box (About) | **Pass** with test build `0.3.4+35+g7641329`. Breeze drew the check item's box in a column left of the icons; with `0.3.4+36+g10eb478` (the tick box drawn as the entry's icon) it lines up with them. |
