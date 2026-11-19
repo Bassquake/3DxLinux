@@ -170,7 +170,7 @@ getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
 	case "$home" in *..*) continue ;; esac
 	[ -d "$home" ] || continue
 	rm -rf "$home/.config/tdxd" "$home/.local/share/tdxd"
-	# "Start with the Desktop" turned off: the user's masks of tdxd's services
+	# "Start with the Desktop" turned off: the masks of tdxd services in each home
 	for u in tdx-tray tdx-lcdmgr tdx-focus; do
 		m="$home/.config/systemd/user/$u.service"
 		[ -L "$m" ] && [ "$(readlink "$m")" = /dev/null ] && rm -f "$m"
