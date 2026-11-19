@@ -72,7 +72,39 @@ ICON_EXTS = (".png", ".svg", ".xpm")
 def data_dirs():
     home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
     dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
-    return [home] + [d for d in dirs.split(":") if d]
+    out = [home] + [d for d in dirs.split(":") if d]
+    # Flatpak and Snap applications' menu entries and icons, which a user service
+    # (tdx-lcdmgr) may not have in its XDG_DATA_DIRS
+    for d in (os.path.join(home, "flatpak", "exports", "share"), "/var/lib/flatpak/exports/share",
+              "/var/lib/snapd/desktop"):
+        if d not in out:
+            out.append(d)
+    return out
+
+
+def desktop_names(fname, text):
+    """The program names a .desktop entry stands for: its file name and the last
+    part of a reverse-DNS one (org.freecad.FreeCAD -> FreeCAD), the command it
+    runs (for "flatpak run ... --command=FreeCAD org.freecad.FreeCAD" that and
+    the app id), and StartupWMClass."""
+    stem = fname[:-8]
+    names = {stem, stem.rsplit(".", 1)[-1]}
+    m = re.search(r"(?m)^Exec=(.+)$", text)
+    if m:
+        words = m.group(1).split()
+        names.add(os.path.basename(words[0].strip('"')))
+        if os.path.basename(words[0].strip('"')) == "flatpak":
+            for w in words[1:]:
+                if w.startswith("--command="):
+                    names.add(os.path.basename(w[10:]))
+                elif not w.startswith(("-", "%", "@@")) and w != "run" and "." in w:
+                    names.update((w, w.rsplit(".", 1)[-1]))  # the app id
+    for key in ("StartupWMClass", "X-Flatpak"):
+        m = re.search(r"(?m)^%s=(.+)$" % key, text)
+        if m:
+            v = m.group(1).strip()
+            names.update((v, v.rsplit(".", 1)[-1]))
+    return {n.lower() for n in names if n}
 
 
 def desktop_icon_names(name, exe):
@@ -93,9 +125,7 @@ def desktop_icon_names(name, exe):
             except OSError:
                 continue
             m_icon = re.search(r"(?m)^Icon=(.+)$", text)
-            m_exec = re.search(r"(?m)^Exec=(\S+)", text)
-            cmd = os.path.basename(m_exec.group(1).strip('"')).lower() if m_exec else ""
-            if m_icon and (f[:-8].lower() in want or cmd in want):
+            if m_icon and desktop_names(f, text) & want:
                 names.append(m_icon.group(1).strip())
     return names
 

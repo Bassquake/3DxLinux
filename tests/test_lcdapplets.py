@@ -155,6 +155,30 @@ def main():
     check(p == svg and icon is not None and icon.get_width() == 32,
           "app icon via the .desktop entry, SVG at 32 px: %s" % p)
     check(fk.app_icon("NoSuchApp", "") is None, "no icon for an unknown program")
+    # FreeCAD from Flathub: org.freecad.FreeCAD.desktop runs "flatpak run ..."; the
+    # entry and icon live in Flatpak's exports folder (here: XDG_DATA_HOME's)
+    fp = os.path.join(d, "home", "flatpak", "exports", "share")
+    os.makedirs(os.path.join(fp, "applications"))
+    os.makedirs(os.path.join(fp, "icons", "hicolor", "scalable", "apps"))
+    with open(os.path.join(fp, "applications", "org.freecad.FreeCAD.desktop"), "w") as fh:
+        fh.write("[Desktop Entry]\nName=FreeCAD\nExec=/usr/bin/flatpak run --branch=stable "
+                 "--arch=x86_64 --command=FreeCAD --file-forwarding org.freecad.FreeCAD @@ %F @@\n"
+                 "Icon=org.freecad.FreeCAD\nX-Flatpak=org.freecad.FreeCAD\n")
+    fsvg = os.path.join(fp, "icons", "hicolor", "scalable", "apps", "org.freecad.FreeCAD.svg")
+    import shutil
+    shutil.copy(svg, fsvg)
+    old_home = os.environ.get("XDG_DATA_HOME")
+    os.environ["XDG_DATA_HOME"] = os.path.join(d, "home")
+    fk._icon_cache.clear()
+    p = fk.app_icon("FreeCAD", "/app/bin/FreeCAD")  # /proc/PID/exe inside the sandbox
+    check(p == fsvg, "Flatpak FreeCAD's icon: %s" % p)
+    check(fk.desktop_names("org.freecad.FreeCAD.desktop", open(os.path.join(
+        fp, "applications", "org.freecad.FreeCAD.desktop")).read()) >= {"freecad", "org.freecad.freecad"},
+        "names of a Flatpak entry")
+    if old_home is None:
+        del os.environ["XDG_DATA_HOME"]
+    else:
+        os.environ["XDG_DATA_HOME"] = old_home
     if old_dirs is None:
         del os.environ["XDG_DATA_DIRS"]
     else:
