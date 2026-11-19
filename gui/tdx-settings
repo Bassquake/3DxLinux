@@ -822,12 +822,27 @@ def set_window_icons(files, theme_name):
 ASSETS = Assets(None)
 
 
+def frameless(w):
+    """No window frame from the desktop: the panels draw 3DxWare's own title
+    bar, minimize and close buttons. set_decorated(False) alone does it on X11,
+    but on Wayland GTK 3 then asks the compositor to decorate the window, and
+    KWin draws a second set of buttons. With an empty, hidden title bar GTK
+    decorates the window itself (client-side), which here is nothing: no
+    title bar, and the CSS drops its shadow and border."""
+    bar = Gtk.Box()
+    bar.set_no_show_all(True)  # never shown, so no title bar is drawn
+    w.set_titlebar(bar)
+    w.get_style_context().add_class("tdx-frameless")
+
+
 def css_for(assets):
     def url(name, fallback=None):
         p = assets.ui(name)
         return "url('file://%s')" % p if p else fallback
 
     css = """
+window.tdx-frameless, window.tdx-frameless decoration {
+  border: none; border-radius: 0; box-shadow: none; margin: 0; padding: 0; }
 .tdx, .tdx label, .tdx button, .tdx entry, .tdx checkbutton, .tdx radiobutton {
   font-family: %(font)s; font-size: 12px; color: #000000; text-shadow: none; }
 .tdx label.tdx-title { font-size: 18px; }
@@ -2206,7 +2221,7 @@ class App:
             w.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
         else:
             w.set_position(Gtk.WindowPosition.CENTER)
-        w.set_decorated(False)
+        frameless(w)
         w.set_resizable(False)
         w.add(panel.box)
         return w
