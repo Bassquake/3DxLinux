@@ -421,3 +421,9 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | Switching applications with the panel open | **Pass** with test build `0.3.4+26+g582152c`: the panel (and its Buttons window) switches to the profile of the application used last, without closing and reopening it. |
+
+## 2026-11-19: Flatpak application icon on the LCD (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| FreeCAD (Flathub) icon in the Function Keys header | **Pass after a fix:** no icon (org.freecad.FreeCAD.desktop runs `flatpak run`, entries in Flatpak's exports folder); Firefox etc. were fine. With test build `0.3.4+28+gefe50e3` FreeCAD's icon shows. |
