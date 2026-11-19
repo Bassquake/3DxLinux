@@ -427,3 +427,9 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | FreeCAD (Flathub) icon in the Function Keys header | **Pass after a fix:** no icon (org.freecad.FreeCAD.desktop runs `flatpak run`, entries in Flatpak's exports folder); Firefox etc. were fine. With test build `0.3.4+28+gefe50e3` FreeCAD's icon shows. |
+
+## 2026-11-19: settings panel and device hotplug (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| Unplug / replug with the panel open, and panel opened while unplugged | **Pass after a fix:** the panel read tdxd's device list only when it opened. With test build `0.3.4+30+gc2f5836` it shows "No device connected" when unplugged and the SpacePilot Pro again when plugged in, without a restart. |
