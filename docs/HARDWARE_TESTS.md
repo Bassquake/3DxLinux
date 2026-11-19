@@ -403,3 +403,9 @@ itself when 1-5 are held past about half a second.
 | Buttons window, FreeCAD focused | **Pass** with test build `0.3.4+17+g7b1abf8`: keys 1-10 show the add-on's names for the workbench (`tdxctl app-keys`), matching the LCD; before, "Button 1" etc. |
 | Restore Defaults in the FreeCAD profile | **Fail, fixed:** cleared the profile's view keys (Top, Fit … did nothing). Restored by copying `/usr/share/tdxd/defaults/freecad.conf`; `57b7842` makes Restore Defaults restore a profile's shipped keys. |
 | tdxd restarted while FreeCAD runs | Keys 1-10 lost FreeCAD's names and functions (tdxd forgot the add-on's list, FreeCAD's spacenav connection closed); view keys kept working (keyboard shortcuts). **Pass** after restarting FreeCAD. `599576f`: the add-on resends the names and hints to restart FreeCAD. |
+
+## 2026-11-19: settings windows on KDE Plasma Wayland (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| Window buttons | **Pass after a fix:** the settings windows (main, LCD Manager …) showed KWin's minimize/close as well as 3DxWare's own (GTK 3 asks Wayland compositors to decorate undecorated windows). With test build `0.3.4+21+gd4e625e` (empty hidden title bar, client-side decorations) only the panel's own buttons remain. |
