@@ -429,6 +429,21 @@ def set_autostart(on, start_now=False):
         pass
 
 
+def bring_back():
+    """Opening the panel brings back the tray icon and the LCD Manager after the
+    tray's Quit (they stopped for the session). Not when Start with the Desktop
+    is off: that switched them off. "start" leaves running ones alone; in the
+    background, so the panel opens at once. True if it asked systemd."""
+    if not autostart_enabled():
+        return False
+    try:
+        subprocess.Popen([systemctl(), "--user", "start"] + AUTOSTART_UNITS,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return False
+    return True
+
+
 def find_program(name):
     here = os.path.dirname(os.path.realpath(__file__))
     for cand in (os.path.join(here, name),
@@ -2391,6 +2406,7 @@ class App:
         self.win.show_all()
         self.main.refresh()
         GLib.timeout_add(1000, self.follow_tick)
+        bring_back()  # after the tray's Quit
         if getattr(self.args, "show_about", False):  # back from importing the 3DxWare look
             GLib.idle_add(lambda: self.show_about() or False)
         Gtk.main()

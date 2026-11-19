@@ -192,7 +192,9 @@ Right-click it for a menu:
 - **Start with the Desktop** (a tick box): untick it and the tray icon and the
   LCD Manager no longer start when you log in. The same tick box is in the
   settings panel's About window, where ticking it also starts them again.
-- **Quit** closes the tray icon and the LCD Manager until you next log in.
+- **Quit** closes the tray icon and the LCD Manager until you next log in, or
+  until you open the settings panel, which brings them back (unless Start with the
+  Desktop is off).
 
 tdxd itself, the driver, keeps running either way, so the 3D mouse keeps
 working and the LCD shows tdxd's own key page. To stop the driver too, run

@@ -270,6 +270,20 @@ def gui_tests(d, tdxd):
     check("--user mask tdx-tray.service tdx-lcdmgr.service" in calls and
           "--user unmask tdx-tray.service tdx-lcdmgr.service" in calls and
           "--user start tdx-tray.service tdx-lcdmgr.service" in calls, "Start-up: %r" % calls)
+    # opening the panel brings them back after the tray's Quit ...
+    open(log, "w").close()
+    check(ts.bring_back(), "asked systemd to start them")
+    for _ in range(50):
+        if "--user start" in open(log).read():
+            break
+        time.sleep(0.05)
+    check("--user start tdx-tray.service tdx-lcdmgr.service" in open(log).read(), "started: %r"
+          % open(log).read())
+    # ... but not when Start with the Desktop is off
+    with open(sysctl, "w") as f:
+        f.write('#!/bin/sh\necho "$*" >> %s\n[ "$2" = is-enabled ] && echo masked\nexit 0\n' % log)
+    open(log, "w").close()
+    check(ts.bring_back() is False and "--user start" not in open(log).read(), "masked: left off")
     del os.environ["TDX_SYSTEMCTL"]
 
     # ---- the panel follows the application used last (tdxd's active profile)
