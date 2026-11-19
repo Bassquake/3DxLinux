@@ -415,3 +415,9 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | System > 3D Mouse Settings clicked repeatedly | **Pass after a fix:** each click opened another panel. With test build `0.3.4+23+g58b60b5` (session bus name org.tdxd.Settings) only one panel opens; further clicks bring it forward. The LCD Manager got the same (org.tdxd.LcdManager): **Pass** with `0.3.4+24+g59b676a`, one window, further starts bring it forward. |
+
+## 2026-11-19: settings panel follows the application (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| Switching applications with the panel open | **Pass** with test build `0.3.4+26+g582152c`: the panel (and its Buttons window) switches to the profile of the application used last, without closing and reopening it. |
