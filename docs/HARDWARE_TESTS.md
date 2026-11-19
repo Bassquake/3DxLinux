@@ -395,3 +395,11 @@ itself when 1-5 are held past about half a second.
 |---|---|
 | Firefox profile (`3dx-firefox`) | **Pass after a fix:** with test build `0.3.4+13+g1d881ba` the keys did Firefox's functions, but the LCD showed the base config's numbered names (`lcd_label_3`, here an early `/etc/tdxd.conf`: key 3 "Front", key 10 "Paste"). With `0.3.4+14+g5e5dd7f` (a profile's key name beats the base's number) key 3 reloads the page and says "Refresh"; hold 5 (key 10) opens a private window and says "In Private Browsing". |
 | Key 2 in Firefox | As expected: 3DxWare's Firefox settings leave key 2 alone, so it keeps the base config's function and name (on this PC still an early config's "Top"). |
+
+## 2026-11-19: FreeCAD key names in the Buttons window, Restore Defaults (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| Buttons window, FreeCAD focused | **Pass** with test build `0.3.4+17+g7b1abf8`: keys 1-10 show the add-on's names for the workbench (`tdxctl app-keys`), matching the LCD; before, "Button 1" etc. |
+| Restore Defaults in the FreeCAD profile | **Fail, fixed:** cleared the profile's view keys (Top, Fit … did nothing). Restored by copying `/usr/share/tdxd/defaults/freecad.conf`; `57b7842` makes Restore Defaults restore a profile's shipped keys. |
+| tdxd restarted while FreeCAD runs | Keys 1-10 lost FreeCAD's names and functions (tdxd forgot the add-on's list, FreeCAD's spacenav connection closed); view keys kept working (keyboard shortcuts). **Pass** after restarting FreeCAD. `599576f`: the add-on resends the names and hints to restart FreeCAD. |
