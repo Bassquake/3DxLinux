@@ -33,7 +33,7 @@ trap 'rm -rf "$STAGE"' EXIT
 stage() { # stage LIBDIR -> $STAGE/root
 	local R=$STAGE/root L=$1
 	rm -rf "$R"
-	for b in tdxd tdx-lcd tdxctl tdx-lcdmgr tdx-lcd-demo tdx-focus tdx-settings tdx-lcdmanager \
+	for b in tdxd tdx-lcd tdxctl tdx-lcdmgr tdx-lcd-demo tdx-focus tdx-tray tdx-settings tdx-lcdmanager \
 		 tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures tdx-extract-3dxware-ui; do
 		install -Dm755 "$DIST/bin/$b" "$R/usr/bin/$b"
 	done
@@ -50,7 +50,7 @@ stage() { # stage LIBDIR -> $STAGE/root
 	install -Dm644 "$DIST/include/tdxlcd.h" "$R/usr/include/tdxlcd.h"
 	install -d "$R/usr/lib/systemd/system" "$R/usr/lib/systemd/user"
 	sed 's#/usr/local/#/usr/#g' "$DIST/tdxd.service" > "$R/usr/lib/systemd/system/tdxd.service"
-	for u in tdx-lcdmgr tdx-focus; do
+	for u in tdx-lcdmgr tdx-focus tdx-tray; do
 		sed 's#/usr/local/bin#/usr/bin#' "$DIST/$u.service" > "$R/usr/lib/systemd/user/$u.service"
 	done
 	install -Dm644 "$DIST/70-3dconnexion-tdxd.rules" "$R/usr/lib/udev/rules.d/70-3dconnexion-tdxd.rules"
@@ -124,11 +124,12 @@ if [ -d /run/systemd/system ]; then
 	# the LCD Manager runs in every user session; (re)start it now for those logged
 	# in, unless that user has turned it off
 	# and so does tdx-focus (which app has the focus: per-application profiles and
-	# the name on the LCD; KDE Plasma, sway, X11 - it exits quietly elsewhere)
-	systemctl --global enable tdx-lcdmgr.service tdx-focus.service >/dev/null 2>&1 || true
+	# the name on the LCD; KDE Plasma, sway, X11 - it exits quietly elsewhere), and tdx-tray
+	# (the 3Dconnexion icon in the system tray)
+	systemctl --global enable tdx-lcdmgr.service tdx-focus.service tdx-tray.service >/dev/null 2>&1 || true
 	for u in $(loginctl list-users --no-legend 2>/dev/null | awk "{print \$2}"); do
 		systemctl --user -M "$u@" daemon-reload >/dev/null 2>&1 || true
-		for s in tdx-lcdmgr tdx-focus; do
+		for s in tdx-lcdmgr tdx-focus tdx-tray; do
 			if systemctl --user -M "$u@" is-enabled $s.service >/dev/null 2>&1; then
 				systemctl --user -M "$u@" restart $s.service >/dev/null 2>&1 || true
 			fi
@@ -140,9 +141,9 @@ if [ -x /usr/local/bin/tdxd ]; then
 fi'
 PRE_REMOVE='if [ -d /run/systemd/system ]; then
 	for u in $(loginctl list-users --no-legend 2>/dev/null | awk "{print \$2}"); do
-		systemctl --user -M "$u@" stop tdx-lcdmgr.service tdx-focus.service >/dev/null 2>&1 || true
+		systemctl --user -M "$u@" stop tdx-lcdmgr.service tdx-focus.service tdx-tray.service >/dev/null 2>&1 || true
 	done
-	systemctl --global disable tdx-lcdmgr.service tdx-focus.service >/dev/null 2>&1 || true
+	systemctl --global disable tdx-lcdmgr.service tdx-focus.service tdx-tray.service >/dev/null 2>&1 || true
 	systemctl disable --now tdxd.service >/dev/null 2>&1 || true
 fi'
 POST_REMOVE='if [ -d /run/systemd/system ]; then systemctl daemon-reload || true; fi

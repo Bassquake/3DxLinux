@@ -1,0 +1,14 @@
+# systemd *user* unit: the 3Dconnexion icon in the system tray (settings panel,
+# log file). Enable with:  systemctl --user enable --now tdx-tray
+[Unit]
+Description=3Dconnexion icon in the system tray (tdxd)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/tdx-tray
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

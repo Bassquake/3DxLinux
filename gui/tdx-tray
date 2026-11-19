@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""tdx-tray - the 3Dconnexion icon in the desktop's system tray, like 3DxWare's
+on Windows. Left click: the settings panel. Right click:
+
+    Open 3Dconnexion Settings    tdx-settings (brought forward if open)
+    Write Log File               what support asks for, in a text file on the
+                                 Desktop, and a notification saying where
+
+The icon is a StatusNotifierItem with a DBusMenu menu (the D-Bus protocols KDE
+Plasma's tray uses, as do GNOME's AppIndicator extension, Xfce, Cinnamon, ...),
+served with Gio alone. Started with the desktop session (tdx-tray.service).
+
+    tdx-tray [--write-log]     --write-log: just write the log file and exit
+"""
+
+import argparse
+import datetime
+import glob
+import os
+import shutil
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+
+APP_VERSION = "dev"  # set by make install / dist
+TITLE = "3D Mouse Settings (tdxd)"
+ICON = "tdxd-3dxware"        # the 3Dconnexion logo, installed by the 3DxWare look import
+ICON_FALLBACK = "input-mouse"
+WATCHER = "org.kde.StatusNotifierWatcher"
+ITEM_PATH = "/StatusNotifierItem"
+MENU_PATH = "/MenuBar"
+
+SNI_XML = """<node>
+ <interface name="org.kde.StatusNotifierItem">
+  <property name="Category" type="s" access="read"/>
+  <property name="Id" type="s" access="read"/>
+  <property name="Title" type="s" access="read"/>
+  <property name="Status" type="s" access="read"/>
+  <property name="WindowId" type="i" access="read"/>
+  <property name="IconName" type="s" access="read"/>
+  <property name="IconThemePath" type="s" access="read"/>
+  <property name="AttentionIconName" type="s" access="read"/>
+  <property name="OverlayIconName" type="s" access="read"/>
+  <property name="ToolTip" type="(sa(iiay)ss)" access="read"/>
+  <property name="ItemIsMenu" type="b" access="read"/>
+  <property name="Menu" type="o" access="read"/>
+  <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
+  <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
+  <method name="ContextMenu"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
+  <method name="Scroll"><arg type="i" direction="in"/><arg type="s" direction="in"/></method>
+  <signal name="NewIcon"/>
+  <signal name="NewToolTip"/>
+  <signal name="NewStatus"><arg type="s"/></signal>
+ </interface>
+</node>"""
+
+MENU_XML = """<node>
+ <interface name="com.canonical.dbusmenu">
+  <property name="Version" type="u" access="read"/>
+  <property name="TextDirection" type="s" access="read"/>
+  <property name="Status" type="s" access="read"/>
+  <property name="IconThemePath" type="as" access="read"/>
+  <method name="GetLayout">
+   <arg type="i" direction="in"/><arg type="i" direction="in"/><arg type="as" direction="in"/>
+   <arg type="u" direction="out"/><arg type="(ia{sv}av)" direction="out"/>
+  </method>
+  <method name="GetGroupProperties">
+   <arg type="ai" direction="in"/><arg type="as" direction="in"/>
+   <arg type="a(ia{sv})" direction="out"/>
+  </method>
+  <method name="GetProperty">
+   <arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="v" direction="out"/>
+  </method>
+  <method name="Event">
+   <arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="v" direction="in"/>
+   <arg type="u" direction="in"/>
+  </method>
+  <method name="EventGroup">
+   <arg type="a(isvu)" direction="in"/><arg type="ai" direction="out"/>
+  </method>
+  <method name="AboutToShow"><arg type="i" direction="in"/><arg type="b" direction="out"/></method>
+  <method name="AboutToShowGroup">
+   <arg type="ai" direction="in"/><arg type="ai" direction="out"/><arg type="ai" direction="out"/>
+  </method>
+  <signal name="ItemsPropertiesUpdated">
+   <arg type="a(ia{sv})"/><arg type="a(ias)"/>
+  </signal>
+  <signal name="LayoutUpdated"><arg type="u"/><arg type="i"/></signal>
+ </interface>
+</node>"""
+
+# the menu: id -> (label, icon name); 0 is the root
+MENU = {1: ("Open 3Dconnexion Settings", "configure"),
+        2: ("Write Log File", "document-save")}
+
+
+# ---- finding things ------------------------------------------------------------
+
+def find_program(name):
+    """Next to this script (installed together, or the source tree), else PATH."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    for p in (os.path.join(here, name), os.path.join(here, "..", "gui", name)):
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return shutil.which(name)
+
+
+def data_dirs():
+    home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    return [home] + [d for d in dirs.split(":") if d]
+
+
+def icon_name():
+    """The 3Dconnexion logo once the 3DxWare look is imported, else a mouse."""
+    for d in data_dirs():
+        if glob.glob(os.path.join(d, "icons", "hicolor", "*", "apps", ICON + ".*")):
+            return ICON
+    return ICON_FALLBACK
+
+
+def log_dir():
+    """The Desktop, as 3DxWare puts its log there; else the home folder."""
+    try:
+        d = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True,
+                           timeout=5).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        d = ""
+    home = os.path.expanduser("~")
+    for c in (d, os.path.join(home, "Desktop")):
+        if c and os.path.isdir(c) and os.path.realpath(c) != os.path.realpath(home):
+            return c
+    return home
+
+
+# ---- the log file --------------------------------------------------------------
+
+def run(cmd, timeout=10):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return (p.stdout + p.stderr).rstrip() or "(no output, exit %d)" % p.returncode
+    except FileNotFoundError:
+        return "(%s not installed)" % cmd[0]
+    except subprocess.TimeoutExpired:
+        return "(timed out after %d s)" % timeout
+    except OSError as e:
+        return "(%s)" % e
+
+
+def read(path, limit=200000):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read(limit).rstrip()
+    except OSError as e:
+        return "(%s)" % (e.strerror or e)
+
+
+def log_sections(tdxctl=None):
+    """[(title, text)]: what a log for a 3D mouse problem needs - versions, what
+    tdxd sees, the settings, and the services' recent messages."""
+    ctl = tdxctl or find_program("tdxctl") or "tdxctl"
+    s = [("Written", "%s by tdx-tray %s" % (datetime.datetime.now().isoformat(" ", "seconds"),
+                                            APP_VERSION)),
+         ("System", run(["uname", "-a"]) + "\n" + "\n".join(
+             l for l in read("/etc/os-release").splitlines()
+             if l.startswith(("PRETTY_NAME=", "VERSION_ID=")))),
+         ("Desktop", "XDG_CURRENT_DESKTOP=%s XDG_SESSION_TYPE=%s" % (
+             os.environ.get("XDG_CURRENT_DESKTOP", "-"), os.environ.get("XDG_SESSION_TYPE", "-"))),
+         ("Package", run(["dpkg-query", "-W", "-f", "${Package} ${Version}\n", "tdxd"])
+          if shutil.which("dpkg-query") else run(["rpm", "-q", "tdxd"])),
+         ("tdxctl -V", run([ctl, "-V"])),
+         ("tdxctl status", run([ctl, "status"])),
+         ("tdxctl buttons", run([ctl, "buttons"])),
+         ("tdxctl app-keys", run([ctl, "app-keys"])),
+         ("tdxctl profiles", run([ctl, "profiles"])),
+         ("USB (3Dconnexion / Logitech)",
+          run(["lsusb", "-d", "256f:"]) + "\n" + run(["lsusb", "-d", "046d:"])),
+         ("Device nodes", run(["sh", "-c", "ls -l /dev/hidraw* /dev/uinput 2>&1"])),
+         ("User and groups", run(["id"])),
+         ("tdxd service", run(["systemctl", "status", "--no-pager", "-n", "0", "tdxd.service"])),
+         ("User services", run(["systemctl", "--user", "status", "--no-pager", "-n", "0",
+                                "tdx-lcdmgr.service", "tdx-focus.service", "tdx-tray.service"])),
+         ("tdxd messages (this boot)",
+          run(["journalctl", "-b", "-u", "tdxd.service", "-n", "300", "--no-pager"])),
+         ("Session messages (LCD Manager, focus, tray)",
+          run(["journalctl", "--user", "-b", "-u", "tdx-lcdmgr.service", "-u", "tdx-focus.service",
+               "-u", "tdx-tray.service", "-n", "300", "--no-pager"])),
+         ("/etc/tdxd.conf", read("/etc/tdxd.conf"))]
+    for p in sorted(glob.glob("/etc/tdxd.d/*.conf")):
+        s.append((p, read(p)))
+    imp = sorted(glob.glob(os.path.expanduser("~/.local/share/tdxd/3dxware-ui/profiles/*.conf")) +
+                 glob.glob("/usr/local/share/tdxd/3dxware-ui/profiles/*.conf"))
+    s.append(("Imported 3DxWare profiles", "%d: %s" % (
+        len(imp), " ".join(os.path.basename(p)[:-5] for p in imp)) if imp else "none"))
+    s.append(("udev rule", read("/usr/lib/udev/rules.d/70-3dconnexion-tdxd.rules")
+              if os.path.exists("/usr/lib/udev/rules.d/70-3dconnexion-tdxd.rules")
+              else read("/etc/udev/rules.d/70-3dconnexion-tdxd.rules")))
+    return s
+
+
+def write_log(directory=None, tdxctl=None):
+    """Write the log file; its path."""
+    d = directory or log_dir()
+    stem = os.path.join(d, "tdxd-log-%s" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    path, n = stem + ".txt", 1
+    while os.path.exists(path):  # two in the same second: don't overwrite
+        n += 1
+        path = "%s-%d.txt" % (stem, n)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("tdxd log file (3Dconnexion driver for Linux)\n")
+        for title, text in log_sections(tdxctl):
+            f.write("\n==== %s ====\n%s\n" % (title, text))
+    return path
+
+
+# ---- the tray icon ---------------------------------------------------------------
+
+def menu_layout(icon=True):
+    """dbusmenu's GetLayout result for the whole menu: (revision, (0, props, items))."""
+    items = []
+    for i, (label, icon_name_) in sorted(MENU.items()):
+        props = {"label": GLib.Variant("s", label), "enabled": GLib.Variant("b", True),
+                 "visible": GLib.Variant("b", True)}
+        if icon:
+            props["icon-name"] = GLib.Variant("s", icon_name_)
+        items.append(GLib.Variant("(ia{sv}av)", (i, props, [])))
+    root = (0, {"children-display": GLib.Variant("s", "submenu")}, items)
+    return GLib.Variant("(u(ia{sv}av))", (1, root))
+
+
+class Tray:
+    def __init__(self, bus):
+        self.bus, self.icon = bus, icon_name()
+        self.name = "org.kde.StatusNotifierItem-%d-1" % os.getpid()
+        self.notify_paths = {}
+        sni = Gio.DBusNodeInfo.new_for_xml(SNI_XML).interfaces[0]
+        menu = Gio.DBusNodeInfo.new_for_xml(MENU_XML).interfaces[0]
+        bus.register_object(ITEM_PATH, sni, self.on_sni_call, self.on_sni_prop, None)
+        bus.register_object(MENU_PATH, menu, self.on_menu_call, self.on_menu_prop, None)
+        Gio.bus_own_name_on_connection(bus, self.name, Gio.BusNameOwnerFlags.NONE, None, None)
+        # the tray (plasmashell ...) may start after us, or restart: register each time
+        Gio.bus_watch_name_on_connection(bus, WATCHER, Gio.BusNameWatcherFlags.NONE,
+                                         self.on_watcher, None)
+        bus.signal_subscribe("org.freedesktop.Notifications", "org.freedesktop.Notifications",
+                             "ActionInvoked", "/org/freedesktop/Notifications", None,
+                             Gio.DBusSignalFlags.NONE, self.on_notify_action)
+        GLib.timeout_add_seconds(10, self.check_icon)
+
+    # StatusNotifierItem
+    def on_watcher(self, bus, _name, _owner):
+        bus.call(WATCHER, "/StatusNotifierWatcher", WATCHER, "RegisterStatusNotifierItem",
+                 GLib.Variant("(s)", (self.name,)), None, Gio.DBusCallFlags.NONE, -1, None, None)
+
+    def on_sni_prop(self, _bus, _sender, _path, _iface, prop):
+        v = {"Category": ("s", "Hardware"), "Id": ("s", "tdxd"), "Title": ("s", TITLE),
+             "Status": ("s", "Active"), "WindowId": ("i", 0), "IconName": ("s", self.icon),
+             "IconThemePath": ("s", ""), "AttentionIconName": ("s", ""),
+             "OverlayIconName": ("s", ""), "ItemIsMenu": ("b", False),
+             "Menu": ("o", MENU_PATH),
+             "ToolTip": ("(sa(iiay)ss)", (self.icon, [], TITLE, "3Dconnexion 3D mouse"))}.get(prop)
+        return GLib.Variant(*v) if v else None
+
+    def on_sni_call(self, _bus, _sender, _path, _iface, method, _params, inv):
+        if method in ("Activate", "SecondaryActivate"):
+            self.open_settings()
+        inv.return_value(None)
+
+    def check_icon(self):
+        """The 3DxWare look imported later: switch to the 3Dconnexion logo."""
+        ic = icon_name()
+        if ic != self.icon:
+            self.icon = ic
+            self.bus.emit_signal(None, ITEM_PATH, "org.kde.StatusNotifierItem", "NewIcon", None)
+        return True
+
+    # DBusMenu
+    def on_menu_prop(self, _bus, _sender, _path, _iface, prop):
+        v = {"Version": ("u", 3), "TextDirection": ("s", "ltr"), "Status": ("s", "normal"),
+             "IconThemePath": ("as", [])}.get(prop)
+        return GLib.Variant(*v) if v else None
+
+    def on_menu_call(self, _bus, _sender, _path, _iface, method, params, inv):
+        if method == "GetLayout":
+            inv.return_value(menu_layout())
+        elif method == "GetGroupProperties":
+            ids = params.unpack()[0]
+            out = [(i, {"label": GLib.Variant("s", MENU[i][0]), "enabled": GLib.Variant("b", True),
+                        "visible": GLib.Variant("b", True)}) for i in ids if i in MENU]
+            inv.return_value(GLib.Variant("(a(ia{sv}))", (out,)))
+        elif method == "GetProperty":
+            i, name = params.unpack()
+            val = MENU.get(i, ("", ""))[0] if name == "label" else True
+            inv.return_value(GLib.Variant("(v)", (GLib.Variant("s" if name == "label" else "b", val),)))
+        elif method == "Event":
+            i, event, _data, _ts = params.unpack()
+            if event == "clicked":
+                GLib.idle_add(self.activate, i)
+            inv.return_value(None)
+        elif method == "EventGroup":
+            for i, event, _data, _ts in params.unpack()[0]:
+                if event == "clicked":
+                    GLib.idle_add(self.activate, i)
+            inv.return_value(GLib.Variant("(ai)", ([],)))
+        elif method == "AboutToShow":
+            inv.return_value(GLib.Variant("(b)", (False,)))
+        elif method == "AboutToShowGroup":
+            inv.return_value(GLib.Variant("(aiai)", ([], [])))
+        else:
+            inv.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+
+    # the menu entries
+    def activate(self, i):
+        if i == 1:
+            self.open_settings()
+        elif i == 2:
+            self.log_file()
+        return False
+
+    def open_settings(self):
+        prog = os.environ.get("TDX_TRAY_SETTINGS") or find_program("tdx-settings")  # (tests)
+        if prog:  # single instance: an open panel comes to the front
+            subprocess.Popen([prog], start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def log_file(self):
+        try:
+            path = write_log()
+        except OSError as e:
+            self.notify("Log file not written", str(e), None)
+            return
+        self.notify("Log file written", path, path)
+
+    def notify(self, summary, body, path):
+        """A desktop notification; clicking it opens the folder with the file."""
+        def done(bus, res):
+            try:
+                nid = bus.call_finish(res).unpack()[0]
+            except GLib.Error:
+                return
+            if path:
+                self.notify_paths[nid] = path
+        self.bus.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                      "org.freedesktop.Notifications", "Notify",
+                      GLib.Variant("(susssasa{sv}i)", (TITLE, 0, self.icon, summary, body,
+                                                       ["default", "Open Folder"] if path else [],
+                                                       {}, -1)),
+                      GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, -1, None, done)
+
+    def on_notify_action(self, _bus, _sender, _path, _iface, _signal, params):
+        nid, _action = params.unpack()
+        path = self.notify_paths.pop(nid, None)
+        if path:
+            subprocess.Popen(["xdg-open", os.path.dirname(path)], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="The 3Dconnexion icon in the system tray (tdxd)")
+    ap.add_argument("--write-log", action="store_true", help="write the log file and exit")
+    ap.add_argument("-V", "--version", action="version", version="tdx-tray " + APP_VERSION)
+    args = ap.parse_args()
+    if args.write_log:
+        print(write_log())
+        return 0
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    except GLib.Error as e:
+        print("tdx-tray: no session bus (%s)" % e.message, file=sys.stderr)
+        return 0  # nothing to show the icon in
+    Tray(bus)
+    GLib.MainLoop().run()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

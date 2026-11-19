@@ -15,6 +15,7 @@ if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
 	rm -rf "$PREFIX/share/tdxd/freecad"
 	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
+	      "$PREFIX/bin/tdx-tray" /etc/systemd/user/tdx-tray.service \
 	      "$PREFIX/bin/tdx-freecad-addon" \
 	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
 	      "$PREFIX/lib/tdxd/tdx-focus-kwin" \
@@ -44,6 +45,7 @@ install -Dm755 bin/tdxd    "$PREFIX/bin/tdxd"
 install -Dm755 bin/tdx-lcd "$PREFIX/bin/tdx-lcd"
 install -Dm755 bin/tdxctl  "$PREFIX/bin/tdxctl"
 install -Dm755 bin/tdx-focus "$PREFIX/bin/tdx-focus"
+install -Dm755 bin/tdx-tray "$PREFIX/bin/tdx-tray"   # the 3Dconnexion icon in the system tray
 # FreeCAD add-on: the keys follow the active workbench (tdx-freecad-addon puts
 # its loader into each user's FreeCAD folder, at login via tdx-focus)
 install -Dm755 bin/tdx-freecad-addon "$PREFIX/bin/tdx-freecad-addon"
@@ -78,6 +80,8 @@ sed "s#/usr/local/lib/tdxd#$PREFIX/lib/tdxd#" org.tdxd.settings.policy \
 mkdir -p /etc/systemd/user /etc/tdxd.d
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-focus.service > /etc/systemd/user/tdx-focus.service
 chmod 644 /etc/systemd/user/tdx-focus.service
+sed "s#/usr/local/bin#$PREFIX/bin#" tdx-tray.service > /etc/systemd/user/tdx-tray.service
+chmod 644 /etc/systemd/user/tdx-tray.service
 install -Dm644 blender.conf.example /etc/tdxd.d/blender.conf.example
 [ -e /etc/tdxd.d/freecad.conf ] || install -Dm644 freecad.conf /etc/tdxd.d/freecad.conf  # FreeCAD's view keys
 install -Dm644 70-3dconnexion-tdxd.rules /etc/udev/rules.d/70-3dconnexion-tdxd.rules
@@ -107,6 +111,7 @@ echo "  (stop spacenavd first if it is running: sudo systemctl disable --now spa
 echo "  calibrate (re-zero) the cap:   tdxctl calibrate"
 echo "  per-application profiles:      /etc/tdxd.d/*.conf (see blender.conf.example)"
 echo "  focus tracking (KDE Plasma, sway, X11), as your user:  systemctl --user enable --now tdx-focus"
+echo "  the icon in the system tray, as your user:            systemctl --user enable --now tdx-tray"
 echo "  settings panel:                tdx-settings   (needs python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)"
 echo "  LCD Manager (LCD applets), as your user:  systemctl --user enable --now tdx-lcdmgr"
 echo "  3DxWare look for the panel:    sudo tdx-extract-3dxware-ui 3DxWare64_v10-9-14_b745.exe   (needs 7z)"

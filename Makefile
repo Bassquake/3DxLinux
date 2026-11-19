@@ -107,6 +107,10 @@ test-freecad:
 test-apps:
 	python3 tests/test_app_profiles.py
 
+# the system tray icon, on a private session bus
+test-tray:
+	dbus-run-session -- python3 tests/test_tray.py
+
 # Regenerate src/font_aa.c (needs python3-gi with Pango and the DejaVu fonts)
 font:
 	python3 tools/gen_font.py > src/font_aa.c
@@ -126,6 +130,7 @@ install: all
 	install -Dm644 packaging/freecad/TdxdSpaceMouse/InitGui.py $(DESTDIR)$(PREFIX)/share/tdxd/freecad/TdxdSpaceMouse/InitGui.py
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-settings
 	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-tray | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-tray
 	install -Dm755 packaging/tdx-focus-kwin $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-focus-kwin
 	install -Dm755 tools/extract_3dxware_ui.py $(DESTDIR)$(PREFIX)/bin/tdx-extract-3dxware-ui
 	install -Dm755 $(BUILD)/tdx-lcdmgr $(DESTDIR)$(PREFIX)/bin/tdx-lcdmgr
@@ -144,6 +149,7 @@ install: all
 	  install -Dm644 gui/$$d.desktop $(DESTDIR)$(PREFIX)/share/applications/$$d.desktop; done
 	sed 's#/usr/local/lib/tdxd#$(PREFIX)/lib/tdxd#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
+	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-tray.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-tray.service
 	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/tdxd.d/blender.conf.example
 	test -e $(DESTDIR)/etc/tdxd.d/freecad.conf || install -Dm644 packaging/profiles/freecad.conf $(DESTDIR)/etc/tdxd.d/freecad.conf
 	install -Dm644 packaging/70-3dconnexion-tdxd.rules $(DESTDIR)/etc/udev/rules.d/70-3dconnexion-tdxd.rules
@@ -169,6 +175,7 @@ dist:
 	cp packaging/freecad/tdxd_freecad.py $(DIST)/freecad/
 	cp packaging/freecad/TdxdSpaceMouse/InitGui.py $(DIST)/freecad/TdxdSpaceMouse/
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings > $(DIST)/bin/tdx-settings
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-tray > $(DIST)/bin/tdx-tray
 	cp gui/tdx-settings-helper packaging/tdx-focus-kwin $(DIST)/lib/
 	cp tools/extract_3dxware_ui.py $(DIST)/bin/tdx-extract-3dxware-ui
 	cp $(BUILD)/tdx-lcdmgr $(BUILD)/tdx-lcd-demo $(DIST)/bin/
@@ -182,7 +189,7 @@ dist:
 	cp src/tdxlcd.h $(DIST)/include/
 	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
 	cp packaging/70-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
-	   packaging/tdx-focus.service packaging/profiles/blender.conf.example packaging/profiles/freecad.conf \
+	   packaging/tdx-focus.service packaging/tdx-tray.service packaging/profiles/blender.conf.example packaging/profiles/freecad.conf \
 	   packaging/install.sh packaging/tdx-lcdmgr.service gui/*.desktop gui/org.tdxd.settings.policy \
 	   README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
@@ -217,4 +224,4 @@ release:
 clean:
 	rm -rf build
 
-.PHONY: all test test-gui test-lcdmgr test-lcdapplets test-freecad test-apps font install clean devices dist packages release
+.PHONY: all test test-gui test-lcdmgr test-lcdapplets test-freecad test-apps test-tray font install clean devices dist packages release

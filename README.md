@@ -177,6 +177,24 @@ The window title names the profile being edited; click it to switch between the
 defaults and the per-application profiles, or to create one for the focused
 application.
 
+### The icon in the system tray (`tdx-tray`)
+
+As 3DxWare does on Windows, a 3Dconnexion icon sits in the system tray, next to
+the network, volume and other icons. Left-click it to open the settings panel.
+Right-click it for a menu:
+
+- **Open 3Dconnexion Settings** opens the panel, or brings it to the front if
+  it's already open.
+- **Write Log File** writes `tdxd-log-<date>-<time>.txt` to your Desktop: the
+  versions, what tdxd sees, your settings files, and the recent messages of tdxd
+  and the LCD Manager. A notification says where it is; click it to open the
+  folder. The file includes your computer's name and your user name.
+
+The packages start it with every desktop session (`systemctl --user disable
+--now tdx-tray` turns it off). It uses the StatusNotifierItem tray of KDE
+Plasma, Xfce, Cinnamon and others; GNOME shows it with the AppIndicator
+extension. `tdx-tray --write-log` writes the log file from a terminal.
+
 ### The 3DxWare look
 
 The 3DxWare artwork (backgrounds, device photos, key caps, axis icons, check
