@@ -2052,6 +2052,9 @@ class App:
         if prof:
             self.store.select(prof)
         self.store.listeners.append(self.on_changed)
+        # follow the application used last (follow_tick), unless -p chose one
+        self.tdxd_profile = self.status.get("profile")
+        self.last_app_keys = (None, {})
 
     # ---- saving
     def on_changed(self):
@@ -2157,6 +2160,34 @@ class App:
         for p in self.panels:
             p.refresh()
         return False
+
+    def follow_tick(self):
+        """Like 3DxWare's panel, show the application used last: tdxd ignores
+        focus on its own windows, so its active profile is that application's.
+        When it changes the panel switches to it (a profile you chose from the
+        title menu stays until then). Also refreshes the Buttons window when
+        the application renames its keys (FreeCAD's workbench)."""
+        if self.args.profile is not None:
+            return False  # -p: the profile asked for
+        st = self.daemon.status()
+        if not st.get("running"):
+            return True
+        prof = st.get("profile")
+        if prof and prof != self.tdxd_profile:
+            self.tdxd_profile = prof
+            self.status = st
+            cur = os.path.basename(self.store.profile.path)[:-5] if self.store.profile else None
+            want = None if prof == "default" else prof
+            if want != cur:
+                self.switch_profile(want)
+            return True
+        keys = self.daemon.app_keys()
+        if keys != self.last_app_keys:
+            self.last_app_keys = keys
+            for p in self.panels:
+                if isinstance(p, ButtonsPanel):
+                    p.refresh()
+        return True
 
     # ---- profiles (the window title is the profile chooser)
     def profile_menu(self, widget):
@@ -2287,6 +2318,7 @@ class App:
         self.win.connect("delete-event", lambda *_: (self.quit(), True)[1])
         self.win.show_all()
         self.main.refresh()
+        GLib.timeout_add(1000, self.follow_tick)
         if getattr(self.args, "show_about", False):  # back from importing the 3DxWare look
             GLib.idle_add(lambda: self.show_about() or False)
         Gtk.main()

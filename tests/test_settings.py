@@ -254,6 +254,27 @@ def gui_tests(d, tdxd):
           all(ship.get("lcd_label_%d" % (i + 1)) == v for i, v in enumerate(ts.DEFAULT_LABELS)),
           "Restore Defaults matches packaging/tdxd.conf")
 
+    # ---- the panel follows the application used last (tdxd's active profile)
+    app.args.profile = None  # not started with -p
+    app.store.select(None)
+    app.tdxd_profile = "default"
+    with open(os.path.join(pdir, "blender.conf"), "w") as f:
+        f.write("match = blender\n")
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile blender\napplication blender (via focus)\ndevices 1\n")
+    check(app.follow_tick() is True and app.store.profile and
+          os.path.basename(app.store.profile.path) == "blender.conf", "switched to Blender's profile")
+    app.store.select(None)  # chosen by hand from the title menu
+    app.follow_tick()
+    check(app.store.profile is None, "a profile chosen by hand stays until tdxd's changes")
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n")
+    app.store.select("blender")
+    app.follow_tick()
+    check(app.store.profile is None, "back to All Applications")
+    app.args.profile = ""
+    app.follow_tick()  # started with -p: stays
+
     # ---- the application's own key names (tdxctl app-keys; the FreeCAD add-on)
     d0 = ts.Daemon("/nonexistent")
     d0.request = lambda *a: (0, "app FreeCAD\nV3DK_1\tCreate sketch\nV3DK_2\tPart Design Modeling\n")
