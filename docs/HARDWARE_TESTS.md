@@ -409,3 +409,9 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | Window buttons | **Pass after a fix:** the settings windows (main, LCD Manager …) showed KWin's minimize/close as well as 3DxWare's own (GTK 3 asks Wayland compositors to decorate undecorated windows). With test build `0.3.4+21+gd4e625e` (empty hidden title bar, client-side decorations) only the panel's own buttons remain. |
+
+## 2026-11-19: one settings panel per session (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| System > 3D Mouse Settings clicked repeatedly | **Pass after a fix:** each click opened another panel. With test build `0.3.4+23+g58b60b5` (session bus name org.tdxd.Settings) only one panel opens; further clicks bring it forward. The LCD Manager got the same (org.tdxd.LcdManager), checked in WSL. |

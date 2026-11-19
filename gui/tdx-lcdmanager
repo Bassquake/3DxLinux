@@ -30,7 +30,7 @@ if os.path.isdir("/mnt/wslg") and "GDK_BACKEND" not in os.environ:
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 import cairo  # noqa: E402
 
 _here = os.path.dirname(os.path.realpath(__file__))
@@ -809,13 +809,20 @@ class LcdManager:
     def run(self):
         set_window_icons(window_icon_files(ART.dir and os.path.join(os.path.dirname(ART.dir), "appicons"),
                                            "lcdmanager"), "tdxd-lcdmanager")
-        win = Gtk.Window(title="LCD Manager")
+        win = self.win = Gtk.Window(title="LCD Manager")
         win.set_resizable(False)
         win.add(self.root)
         win.connect("destroy", Gtk.main_quit)
         win.show_all()
         GLib.timeout_add_seconds(2, self.tick)
         Gtk.main()
+
+    def present(self):
+        """Another start of tdx-lcdmanager: show this window instead."""
+        win = getattr(self, "win", None)
+        if win:
+            win.deiconify()
+            win.present()
 
     def tick(self):
         old = self.st
@@ -862,9 +869,33 @@ def main():
     if args.snapshot:
         app.snapshot(args.snapshot)
         return 0
+    single = single_instance()
+    if single is None:
+        return 0  # the open LCD Manager came to the front
+    if single:
+        single.connect("activate", lambda *_: app.present())
     app.build()
     app.run()
     return 0
+
+
+APP_ID = "org.tdxd.LcdManager"
+
+
+def single_instance():
+    """One LCD Manager window per desktop session (as the settings panel): when
+    one is open, starting another brings it to the front. The Gtk.Application
+    holding the name, None when another window has it (told to come forward;
+    exit), or False without a session bus (run anyway)."""
+    gapp = Gtk.Application(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+    try:
+        gapp.register(None)
+    except GLib.Error:
+        return False
+    if not gapp.get_is_remote():
+        return gapp
+    gapp.activate()  # the window that's open: present()
+    return None
 
 
 if __name__ == "__main__":
