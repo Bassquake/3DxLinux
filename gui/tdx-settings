@@ -2063,7 +2063,7 @@ class AboutPanel(Panel):
         # 20 px more above each section than before, for air between them
         self.section("Configuration", 33, 420, 225)
         self.cfg = [self.put(lab("", "tdx-dim"), 34, y) for y in (234, 252, 270)]
-        link = Gtk.LinkButton.new_with_label(PROJECT_URL, "tdxd project page")
+        link = Gtk.LinkButton.new_with_label(PROJECT_URL, "3DxLinux project page")
         link.get_style_context().add_class("tdx-link")
         self.put(link, 31, 292)
         self.section("3DxWare Look", 33, 420, 353)
@@ -2091,7 +2091,7 @@ class AboutPanel(Panel):
         self.autostart.set_active(autostart_enabled())
         self.updating = False
         st = self.app.status
-        rows = [("tdxd", st.get("version", "not running")), ("tdx-settings", APP_VERSION)]
+        rows = [("3DxLinux", st.get("version", "not running")), ("tdx-settings", APP_VERSION)]
         for l, (k, v) in zip(self.ver, rows):
             l.set_markup("<span foreground='#555555'><b>%s</b> %s</span>"
                          % (GLib.markup_escape_text(k), GLib.markup_escape_text(v)))
