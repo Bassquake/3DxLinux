@@ -513,6 +513,14 @@ class Daemon:
                     st["receivers"].append({"name": m.group(1), "vid": m.group(2),
                                             "pid": m.group(3), "firmware": m.group(4),
                                             "paired": []})
+            elif line.startswith("pairing ") and st["receivers"]:
+                parts = line.split(None, 3)
+                p = {"state": parts[1] if len(parts) > 1 else "?"}
+                if p["state"] == "on" and len(parts) > 2 and parts[2].isdigit():
+                    p["left"] = int(parts[2])
+                elif p["state"] == "done" and len(parts) > 3:
+                    p["slot"], p["name"] = int(parts[2]), parts[3]
+                st["receivers"][-1]["pairing"] = p
             elif line.startswith("paired ") and st["receivers"]:
                 m = re.match(r"paired (\d+) (.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] id (\S+) "
                              r"battery (\S+) charging (\S+) seen (\S+)(?: active (\S+))?", line)
@@ -1481,9 +1489,10 @@ class MainPanel(Panel):
         self.recv_buttons = []
         for text, x in (("Advanced Settings", 30), ("Add device", 245)):
             b = self.put(flat_button(text, 195), x, 274)
-            b.set_sensitive(False)
-            b.set_tooltip_text(NOT_YET)
             self.recv_buttons.append(b)
+        self.recv_buttons[0].set_sensitive(False)
+        self.recv_buttons[0].set_tooltip_text(NOT_YET)
+        self.recv_buttons[1].connect("clicked", lambda *_: self.app.window(AddDevicePanel))
         self.state_box = Gtk.Box(spacing=5)
         self.state_icon = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
         if self.state_icon:
@@ -2096,6 +2105,142 @@ class MouseButtonsPanel(Panel):
             # a profile's own default: "none" keeps it from falling back to the global one
             value = "none"
         self.set_value(key, value)
+
+
+# Add device: what 3DxPair offers for a Universal Receiver (tdxctl pair KIND)
+PAIR_KINDS = [("mouse", "CadMouse", "C658_Head.png"),
+              ("spacemouse", "SpaceMouse Wireless", "SMW_Head.png")]
+
+
+class AddDevicePanel(Panel):
+    """3DxWare's "Add device" (3DxPair.exe) for a Universal Receiver: choose the
+    device, follow the steps while tdxd keeps the receiver in pairing mode
+    (55 s), then the result."""
+    title = "Add device"
+    subtitle = "Add device"
+    size = (470, 430)
+    header_h = 91
+
+    def header(self):
+        super().header()
+        self.title_btn.set_sensitive(False)
+        self.fix.move(self.title_btn, 30, 56)
+
+    def refresh_header(self):
+        r = (self.app.status.get("receivers") or [{}])[0]
+        self.title_label.set_text(r.get("name", "Universal Receiver"))
+        for c in self.icon_slot.get_children():
+            self.icon_slot.remove(c)
+
+    def build(self):
+        self.kind = None
+        self.timer = None
+        # page 1: which device
+        self.choose = self.put(lab("Which device do you want to pair?", "tdx-section"), 30, 112)
+        self.tiles = Gtk.Box(spacing=10)
+        for kind, name, photo in PAIR_KINDS:
+            b = Gtk.Button()
+            b.set_relief(Gtk.ReliefStyle.NONE)
+            b.set_can_focus(False)
+            b.get_style_context().add_class("tdx-tile")
+            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            img = image_widget(ASSETS.icon(photo))
+            v.pack_start(img or drawing(200, 120, lambda wd, cr: draw_device(wd, cr, True)),
+                         False, False, 0)
+            v.pack_start(lab(name, xalign=0.5), False, False, 0)
+            b.add(v)
+            b.connect("clicked", lambda _b, k=kind: self.start(k))
+            self.tiles.pack_start(b, False, False, 0)
+        self.put(self.tiles, 10, 150)
+        # page 2: the steps, page 3: the result
+        self.text = lab("", "tdx-dim")
+        self.text.set_line_wrap(True)
+        self.text.set_size_request(410, -1)
+        self.text.set_valign(Gtk.Align.START)
+        self.put(self.text, 30, 120)
+        self.progress = self.put(lab("", "tdx-status"), 30, 300)
+        self.back = self.put(flat_button("Back", 94), 222, 387)
+        self.back.connect("clicked", lambda *_: self.stop(to_start=True))
+        self.retry = self.put(flat_button("Retry", 94), 222, 387)
+        self.retry.connect("clicked", lambda *_: self.start(self.kind))
+        self.close = self.put(flat_button("Close", 94), 345, 387)
+        self.close.connect("clicked", lambda *_: self.stop())
+        self.page = "choose"
+
+    def show(self, page):
+        self.page = page
+        for w, v in ((self.choose, page == "choose"), (self.tiles, page == "choose"),
+                     (self.text, page != "choose"), (self.progress, page == "pairing"),
+                     (self.back, page == "pairing"), (self.retry, page == "timeout")):
+            w.set_visible(v)
+            if v:
+                w.show_all()
+
+    def name_of(self, kind):
+        return next(n for k, n, _p in PAIR_KINDS if k == kind)
+
+    def start(self, kind):
+        self.kind = kind
+        rc, out = self.app.daemon.request("pair", kind)
+        if rc:
+            self.text.set_text(out.strip().replace("error: ", "").capitalize() or
+                               "Pairing could not start.")
+            self.show("error")
+            return
+        name = self.name_of(kind)
+        self.text.set_markup(
+            "1. Disconnect your %s from the USB cable.\n\n"
+            "2. Switch your %s <b>OFF</b> and then switch it <b>ON</b>." %
+            (GLib.markup_escape_text(name), GLib.markup_escape_text(name)))
+        self.progress.set_text("Detecting…")
+        self.started = time.monotonic()
+        self.show("pairing")
+        if not self.timer:
+            self.timer = GLib.timeout_add(1000, self.tick)
+
+    def pairing_state(self):
+        st = self.app.daemon.status()
+        for r in st.get("receivers", []):
+            if r.get("pairing"):
+                return r["pairing"]
+        return None
+
+    def tick(self):
+        if self.page != "pairing":
+            self.timer = None
+            return False
+        p = self.pairing_state()
+        if p and p["state"] == "on":
+            self.progress.set_text("Detecting… (%d s)" % p.get("left", 0))
+            return True
+        if not p and time.monotonic() - self.started < 75:
+            # no pairing line: the receiver is away for a moment (it drops off
+            # USB once a device has paired) - wait for tdxd's result
+            return True
+        if p and p["state"] == "done":
+            self.text.set_markup("Your <b>%s</b> was successfully paired." %
+                                 GLib.markup_escape_text(p.get("name", "device")))
+            self.show("done")
+            self.app.poll_status()
+        else:
+            self.text.set_text("It is taking too long to detect your device.\n\n"
+                               "Press Retry to restart pairing, and follow the steps. "
+                               "If your device was paired already, it is ready to use.")
+            self.show("timeout")
+        self.timer = None
+        return False
+
+    def stop(self, to_start=False):
+        if self.page == "pairing":
+            self.app.daemon.request("pair-stop")
+        if to_start:
+            self.show("choose")
+        else:
+            self.box.get_toplevel().destroy()
+
+    def refresh(self):
+        self.refresh_header()
+        self.show(self.page)  # again after the window's show_all
 
 
 class KeyCaptureDialog(Gtk.Dialog):

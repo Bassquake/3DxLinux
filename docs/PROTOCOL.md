@@ -774,6 +774,22 @@ that device's collections.
   acceleration and wheel lines per notch are Windows settings
   (`SystemParametersInfo`), not sent to the mouse.
 
+- **Pairing** (`3DxPair.exe`, EuclidControl / UniversalReceiver): feature
+  report 0x41 on the receiver.
+
+  | Command | Bytes | Effect |
+  |---|---|---|
+  | pairing on | `41 02 MODE 00 00` | MODE (3DxPair's PairingMode): 2 EuclidOnly for a CadMouse, 1 RoundRobin for a SpaceMouse Wireless / Pro Wireless, 6 Integrated for a keyboard |
+  | pairing off | `41 02 00 00 00` | 3DxPair sends it once a device has paired, or after 55 s |
+  | free a slot | `41 04 SLOT 00 00` | unpairs the device in SLOT |
+
+  For a CadMouse, 3DxPair's steps are: disconnect its USB cable, then switch
+  it off and on. The new device appears in the slot table (0x43 + slot). The
+  receiver then drops off USB for about 2 s and comes back; it does the same
+  after a slot is freed. Seen with the CadMouse Compact Wireless: freed from
+  slot 4, then paired again into slot 4 17.7 s after pairing was turned on.
+  Pairing a device that is already paired changes nothing.
+
 Captured with a CadMouse Compact Wireless in slot 4:
 
 ```

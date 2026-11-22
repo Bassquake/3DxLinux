@@ -104,6 +104,20 @@ struct rcv_ctx {
 };
 static struct rcv_ctx rcvs[MAX_RCV];
 static int nrcv;
+
+/* Add device: one receiver at a time, kept by its USB path, since the
+ * receiver drops off USB and comes back once a device has paired. */
+enum { PAIR_IDLE, PAIR_ON, PAIR_DONE, PAIR_TIMEOUT };
+static struct {
+	int state;
+	char phys[64];
+	int mode;
+	long long until_ms, poll_ms;
+	struct tdx_rcv_slot before[TDX_RCV_SLOTS];
+	int slot;               /* PAIR_DONE: the new device's slot ... */
+	struct tdx_rcv_slot got; /* ... and what it is */
+	int off_pending;        /* pairing mode still to be turned off */
+} pairing;
 static struct tdx_spnav spnav = {.lfd = -1};
 
 /* per-application profiles */
@@ -611,6 +625,77 @@ static void rcv_mouse_buttons(struct rcv_ctx *r, uint8_t bits)
 	}
 }
 
+/* The receiver's control interface (the lowest interface of @phys; any
+ * receiver for NULL), or NULL while it is away. */
+static struct rcv_ctx *rcv_control(const char *phys)
+{
+	struct rcv_ctx *best = NULL;
+	for (int i = 0; i < nrcv; i++)
+		if ((!phys || !strcmp(rcvs[i].node.phys, phys)) &&
+		    (!best || rcvs[i].node.iface < best->node.iface))
+			best = &rcvs[i];
+	return best;
+}
+
+static int rcv_slot_table(struct rcv_ctx *r, struct tdx_rcv_slot s[TDX_RCV_SLOTS])
+{
+	for (int i = 0; i < TDX_RCV_SLOTS; i++) {
+		uint8_t b[8] = {(uint8_t)(TDX_RCV_REPORT_SLOT0 + i)};
+		if (ioctl(r->fd, HIDIOCGFEATURE(sizeof b), b) < (int)sizeof b ||
+		    tdx_rcv_parse_slot(b, sizeof b, &s[i]) < 0)
+			return -1;
+	}
+	return 0;
+}
+
+static int rcv_command(struct rcv_ctx *r, const uint8_t cmd[5])
+{
+	uint8_t b[5];
+	memcpy(b, cmd, sizeof b);
+	return ioctl(r->fd, HIDIOCSFEATURE(sizeof b), b) < 0 ? -errno : 0;
+}
+
+static void pairing_off(void)
+{
+	struct rcv_ctx *r = rcv_control(pairing.phys);
+	uint8_t cmd[5];
+	tdx_rcv_cmd_pairing(cmd, TDX_RCV_PAIR_OFF);
+	pairing.off_pending = !r || rcv_command(r, cmd) < 0; /* away: when it is back */
+}
+
+/* Once a second while pairing: a slot that changed to a device is the new
+ * pairing; after 55 s, give up (3DxPair). */
+static void pairing_tick(void)
+{
+	if (pairing.state == PAIR_IDLE)
+		return;
+	if (pairing.off_pending && rcv_control(pairing.phys))
+		pairing_off();
+	if (pairing.state != PAIR_ON || now_ms() - pairing.poll_ms < 1000)
+		return;
+	pairing.poll_ms = now_ms();
+	struct rcv_ctx *r = rcv_control(pairing.phys);
+	struct tdx_rcv_slot s[TDX_RCV_SLOTS];
+	if (r && rcv_slot_table(r, s) == 0)
+		for (int i = 0; i < TDX_RCV_SLOTS; i++)
+			if (s[i].code && (s[i].code != pairing.before[i].code ||
+					  strcmp(s[i].id, pairing.before[i].id))) {
+				pairing.state = PAIR_DONE;
+				pairing.slot = i;
+				pairing.got = s[i];
+				const struct tdx_device_def *d = tdx_device_lookup(r->node.vid, s[i].pid);
+				LOG(0, "%s: %s paired on slot %d\n", r->node.def->name,
+				    d ? d->name : "a device", i);
+				pairing_off();
+				return;
+			}
+	if (now_ms() > pairing.until_ms) {
+		pairing.state = PAIR_TIMEOUT;
+		LOG(0, "pairing: no new device in %d s\n", TDX_RCV_PAIRING_SECONDS);
+		pairing_off();
+	}
+}
+
 static void rcv_read(struct rcv_ctx *r)
 {
 	uint8_t buf[64];
@@ -661,6 +746,18 @@ static size_t rcv_status(char *reply, size_t len, size_t o)
 		o += (size_t)snprintf(reply + o, len - o, "receiver %s [%04x:%04x] firmware %x.%02x\n",
 				      r->node.def->name, r->node.vid, r->node.pid,
 				      r->node.version >> 8, r->node.version & 0xFF);
+		if (pairing.state != PAIR_IDLE && !strcmp(pairing.phys, r->node.phys)) {
+			const struct tdx_device_def *d =
+				tdx_device_lookup(r->node.vid, pairing.got.pid);
+			if (pairing.state == PAIR_ON)
+				o += (size_t)snprintf(reply + o, len - o, "pairing on %lld\n",
+						      (pairing.until_ms - now_ms() + 999) / 1000);
+			else if (pairing.state == PAIR_DONE)
+				o += (size_t)snprintf(reply + o, len - o, "pairing done %d %s\n",
+						      pairing.slot, d ? d->name : "Unknown device");
+			else
+				o += (size_t)snprintf(reply + o, len - o, "pairing timeout\n");
+		}
 		for (int j = 0; j < nrcv && o < len; j++) {
 			const struct rcv_ctx *p = &rcvs[j];
 			if (strcmp(p->node.phys, r->node.phys) || !p->slot.code)
@@ -950,6 +1047,72 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		select_profile();
 		lcdcfg_write(); /* the application name changed even if the profile didn't */
 		snprintf(reply, len, "ok profile=%s\n", profile_name(active_profile));
+	} else if (!strcmp(verb, "pair")) {
+		/* Add device: "pair" (a CadMouse) or "pair spacemouse" */
+		char *kind = strtok_r(NULL, " \t", &save);
+		int mode = kind && !strcasecmp(kind, "spacemouse") ? TDX_RCV_PAIR_ROUND_ROBIN
+								   : TDX_RCV_PAIR_EUCLID;
+		struct rcv_ctx *r = rcv_control(NULL);
+		struct tdx_rcv_slot s[TDX_RCV_SLOTS];
+		if (!r) {
+			snprintf(reply, len, "error: no Universal Receiver\n");
+			return;
+		}
+		if (rcv_slot_table(r, s) < 0) {
+			snprintf(reply, len, "error: cannot read the receiver's pairings\n");
+			return;
+		}
+		int free_slots = 0;
+		for (int i = 0; i < TDX_RCV_SLOTS; i++)
+			free_slots += !s[i].code;
+		if (!free_slots) {
+			snprintf(reply, len, "error: %d devices are paired already; remove one\n",
+				 TDX_RCV_SLOTS);
+			return;
+		}
+		uint8_t cmd[5];
+		tdx_rcv_cmd_pairing(cmd, mode);
+		int rc = rcv_command(r, cmd);
+		if (rc < 0) {
+			snprintf(reply, len, "error: cannot start pairing: %s\n", strerror(-rc));
+			return;
+		}
+		memset(&pairing, 0, sizeof pairing);
+		pairing.state = PAIR_ON;
+		pairing.mode = mode;
+		snprintf(pairing.phys, sizeof pairing.phys, "%s", r->node.phys);
+		memcpy(pairing.before, s, sizeof s);
+		pairing.until_ms = now_ms() + TDX_RCV_PAIRING_SECONDS * 1000;
+		pairing.poll_ms = now_ms();
+		LOG(0, "%s: pairing on (mode %d) for %d s\n", r->node.def->name, mode,
+		    TDX_RCV_PAIRING_SECONDS);
+		snprintf(reply, len, "ok pairing for %d s\n", TDX_RCV_PAIRING_SECONDS);
+	} else if (!strcmp(verb, "pair-stop")) {
+		if (pairing.state == PAIR_ON)
+			pairing_off();
+		pairing.state = PAIR_IDLE;
+		snprintf(reply, len, "ok\n");
+	} else if (!strcmp(verb, "unpair")) {
+		char *a = strtok_r(NULL, " \t", &save);
+		int slot = a ? atoi(a) : -1;
+		struct rcv_ctx *r = rcv_control(NULL);
+		uint8_t cmd[5];
+		if (!a || slot < 0 || slot >= TDX_RCV_SLOTS) {
+			snprintf(reply, len, "error: unpair needs a slot (0-%d)\n", TDX_RCV_SLOTS - 1);
+			return;
+		}
+		if (!r) {
+			snprintf(reply, len, "error: no Universal Receiver\n");
+			return;
+		}
+		tdx_rcv_cmd_unpair(cmd, slot);
+		int rc = rcv_command(r, cmd);
+		if (rc < 0)
+			snprintf(reply, len, "error: %s\n", strerror(-rc));
+		else {
+			LOG(0, "%s: slot %d freed\n", r->node.def->name, slot);
+			snprintf(reply, len, "ok slot %d freed\n", slot);
+		}
 	} else if (!strcmp(verb, "calibrate")) {
 		size_t o = 0;
 		if (!ndev)
@@ -1324,6 +1487,7 @@ int main(int argc, char **argv)
 			rescan();
 			last_scan = now_ms();
 		}
+		pairing_tick();
 
 		struct pollfd pfd[MAX_DEV + MAX_RCV + 4 + TDX_SPNAV_MAX_CLIENTS];
 		int np = 0;

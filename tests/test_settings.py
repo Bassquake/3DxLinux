@@ -417,6 +417,35 @@ def gui_tests(d, tdxd):
           main.recv_title.get_visible() and main.recv_buttons[1].get_visible() and
           not main.speed.get_visible() and not main.main_buttons[0].get_visible(),
           "receiver page")
+    # ---- Add device: tdxd's pairing line under its receiver
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                "receiver Universal Receiver [256f:c652] firmware 1.06\npairing on 42\n")
+    check(app.daemon.status()["receivers"][0]["pairing"] == {"state": "on", "left": 42},
+          "pairing on, seconds left")
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                "receiver Universal Receiver [256f:c652] firmware 1.06\n"
+                "pairing done 4 CadMouse Compact Wireless\n")
+    p = app.daemon.status()["receivers"][0]["pairing"]
+    check(p["state"] == "done" and p["slot"] == 4 and p["name"] == "CadMouse Compact Wireless",
+          "pairing done: %s" % p)
+    addp = ts.AddDevicePanel(app)
+    check(addp.page == "choose" and addp.tiles.get_visible() and not addp.back.get_visible(),
+          "Add device: choose the device first")
+    addp.page = "pairing"
+    addp.started = ts.time.monotonic()
+    with open(Args.status_file, "w") as f:  # the receiver away after pairing: keep waiting
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n")
+    check(addp.tick() is True and addp.page == "pairing", "Add device: waits while the receiver is away")
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                "receiver Universal Receiver [256f:c652] firmware 1.06\n"
+                "pairing done 4 CadMouse Compact Wireless\n")
+    addp.tick()
+    check(addp.page == "done" and "CadMouse Compact Wireless" in addp.text.get_text(),
+          "Add device: paired")
+    app.panels.remove(addp)
     with open(Args.status_file, "w") as f:  # the battery report changes: still the receiver
         f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 + rcv % "-")

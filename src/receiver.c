@@ -24,6 +24,22 @@ static const struct {
 	{0x5255, 0xC652, TDX_RCV_RECEIVER}, /* "UR" */
 };
 
+void tdx_rcv_cmd_pairing(uint8_t out[5], int mode)
+{
+	memset(out, 0, 5);
+	out[0] = TDX_RCV_REPORT_CONTROL;
+	out[1] = 0x02;
+	out[2] = (uint8_t)mode;
+}
+
+void tdx_rcv_cmd_unpair(uint8_t out[5], int slot)
+{
+	memset(out, 0, 5);
+	out[0] = TDX_RCV_REPORT_CONTROL;
+	out[1] = 0x04;
+	out[2] = (uint8_t)slot;
+}
+
 uint16_t tdx_rcv_code_pid(uint16_t code, int *cls)
 {
 	for (size_t i = 0; i < sizeof codes / sizeof codes[0]; i++)

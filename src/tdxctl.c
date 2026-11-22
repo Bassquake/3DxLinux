@@ -28,6 +28,7 @@ static int usage(void)
 {
 	fputs("usage: tdxctl [-s SOCKET] status | profiles | focus APP [PID] | calibrate | reload\n"
 	      "       tdxctl [-s SOCKET] buttons | app-keys | app-buttons PID [V3DK NAME]...\n"
+	      "       tdxctl [-s SOCKET] pair [mouse|spacemouse] | pair-stop | unpair SLOT\n"
 	      "       tdxctl -V\n", stderr);
 	return 2;
 }
@@ -49,9 +50,11 @@ int main(int argc, char **argv)
 	const char *cmd = argv[ai];
 	if (strcmp(cmd, "status") && strcmp(cmd, "profiles") && strcmp(cmd, "focus") &&
 	    strcmp(cmd, "calibrate") && strcmp(cmd, "reload") && strcmp(cmd, "buttons") &&
-	    strcmp(cmd, "app-buttons") && strcmp(cmd, "app-keys"))
+	    strcmp(cmd, "app-buttons") && strcmp(cmd, "app-keys") && strcmp(cmd, "pair") &&
+	    strcmp(cmd, "pair-stop") && strcmp(cmd, "unpair"))
 		return usage();
-	if ((!strcmp(cmd, "focus") || !strcmp(cmd, "app-buttons")) && ai + 1 >= argc)
+	if ((!strcmp(cmd, "focus") || !strcmp(cmd, "app-buttons") || !strcmp(cmd, "unpair")) &&
+	    ai + 1 >= argc)
 		return usage();
 
 	/* app-buttons takes every field, split by tabs: the names have spaces */

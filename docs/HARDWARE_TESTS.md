@@ -487,3 +487,12 @@ CadMouse Compact Wireless (c658) paired to it.
 | Kubuntu 26.04, `3DxLinux.0.3.4+57+g3d64bab` | **Fail:** the CadMouse was detected but did not move the cursor: the udev rule hid every 256f input device from libinput (meant for the 3D mice), the Universal Receiver too. Fixed: the rule skips 256f:c650-c66f (CadMouse, keyboards, Universal Receivers). |
 | Kubuntu 26.04, `3DxLinux.0.3.4+58+ga2de5a8` | **Pass:** after the receiver was plugged in again, the CadMouse moves the cursor. |
 | CadMouse settings on Kubuntu (`3DxLinux.0.3.4+58+ga2de5a8`) | **Pass:** Speed changes the pointer speed; Smart Scrolling off / on changes the wheel; Forward = Undo undoes in a text editor; Swap Middle / Right swaps them; Application Specific Settings gives the chosen application its own Forward button. |
+
+## 2026-11-22: Add device / pairing (WSL2, Universal Receiver)
+
+| Test | Result |
+|---|---|
+| Pairing mode on / off for the paired CadMouse | `41 02 02 00 00` / `41 02 00 00 00` accepted; switching the mouse off and on changes nothing (already paired). |
+| Free slot 4 (`41 04 04 00 00`) | Slot 4 empty; the receiver drops off USB and is back 2 s later (usbipd `--auto-attach` keeps it in WSL). |
+| Pairing a new device | Pairing on, the CadMouse switched off and on: slot 4 = `59 00 00 48 f7 ba 8b` after 17.7 s, then the receiver reconnects. |
+| Add device window (WSLg), `tdxctl unpair 4` first | First try: tdxd paired the CadMouse, but the window showed "taking too long" while the receiver was off USB; fixed (the window waits for tdxd's result). **Pass** after the fix: "Your CadMouse Compact Wireless was successfully paired.", `tdxctl status` shows `pairing done 4 CadMouse Compact Wireless`. |

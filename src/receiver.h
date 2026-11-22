@@ -28,6 +28,23 @@
 #define TDX_RCV_REPORT_MOUSE_CONFIG 0x10
 #define TDX_RCV_MOUSE_CONFIG_LEN 32
 
+/* Pairing (3DxPair.exe's EuclidControl, checked with a CadMouse Compact
+ * Wireless): feature report 0x41 (4 data bytes). 41 02 MODE turns pairing on
+ * for a kind of device (3DxPair's PairingMode) or off (0); 41 04 SLOT frees a
+ * slot. The new device shows up in the slot table (0x43 + slot); the receiver
+ * then drops off USB for about 2 s and comes back, as it does after a slot is
+ * freed. 3DxPair gives up after 55 s. */
+#define TDX_RCV_REPORT_CONTROL 0x41
+#define TDX_RCV_PAIRING_SECONDS 55
+enum {
+	TDX_RCV_PAIR_OFF = 0,
+	TDX_RCV_PAIR_ROUND_ROBIN = 1, /* 3DxPair: SpaceMouse Wireless / Pro Wireless */
+	TDX_RCV_PAIR_EUCLID = 2,      /* 3DxPair: a CadMouse ("Euclid") */
+};
+/* The 5-byte SET_FEATURE (report id first) for pairing mode @mode / freeing @slot. */
+void tdx_rcv_cmd_pairing(uint8_t out[5], int mode);
+void tdx_rcv_cmd_unpair(uint8_t out[5], int slot);
+
 /* HIDDev's class codes for paired devices */
 enum { TDX_RCV_3DMOUSE = 1, TDX_RCV_2DMOUSE = 2, TDX_RCV_RECEIVER = 4, TDX_RCV_KEYBOARD = 5 };
 

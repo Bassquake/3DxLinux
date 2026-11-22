@@ -1338,6 +1338,15 @@ static void test_receiver(void)
 	const struct tdx_device_def *cm = tdx_device_lookup(0x256F, 0xC658);
 	CHECK(cm && !strcmp(cm->name, "CadMouse Compact Wireless"));
 
+	/* pairing commands, as sent to the receiver (2026-11-22) */
+	uint8_t pc[5];
+	tdx_rcv_cmd_pairing(pc, TDX_RCV_PAIR_EUCLID);
+	CHECK(!memcmp(pc, "\x41\x02\x02\x00\x00", 5));
+	tdx_rcv_cmd_pairing(pc, TDX_RCV_PAIR_OFF);
+	CHECK(!memcmp(pc, "\x41\x02\x00\x00\x00", 5));
+	tdx_rcv_cmd_unpair(pc, 4);
+	CHECK(!memcmp(pc, "\x41\x04\x04\x00\x00", 5));
+
 	int lvl, chg;
 	const uint8_t bat[3] = {0x17, 0x34, 0x00};
 	CHECK(tdx_rcv_parse_battery(bat, sizeof bat, &lvl, &chg) == 1 && lvl == 52 && chg == 0);
