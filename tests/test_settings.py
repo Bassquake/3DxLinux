@@ -248,7 +248,7 @@ def gui_tests(d, tdxd):
           app.store.base.get("lcd_label_1") == "New" and
           app.store.base.get("action_V3DK_MENU") == "settings", "Buttons Restore Defaults")
     # the panel's defaults are the shipped config's (packaging/tdxd.conf)
-    ship = ts.ConfFile(os.path.join(ROOT, "packaging", "tdxd.conf"))
+    ship = ts.ConfFile(ts.shipped_default("tdxd.conf"))  # an installed copy comes first
     check(all(chord_norm(ship.get("key_" + k)) == chord_norm(v) for k, v in ts.DEFAULT_KEYS.items()) and
           all(ship.get("action_" + k) == v for k, v in ts.DEFAULT_ACTIONS.items()) and
           all(ship.get("lcd_label_%d" % (i + 1)) == v for i, v in enumerate(ts.DEFAULT_LABELS)),
@@ -349,7 +349,29 @@ def gui_tests(d, tdxd):
     check(main.photo.key == ("256f", "c658") and main.conn_box.get_visible() and
           not main.state_wrap.get_visible() and not main.lcd_button.get_visible() and
           main.main_buttons[1].get_visible() and not main.main_buttons[1].get_sensitive() and
-          not main.speed.get_sensitive(), "CadMouse: icons, Speed / Buttons not yet")
+          not main.speed.get_visible() and main.mouse_speed.get_visible() and
+          main.main_buttons[0].get_sensitive(), "CadMouse: icons, its own Speed, Buttons not yet")
+    check(ts.MOUSE_DPI_STEPS[int(main.mouse_speed.get_value())] == 1400, "Speed: 1400 dpi default")
+    main.mouse_speed.set_value(ts.MOUSE_DPI_STEPS.index(7200))
+    check(app.store.base.get("mouse_dpi") == "7200", "CadMouse Speed -> mouse_dpi in tdxd.conf")
+    app.store.select("blender")  # a profile being edited: the mouse settings stay daemon-wide
+    main.mouse_speed.set_value(ts.MOUSE_DPI_STEPS.index(400))
+    check(app.store.base.get("mouse_dpi") == "400" and not app.store.profile.has("mouse_dpi"),
+          "mouse_dpi always in the base file")
+    app.store.select(None)
+    madv = ts.MouseAdvancedPanel(app)
+    check(madv.title_label.get_text() == "CadMouse Compact Wireless" and
+          madv.rates[1000].get_active() and madv.smart.get_active(), "CadMouse Advanced: defaults")
+    madv.rates[250].set_active(True)
+    madv.smart.set_active(False)
+    check(app.store.base.get("mouse_polling_rate") == "250" and
+          app.store.base.get("mouse_smart_scrolling") == "no", "Polling Rate / Smart Scrolling")
+    madv.on_restore(None)
+    check(not app.store.base.has("mouse_polling_rate") and
+          not app.store.base.has("mouse_smart_scrolling") and madv.rates[1000].get_active()
+          and madv.smart.get_active() and app.store.base.get("mouse_dpi") == "400",
+          "CadMouse Restore Defaults (Speed stays: it is the main page's)")
+    app.panels.remove(madv)
     check(ts.battery_icon(52, False) == "SmartUI_Battery_50" and
           ts.battery_icon(None, False) == "SmartUI_Battery_Unknown" and
           ts.battery_icon(100, False) == "SmartUI_Battery_100" and
@@ -423,7 +445,7 @@ def gui_tests(d, tdxd):
         f.write("match = freecad*\n")  # changed by hand
     check(ts.reset_settings(app.store) == [], "reset ran")
     app.store.base.reload()
-    ship = ts.ConfFile(os.path.join(ROOT, "packaging", "tdxd.conf"))
+    ship = ts.ConfFile(ts.shipped_default("tdxd.conf"))  # an installed copy comes first
     check(app.store.base.get("sensitivity") == ship.get("sensitivity") and
           app.store.base.text() == ship.text(), "reset: the default tdxd.conf")
     check(not os.path.exists(os.path.join(pdir, "mine.conf")) and

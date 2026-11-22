@@ -93,6 +93,11 @@ struct tdx_config {
 	int verbose;
 	/* calibration (HIDDev.dll UdDevRezero: feature report {0x07, 0x00}) */
 	int calibrate_on_start;
+	/* a CadMouse on a Universal Receiver (3DxWare's Speed, Polling Rate and
+	 * Smart Scrolling; sent to the mouse, see receiver.h) */
+	int mouse_dpi;
+	int mouse_polling_rate;
+	int mouse_smart_scrolling;
 	char calibrate_button[32];    /* V3DK id that re-zeroes the device */
 	/* per-application profiles */
 	char profile_dir[256];        /* directory of <name>.conf overlays */

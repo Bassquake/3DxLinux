@@ -35,8 +35,11 @@ because they already work through `hid-generic`.
 The **Universal Receiver** (256f:c652) is recognised: `tdxd` reads which
 devices are paired to it and the battery level of a paired CadMouse, and
 3Dconnexion Settings shows the receiver and the CadMouse pages with 3DxWare's
-device chooser. The CadMouse itself keeps working as an ordinary mouse; its
-speed, Advanced Settings and Buttons are not available on Linux yet.
+device chooser. The CadMouse itself keeps working as an ordinary mouse.
+Its Speed (DPI), Polling Rate and Smart Scrolling are sent to the mouse, as
+3DxWare does (`mouse_dpi`, `mouse_polling_rate`, `mouse_smart_scrolling` in
+`/etc/tdxd.conf`). Pointer acceleration and the wheel's lines per notch are your
+desktop's mouse settings. Its Buttons are not available on Linux yet.
 
 ## Build
 

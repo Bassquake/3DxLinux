@@ -473,3 +473,12 @@ CadMouse Compact Wireless (c658) paired to it.
 | Kubuntu 26.04, `3DxLinux.0.3.4+54+g4a32b28` | **Fail:** the chooser listed the CadMouse while it was not connected (the pairing table lists it either way). |
 | Mouse switched off and on (WSL, feature reports polled every 0.5 s) | No feature report changes; the only sign is that no input reports arrive while it is off. |
 | Only devices heard from (WSL, settings window through WSLg) | **Pass** with test build `0.3.4+54` + fix: after a tdxd restart the window shows just "Universal Receiver"; moving the CadMouse turns the name into the chooser with the CadMouse and the receiver. |
+
+## 2026-11-22: CadMouse settings sent to the mouse (WSL2, through the Universal Receiver)
+
+| Test | Result |
+|---|---|
+| 3DxWare's log (Windows, `LogLevel` 0x1005) | Speed fully left / right / default: DPI 200 / 7200 / 1400; Polling Rate 125 / 500 / 1000 Hz: divider 8 / 2 / 1; Smart Scrolling off: "normal wheel mode"; Swap Middle / Right: button map `10 12 11 …`. |
+| Default block from Linux (`HIDIOCSFEATURE` 0x10 on `/dev/hidraw4`) | Accepted (32 bytes); the mouse behaves as before. |
+| DPI from Linux | The same movement three times: 51,559 counts at 1400 dpi, 6,965 at 400, 92,455 at 7200 (about 36, 17 and 170 per report). The mouse applies the DPI. |
+| tdxd + 3Dconnexion Settings (WSLg) | **Pass** with test build `0.3.4+55` + changes: the CadMouse page's Speed slider saves `mouse_dpi`, and tdxd sends 7200 dpi when the mouse wakes; Advanced Settings (3DxWare's layout, acceleration and wheel speed greyed) saves 500 Hz and Smart Scrolling off, which tdxd sends; Restore Defaults puts them back. |

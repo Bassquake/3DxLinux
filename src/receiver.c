@@ -49,6 +49,25 @@ int tdx_rcv_parse_slot(const uint8_t *buf, size_t n, struct tdx_rcv_slot *out)
 	return 1;
 }
 
+void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int rate_hz, int smart)
+{
+	static const uint8_t buttons[7] = {10, 11, 12, 12, 14, 13, 47};
+	uint8_t *b = rep + 1;
+	memset(rep, 0, TDX_RCV_MOUSE_CONFIG_LEN);
+	rep[0] = TDX_RCV_REPORT_MOUSE_CONFIG;
+	b[1] = dpi < 51 ? 1 : dpi < 0x2008 ? (uint8_t)(dpi / 50) : 0xA4;
+	b[2] = 0; /* lift detection on, threshold 0 (3DxWare's default) */
+	if (smart)
+		b[6] = 1;
+	else {
+		b[3] = 0x01;
+		b[4] = 0xFF;
+	}
+	memcpy(b + 18, buttons, sizeof buttons);
+	b[26] = 0x1E;
+	b[30] = rate_hz > 500 ? 1 : rate_hz > 250 ? 2 : rate_hz > 125 ? 4 : 8;
+}
+
 int tdx_rcv_parse_battery(const uint8_t *buf, size_t n, int *level, int *charging)
 {
 	if (n < 3 || buf[0] != TDX_RCV_REPORT_BATTERY)

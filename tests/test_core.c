@@ -1292,6 +1292,24 @@ static void test_receiver(void)
 	CHECK(tdx_rcv_code_pid(0x5255, &cls) == 0xC652 && cls == TDX_RCV_RECEIVER); /* "UR" */
 	CHECK(tdx_rcv_code_pid('A', &cls) == 0xC62E && cls == TDX_RCV_3DMOUSE);
 	CHECK(tdx_rcv_code_pid(0x1234, &cls) == 0 && cls == 0);
+	/* the CadMouse configuration: 3DxWare's default block, byte for byte, and its
+	 * DPI / polling rate / Smart Scrolling variants (from 3DxWare's log) */
+	uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN];
+	const uint8_t def[TDX_RCV_MOUSE_CONFIG_LEN] = {
+		0x10, 0x00, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x0a, 0x0b, 0x0c, 0x0c, 0x0e, 0x0d, 0x2f, 0x00, 0x1e, 0x00, 0x00,
+		0x00, 0x01};
+	tdx_rcv_mouse_config(rep, 1400, 1000, 1);
+	CHECK(!memcmp(rep, def, sizeof def));
+	tdx_rcv_mouse_config(rep, 7200, 125, 0);
+	CHECK(rep[2] == 144 && rep[31] == 8 && rep[4] == 0x01 && rep[5] == 0xff && rep[7] == 0);
+	tdx_rcv_mouse_config(rep, 200, 500, 1);
+	CHECK(rep[2] == 4 && rep[31] == 2);
+	tdx_rcv_mouse_config(rep, 1000, 250, 1);
+	CHECK(rep[2] == 20 && rep[31] == 4);
+	struct tdx_config mc;
+	tdx_config_defaults(&mc);
+	CHECK(mc.mouse_dpi == 1400 && mc.mouse_polling_rate == 1000 && mc.mouse_smart_scrolling);
 	const struct tdx_device_def *cm = tdx_device_lookup(0x256F, 0xC658);
 	CHECK(cm && !strcmp(cm->name, "CadMouse Compact Wireless"));
 

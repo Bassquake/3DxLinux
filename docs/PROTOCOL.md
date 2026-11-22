@@ -741,6 +741,29 @@ that device's collections.
   (int16), wheel (int16), tilt (int8). `hid-generic` turns it into a normal
   mouse, so `tdxd` only reads along.
 
+- **CadMouse configuration:** feature report 0x10 (31 data bytes) on the
+  mouse's interface. `HIDDev.dll`'s SBHID_SendPIDConfig_2DMouse builds it and
+  sends it over the `\\.\pipe\TDXBROKERAPI_PIPENAME` pipe (command 6, "SetBlob")
+  to `Mgl3DCtlrRPCService.exe`. That service passes it on with
+  `IOCTL_HID_SET_FEATURE`. The mouse applies it itself. It can't be read back
+  (GET_FEATURE fails with EPIPE). Data bytes:
+
+  | Byte | Meaning |
+  |---|---|
+  | 1 | DPI / 50 (3DxWare's Speed slider: 200 … 1400 (default) … 7200) |
+  | 2 | lift-detection threshold; 0x1f = lift detection off (3DxWare: 0) |
+  | 3–6 | wheel mode: `01 ff 00 00` normal, `00 00 00 01` Smart Scrolling ("inertial wheel emulation") |
+  | 18–24 | button map for buttons 1–7: `0a 0b 0c 0c 0e 0d 2f` (Swap Middle / Right: `0a 0c 0b …`) |
+  | 26 | 0x1e |
+  | 30 | update-rate divider: 1, 2, 4, 8 = 1000, 500, 250, 125 Hz (Polling Rate) |
+
+  Every other byte is 0. 3DxWare resends the whole block on every change. The
+  values come from 3DxWare's own log (`<LogLevel>1005</LogLevel>` in the user's
+  `Cfg\Global.xml`; the `SBHID_SendPIDConfig_2DMouse` lines). The Speed steps
+  are `HIDDev.dll`'s table for the CadMouse family (c651–c658, c65e). Pointer
+  acceleration and wheel lines per notch are Windows settings
+  (`SystemParametersInfo`), not sent to the mouse.
+
 Captured with a CadMouse Compact Wireless in slot 4:
 
 ```

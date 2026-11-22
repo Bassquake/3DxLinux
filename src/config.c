@@ -30,6 +30,9 @@ void tdx_config_defaults(struct tdx_config *c)
 	c->led_button_color = -1;
 	c->led_ring_color = -1;
 	c->lcd_brightness = -1;
+	c->mouse_dpi = 1400;
+	c->mouse_polling_rate = 1000;
+	c->mouse_smart_scrolling = 1;
 	for (int i = 0; i < TDX_MAX_LABELS; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
 	c->lcd_slide_step = 80; /* px per 25 ms step: a 1280 px slide takes 0.4 s */
@@ -142,7 +145,8 @@ static int daemon_only(const char *k)
 {
 	static const char *const keys[] = {"uinput", "spnav", "spnav_socket", "lcd", "lcd_bmp_dir",
 					   "verbose", "profile_dir", "control_socket", "lcd_cfg",
-					   "calibrate_on_start", NULL};
+					   "calibrate_on_start", "mouse_dpi", "mouse_polling_rate",
+					   "mouse_smart_scrolling", NULL};
 	for (int i = 0; keys[i]; i++)
 		if (!strcmp(k, keys[i]))
 			return 1;
@@ -271,6 +275,13 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 		}
 		if (!strcmp(k, "sensitivity")) c->sensitivity = atof(v);
 		else if (!strcmp(k, "calibrate_on_start")) c->calibrate_on_start = parse_bool(v);
+		else if (!strcmp(k, "mouse_dpi")) {
+			int d = atoi(v);
+			c->mouse_dpi = d < 50 ? 50 : d > 8200 ? 8200 : d;
+		} else if (!strcmp(k, "mouse_polling_rate")) {
+			int r = atoi(v);
+			c->mouse_polling_rate = r >= 1000 ? 1000 : r >= 500 ? 500 : r >= 250 ? 250 : 125;
+		} else if (!strcmp(k, "mouse_smart_scrolling")) c->mouse_smart_scrolling = parse_bool(v);
 		else if (!strcmp(k, "calibrate_button")) snprintf(c->calibrate_button, sizeof c->calibrate_button, "%s", v);
 		else if (!strcmp(k, "profile_dir")) snprintf(c->profile_dir, sizeof c->profile_dir, "%s", v);
 		else if (!strcmp(k, "control_socket")) snprintf(c->control_socket, sizeof c->control_socket, "%s", v);

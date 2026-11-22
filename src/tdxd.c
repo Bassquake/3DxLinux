@@ -94,6 +94,9 @@ struct rcv_ctx {
 	int battery, charging;    /* battery -1 = not reported yet */
 	long long seen_ms;        /* last report from that device, 0 = none */
 	long long slot_ms;        /* when the slot was last read */
+	uint8_t cfg_sent[TDX_RCV_MOUSE_CONFIG_LEN]; /* CadMouse configuration last sent */
+	int cfg_valid;            /* ... and accepted */
+	long long cfg_fail_ms;    /* last failed send, to retry no sooner than 10 s */
 };
 static struct rcv_ctx rcvs[MAX_RCV];
 static int nrcv;
@@ -520,6 +523,33 @@ static void rcv_close(struct rcv_ctx *r)
 	*r = rcvs[--nrcv];
 }
 
+/* Send a paired CadMouse its configuration (receiver.h) while it is awake:
+ * once it is heard from, when the settings change, and after 30 s without a
+ * report, in case it was switched off and lost it (3DxWare resends on every
+ * change; the mouse cannot be asked what it has). */
+static void rcv_mouse_config(struct rcv_ctx *r, long long gap_ms)
+{
+	if (r->slot.cls != TDX_RCV_2DMOUSE)
+		return;
+	uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN];
+	tdx_rcv_mouse_config(rep, cfg.mouse_dpi, cfg.mouse_polling_rate, cfg.mouse_smart_scrolling);
+	if (r->cfg_valid && !memcmp(rep, r->cfg_sent, sizeof rep) && gap_ms < 30000)
+		return;
+	if (r->cfg_fail_ms && now_ms() - r->cfg_fail_ms < 10000)
+		return;
+	if (ioctl(r->fd, HIDIOCSFEATURE(sizeof rep), rep) < 0) {
+		LOG(0, "%s: cannot send the mouse settings: %s\n", rcv_dev_name(r), strerror(errno));
+		r->cfg_valid = 0;
+		r->cfg_fail_ms = now_ms();
+		return;
+	}
+	memcpy(r->cfg_sent, rep, sizeof rep);
+	r->cfg_valid = 1;
+	r->cfg_fail_ms = 0;
+	LOG(1, "%s: settings sent: %d dpi, %d Hz, Smart Scrolling %s\n", rcv_dev_name(r),
+	    cfg.mouse_dpi, cfg.mouse_polling_rate, cfg.mouse_smart_scrolling ? "on" : "off");
+}
+
 static void rcv_read(struct rcv_ctx *r)
 {
 	uint8_t buf[64];
@@ -535,7 +565,11 @@ static void rcv_read(struct rcv_ctx *r)
 			return;
 		if (!r->slot.code) /* reports from an empty slot: something was just paired */
 			rcv_update_slot(r);
+		long long gap = r->seen_ms ? now_ms() - r->seen_ms : 1LL << 40;
 		r->seen_ms = now_ms();
+		rcv_mouse_config(r, gap);
+		if (r->fd < 0)
+			return;
 		int lvl, chg;
 		if (tdx_rcv_parse_battery(buf, (size_t)n, &lvl, &chg)) {
 			if (lvl != r->battery || chg != r->charging)
@@ -1212,6 +1246,9 @@ int main(int argc, char **argv)
 					uinput_open_dev(&devs[i]);
 			}
 			refresh_devices();
+			for (int i = 0; i < nrcv; i++) /* new mouse settings: now, if it is awake */
+				if (rcvs[i].seen_ms && now_ms() - rcvs[i].seen_ms < 5000)
+					rcv_mouse_config(&rcvs[i], 0);
 			bmp_watch_setup();
 			bmp_send_pending();
 		}
