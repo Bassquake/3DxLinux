@@ -70,6 +70,9 @@ stage() { # stage LIBDIR -> $STAGE/root
 	for f in README.md PROTOCOL.md; do
 		install -Dm644 "$DIST/$f" "$R/usr/share/doc/tdxd/$f"
 	done
+	# AppStream: the name (3DxLinux), developer and licence software centres show
+	sed -e "s/@VERSION@/$PV/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/" "$DIST/io.github.bassquake.tdxd.metainfo.xml" \
+		| install -Dm644 /dev/stdin "$R/usr/share/metainfo/io.github.bassquake.tdxd.metainfo.xml"
 	printf 'tdxd - %s\n\nMIT License. Copyright (c) the tdxd authors.\n' "$HOMEPAGE" \
 		> "$R/usr/share/doc/tdxd/copyright"
 	find "$R" -type d -exec chmod 755 {} +
@@ -240,7 +243,8 @@ EOF
 	{ echo '#!/bin/sh'; echo 'set -e'; echo "$POST_REMOVE"
 	  echo 'case "$1" in remove|purge) ;; *) exit 0 ;; esac'; echo "$CLEANUP"; } > "$D/postrm"
 	chmod 755 "$D/postinst" "$D/prerm" "$D/postrm"
-	local f=$OUT/tdxd_${PV}-1_$DEB_ARCH.deb
+	# Discover shows a package file by its name up to the first dot: "3DxLinux"
+	local f=$OUT/3DxLinux.${PV}-1.$DEB_ARCH.deb
 	dpkg-deb --root-owner-group -Zxz --build "$R" "$f" >/dev/null
 	echo "wrote $f"
 }
@@ -303,7 +307,7 @@ EOF
 	} > "$spec"
 	rpmbuild -bb --quiet --target "$RPM_ARCH" --define "_topdir $top" \
 		--define "_rpmdir $top/RPMS" "$spec" >/dev/null
-	local f=$OUT/tdxd-$PV-1.$RPM_ARCH.rpm
+	local f=$OUT/3DxLinux.${PV}-1.$RPM_ARCH.rpm
 	mv "$top/RPMS/$RPM_ARCH/tdxd-$PV-1.$RPM_ARCH.rpm" "$f"
 	echo "wrote $f"
 }

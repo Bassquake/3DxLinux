@@ -74,8 +74,13 @@ Upgrading keeps your settings.
 
 | File | For |
 |---|---|
-| `tdxd_<version>-1_amd64.deb` / `tdxd_<version>-1_arm64.deb` | Debian-based systems |
-| `tdxd-<version>-1.x86_64.rpm` / `tdxd-<version>-1.aarch64.rpm` | Fedora, openSUSE |
+| `3DxLinux.<version>-1.amd64.deb` / `3DxLinux.<version>-1.arm64.deb` | Debian-based systems |
+| `3DxLinux.<version>-1.x86_64.rpm` / `3DxLinux.<version>-1.aarch64.rpm` | Fedora, openSUSE |
+
+Software centres list it as **3DxLinux** by Bassquake (the package itself is
+called `tdxd`, as are its commands and services). Discover's page for a
+downloaded package file shows only the file's name and the package's
+description, so there it says "Unknown author".
 
 The packages install under `/usr`. If you used `install.sh` before, remove that
 copy first with `sudo ./install.sh --remove` from its folder. `make packages`

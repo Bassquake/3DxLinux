@@ -152,6 +152,7 @@ install: all
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-tray.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-tray.service
 	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/tdxd.d/blender.conf.example
 	test -e $(DESTDIR)/etc/tdxd.d/freecad.conf || install -Dm644 packaging/profiles/freecad.conf $(DESTDIR)/etc/tdxd.d/freecad.conf
+	sed -e 's/@VERSION@/$(VERSION)/' -e "s/@DATE@/$$(date -u +%Y-%m-%d)/" packaging/io.github.bassquake.tdxd.metainfo.xml | install -Dm644 /dev/stdin $(DESTDIR)$(PREFIX)/share/metainfo/io.github.bassquake.tdxd.metainfo.xml
 	install -Dm644 packaging/70-3dconnexion-tdxd.rules $(DESTDIR)/etc/udev/rules.d/70-3dconnexion-tdxd.rules
 	rm -f $(DESTDIR)/etc/udev/rules.d/99-3dconnexion-tdxd.rules  # old name, too late for uaccess
 	install -Dm644 packaging/tdxd.service $(DESTDIR)/etc/systemd/system/tdxd.service
@@ -191,7 +192,7 @@ dist:
 	cp packaging/70-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
 	   packaging/tdx-focus.service packaging/tdx-tray.service packaging/profiles/blender.conf.example packaging/profiles/freecad.conf \
 	   packaging/install.sh packaging/tdx-lcdmgr.service gui/*.desktop gui/org.tdxd.settings.policy \
-	   README.md docs/PROTOCOL.md $(DIST)/
+	   packaging/io.github.bassquake.tdxd.metainfo.xml README.md docs/PROTOCOL.md $(DIST)/
 	chmod +x $(DIST)/install.sh
 	echo "$(VERSION) $(ARCH)" > $(DIST)/VERSION
 	# Archive from a staging copy on a Linux filesystem so file modes are real:
@@ -217,8 +218,8 @@ release:
 	$(MAKE) packages ARCH=arm64 VERSION=$(VERSION)
 	cd build/dist && sha256sum tdxd-$(VERSION)-linux-x86_64.tar.gz \
 	   tdxd-$(VERSION)-linux-arm64.tar.gz \
-	   tdxd_$(VERSION)-1_amd64.deb tdxd_$(VERSION)-1_arm64.deb \
-	   tdxd-$(VERSION)-1.x86_64.rpm tdxd-$(VERSION)-1.aarch64.rpm > tdxd-$(VERSION)-SHA256SUMS
+	   3DxLinux.$(VERSION)-1.amd64.deb 3DxLinux.$(VERSION)-1.arm64.deb \
+	   3DxLinux.$(VERSION)-1.x86_64.rpm 3DxLinux.$(VERSION)-1.aarch64.rpm > tdxd-$(VERSION)-SHA256SUMS
 	@cat build/dist/tdxd-$(VERSION)-SHA256SUMS
 
 clean:

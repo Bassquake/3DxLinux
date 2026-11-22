@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream data: how software centres (Discover, GNOME Software) name and
+     describe the package. @VERSION@ and @DATE@ are filled in by mkpkg.sh. -->
+<component type="desktop-application">
+  <id>io.github.bassquake.tdxd</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>3DxLinux</name>
+  <summary>Driver and settings for 3Dconnexion 3D mice</summary>
+  <developer id="io.github.bassquake">
+    <name>Bassquake</name>
+  </developer>
+  <description>
+    <p>
+      3DxLinux (tdxd) drives 3Dconnexion 3D mice on Linux: the SpacePilot PRO,
+      SpaceMouse Enterprise, SpaceMouse Pro and Wireless, and others. It moves the
+      view in spacenavd-compatible applications such as Blender and FreeCAD,
+      sends the keys' shortcuts, and runs the LCD and LEDs.
+    </p>
+    <p>
+      3Dconnexion Settings sets the speed, axes and buttons, per application,
+      like the Windows control panel; the LCD Manager runs the Function Keys,
+      RSS Feeds and Picture Viewer applets on the SpacePilot PRO's display.
+      3Dconnexion's key settings for each application and its artwork can be
+      imported from your own 3DxWare installer.
+    </p>
+    <p>
+      3DxLinux is an independent driver, not a 3Dconnexion product.
+    </p>
+  </description>
+  <launchable type="desktop-id">tdx-settings.desktop</launchable>
+  <url type="homepage">https://github.com/Bassquake/SpacePilot-Pro-Linux</url>
+  <url type="bugtracker">https://github.com/Bassquake/SpacePilot-Pro-Linux/issues</url>
+  <categories>
+    <category>Settings</category>
+    <category>HardwareSettings</category>
+  </categories>
+  <keywords>
+    <keyword>3Dconnexion</keyword>
+    <keyword>SpaceMouse</keyword>
+    <keyword>SpacePilot</keyword>
+    <keyword>3D mouse</keyword>
+    <keyword>spacenav</keyword>
+  </keywords>
+  <provides>
+    <binary>tdxd</binary>
+    <binary>tdx-settings</binary>
+  </provides>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
