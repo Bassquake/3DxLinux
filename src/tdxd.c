@@ -548,7 +548,11 @@ static void rcv_read(struct rcv_ctx *r)
 }
 
 /* `tdxctl status` lines for the receivers: one per receiver, then one per
- * paired device (slot, name, ids, battery, seconds since its last report). */
+ * paired device (slot, name, ids, battery, seconds since its last report).
+ * "active": the device has sent something since the receiver was plugged in.
+ * The receiver keeps its pairing table whether the device is on or off and
+ * does not report a connection, so like 3DxWare (HIDDev's ActiveState, set by
+ * the first input report and never timed out) that is the only sign of it. */
 static size_t rcv_status(char *reply, size_t len, size_t o)
 {
 	for (int i = 0; i < nrcv && o < len; i++) {
@@ -572,9 +576,11 @@ static size_t rcv_status(char *reply, size_t len, size_t o)
 			if (p->seen_ms)
 				snprintf(seen, sizeof seen, "%lld", (now_ms() - p->seen_ms) / 1000);
 			o += (size_t)snprintf(reply + o, len - o,
-					      "paired %d %s [%04x:%04x] id %s battery %s charging %s seen %s\n",
+					      "paired %d %s [%04x:%04x] id %s battery %s charging %s seen %s "
+					      "active %s\n",
 					      p->node.iface, rcv_dev_name(p), p->node.vid, p->slot.pid,
-					      p->slot.id, bat, p->charging ? "yes" : "no", seen);
+					      p->slot.id, bat, p->charging ? "yes" : "no", seen,
+					      p->seen_ms ? "yes" : "no");
 		}
 	}
 	return o;

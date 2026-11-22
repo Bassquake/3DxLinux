@@ -507,13 +507,14 @@ class Daemon:
                                             "paired": []})
             elif line.startswith("paired ") and st["receivers"]:
                 m = re.match(r"paired (\d+) (.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] id (\S+) "
-                             r"battery (\S+) charging (\S+) seen (\S+)", line)
+                             r"battery (\S+) charging (\S+) seen (\S+)(?: active (\S+))?", line)
                 if m:
                     num = lambda v: int(v) if v.isdigit() else None
                     st["receivers"][-1]["paired"].append({
                         "slot": int(m.group(1)), "name": m.group(2), "vid": m.group(3),
                         "pid": m.group(4), "id": m.group(5), "battery": num(m.group(6)),
-                        "charging": m.group(7) == "yes", "seen": num(m.group(8))})
+                        "charging": m.group(7) == "yes", "seen": num(m.group(8)),
+                        "active": m.group(9) != "no"})
             elif line.startswith("  "):
                 m = re.match(r"\s+(.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] (\S+) firmware (\S+)",
                              line)
@@ -1284,7 +1285,8 @@ def device_entries(st):
            for d in st.get("devices", [])]
     for i, r in enumerate(st.get("receivers", [])):
         for p in r["paired"]:
-            out.append(dict(p, kind="paired", key=("paired", p["pid"], p["id"])))
+            if p.get("active", True):  # paired but not heard from: off, or not used yet
+                out.append(dict(p, kind="paired", key=("paired", p["pid"], p["id"])))
         out.append(dict(r, kind="receiver", key=("receiver", r["vid"], r["pid"], i)))
     return out
 
@@ -2608,7 +2610,8 @@ class App:
     def device_key(st):
         return (bool(st.get("running")),
                 tuple((d.get("vid"), d.get("pid"), d.get("node")) for d in st.get("devices", [])),
-                tuple((r["pid"], tuple((p["slot"], p["pid"], p["id"], p["battery"], p["charging"])
+                tuple((r["pid"], tuple((p["slot"], p["pid"], p["id"], p["battery"], p["charging"],
+                                        p.get("active"))
                                        for p in r["paired"])) for r in st.get("receivers", [])))
 
     def follow_tick(self):

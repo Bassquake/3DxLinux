@@ -731,6 +731,12 @@ that device's collections.
   about every 1.5 s while it is in use. Windows also asks for it with
   `HidD_GetInputReport`; on Linux `HIDIOCGINPUT` for 0x17 fails (EPIPE), so
   tdxd learns the level only once the mouse sends it.
+- **Connected or not:** the receiver does not say. Its pairing table, feature
+  0x50 (`50 00 00 00 00 59 00 10`: the slot codes again) and the others stay
+  the same while the CadMouse is switched off, and no report arrives. 3DxWare
+  (`HIDDev.dll`'s ActiveState) marks a device active on its first input report
+  and never times it out; only the same device turning up active on another
+  connection makes it inactive. `tdxd` does the same (`active yes|no`).
 - **CadMouse input** (report 0x1B on its interface): buttons (8 bits), X and Y
   (int16), wheel (int16), tilt (int8). `hid-generic` turns it into a normal
   mouse, so `tdxd` only reads along.

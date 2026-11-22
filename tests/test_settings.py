@@ -332,7 +332,7 @@ def gui_tests(d, tdxd):
     # ---- a Universal Receiver with a CadMouse paired (tdxd's status lines)
     rcv = ("receiver Universal Receiver [256f:c652] firmware 1.06\n"
            "paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery %s "
-           "charging no seen 2\n")
+           "charging no seen 2 active yes\n")
     with open(Args.status_file, "w") as f:
         f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 + rcv % "52")
@@ -366,6 +366,14 @@ def gui_tests(d, tdxd):
     app.follow_tick()
     check(main.mode == "receiver" and app.status["receivers"][0]["paired"][0]["battery"] is None,
           "the chosen device stays chosen")
+    with open(Args.status_file, "w") as f:  # paired, but switched off / not used yet
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                + (rcv % "-").replace("active yes", "active no"))
+    app.follow_tick()
+    check([e["kind"] for e in ts.device_entries(app.status)] == ["receiver"] and
+          main.mode == "receiver" and main.dev_label.get_visible() and
+          not main.name_btn.get_visible() and main.dev_label.get_text() == "Universal Receiver",
+          "a CadMouse that has not been heard from: just the receiver, no chooser")
     with open(Args.status_file, "w") as f:
         f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
                 "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")

@@ -469,4 +469,7 @@ CadMouse Compact Wireless (c658) paired to it.
 | Pairing table | Feature 0x47 (slot 4) = `59 00 00 48 f7 ba 8b`: code 'Y', the CadMouse Compact Wireless; 0x43–0x46 empty. Feature 0x42 on interface 4 returns the same entry. |
 | Battery | Input report `17 34 00` (52 %, not charging) about every 1.5 s while the mouse was used. `HIDIOCGINPUT` for 0x17 fails with EPIPE. |
 | `tdxctl status` | **Pass** with test build `0.3.4+53`: `receiver Universal Receiver [256f:c652] firmware 1.06` and `paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery …`; the battery is logged once the mouse moves. |
-| Settings pages (rendered in WSL from the live status) | The device chooser lists the CadMouse and the Universal Receiver with their photos; the CadMouse page shows the receiver icon lit and the battery; the receiver page shows "Manage wireless device". Still to test on Kubuntu. |
+| Settings pages (rendered in WSL from the live status) | The device chooser lists the CadMouse and the Universal Receiver with their photos; the CadMouse page shows the receiver icon lit and the battery; the receiver page shows "Manage wireless device". |
+| Kubuntu 26.04, `3DxLinux.0.3.4+54+g4a32b28` | **Fail:** the chooser listed the CadMouse while it was not connected (the pairing table lists it either way). |
+| Mouse switched off and on (WSL, feature reports polled every 0.5 s) | No feature report changes; the only sign is that no input reports arrive while it is off. |
+| Only devices heard from (WSL, settings window through WSLg) | **Pass** with test build `0.3.4+54` + fix: after a tdxd restart the window shows just "Universal Receiver"; moving the CadMouse turns the name into the chooser with the CadMouse and the receiver. |
