@@ -92,6 +92,14 @@ if [ -d "$D" ]; then
 	install -m 644 "$D/blender.conf.example" /etc/tdxd.d/blender.conf.example  # an example: always current
 fi'
 POST_INSTALL='modprobe uinput 2>/dev/null || true
+# the settings panel was "3D Mouse Settings (tdxd)" before 0.3.5: the copies of
+# its menu entry that the 3DxWare-look importer made (they win over this
+# package entry) get the new name; only that exact line of tdxd own entry
+for e in /usr/local/share/applications/tdx-settings.desktop \
+	$(getent passwd | cut -d: -f6 | sed "s|$|/.local/share/applications/tdx-settings.desktop|"); do
+	[ -f "$e" ] && [ ! -L "$e" ] || continue
+	sed -i "s/^Name=3D Mouse Settings (tdxd)\$/Name=3Dconnexion Settings/" "$e" 2>/dev/null || true
+done
 # a copy of tdxd'"'"'s own rule in /etc (the 0.3.1 workaround, or install.sh) replaces
 # the packaged one of the same name, so later fixes never apply: remove copies of
 # ours (recognised by the header line); rules of anyone else stay

@@ -1220,7 +1220,7 @@ class Panel:
 
 
 class MainPanel(Panel):
-    title = "tdxd Settings"
+    title = "3Dconnexion Settings"
     size = (470, 430)
     header_h = 67
 

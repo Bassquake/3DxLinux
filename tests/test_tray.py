@@ -148,7 +148,7 @@ def main():
                                  Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
 
         sni = "org.kde.StatusNotifierItem"
-        check(prop("/StatusNotifierItem", sni, "Title") == "3D Mouse Settings (tdxd)", "title")
+        check(prop("/StatusNotifierItem", sni, "Title") == "3Dconnexion Settings", "title")
         check(prop("/StatusNotifierItem", sni, "IconName") in ("tdxd-3dxware", "input-mouse"), "icon")
         check(prop("/StatusNotifierItem", sni, "Menu") == "/MenuBar", "menu object")
         lay = bus.call_sync(name, "/MenuBar", "com.canonical.dbusmenu", "GetLayout",

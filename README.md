@@ -164,7 +164,8 @@ attached, Windows and 3DxWare cannot use it.
 
 ## Settings panel (`tdx-settings`)
 
-`tdx-settings` is a GTK 3 port of the 3DxWare control panel with the same
+`tdx-settings` (**3Dconnexion Settings** in the menu, under System or Settings)
+is a GTK 3 port of the 3DxWare control panel with the same
 windows, layout and controls: the main window (device, Speed), **Advanced
 Settings**, **Buttons**, **LCD Manager** and **About** ("More ›"). It edits the
 same files as the table below and keeps their comments. As in 3DxWare, every

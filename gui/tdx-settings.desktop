@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=3D Mouse Settings (tdxd)
+Name=3Dconnexion Settings
 GenericName=3D Mouse Settings
 Comment=Speed, buttons, LCD and per-application profiles for 3Dconnexion devices
 Exec=tdx-settings
@@ -8,4 +8,4 @@ TryExec=tdx-settings
 Icon=input-mouse
 Terminal=false
 Categories=Settings;HardwareSettings;
-Keywords=3Dconnexion;SpaceMouse;SpacePilot;spacenav;6DoF;
+Keywords=3Dconnexion;SpaceMouse;SpacePilot;spacenav;6DoF;3D mouse;tdxd;
