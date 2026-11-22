@@ -496,3 +496,4 @@ CadMouse Compact Wireless (c658) paired to it.
 | Free slot 4 (`41 04 04 00 00`) | Slot 4 empty; the receiver drops off USB and is back 2 s later (usbipd `--auto-attach` keeps it in WSL). |
 | Pairing a new device | Pairing on, the CadMouse switched off and on: slot 4 = `59 00 00 48 f7 ba 8b` after 17.7 s, then the receiver reconnects. |
 | Add device window (WSLg), `tdxctl unpair 4` first | First try: tdxd paired the CadMouse, but the window showed "taking too long" while the receiver was off USB; fixed (the window waits for tdxd's result). **Pass** after the fix: "Your CadMouse Compact Wireless was successfully paired.", `tdxctl status` shows `pairing done 4 CadMouse Compact Wireless`. |
+| Add device on Kubuntu 26.04 (`3DxLinux.0.3.4+61+gcc36764`) | **Pass:** after `tdxctl unpair 4`, Add device → CadMouse and switching the mouse off and on: "successfully paired", and the CadMouse works again. |
