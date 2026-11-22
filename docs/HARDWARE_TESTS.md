@@ -453,3 +453,4 @@ itself when 1-5 are held past about half a second.
 |---|---|
 | Menu entry name | **Pass** with test build `0.3.4+40+g46f3d8b`: the System menu shows "3Dconnexion Settings" (was "3D Mouse Settings (tdxd)"), also with the 3DxWare-look importer's copy of the entry in the home folder. |
 | LCD Manager menu entry | **Pass** with test build `0.3.4+42+gbbea7c7`: "LCD Manager (tdxd)" is gone from the menu (entry hidden with NoDisplay, also the importer's copy); the LCD Manager opens from 3Dconnexion Settings. |
+| No-device page, More menu, About 3DxWare | **Pass** with test build `0.3.4+44+gf87b0a8`: with the SpacePilot unplugged 3Dconnexion Settings shows 3DxWare's "No device found" page and switches back when it is plugged in; More opens 3DxWare's menu (Import / Export / Reset all settings, Manuals greyed, Support, About); About is titled "About 3DxWare". |
