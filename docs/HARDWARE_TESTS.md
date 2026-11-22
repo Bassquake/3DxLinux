@@ -452,3 +452,4 @@ itself when 1-5 are held past about half a second.
 | Test | Result |
 |---|---|
 | Menu entry name | **Pass** with test build `0.3.4+40+g46f3d8b`: the System menu shows "3Dconnexion Settings" (was "3D Mouse Settings (tdxd)"), also with the 3DxWare-look importer's copy of the entry in the home folder. |
+| LCD Manager menu entry | **Pass** with test build `0.3.4+42+gbbea7c7`: "LCD Manager (tdxd)" is gone from the menu (entry hidden with NoDisplay, also the importer's copy); the LCD Manager opens from 3Dconnexion Settings. |
