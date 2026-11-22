@@ -21,6 +21,7 @@
 #include "lcd_ent.h"
 #include "lcd_giotto.h"
 #include "process.h"
+#include "receiver.h"
 #include "report.h"
 
 static int fails, checks;
@@ -1273,9 +1274,42 @@ static void test_focus_names(void)
 	CHECK(!tdx_is_own_app("freecad") && !tdx_is_own_app("blender") && tdx_is_own_app("tdx-lcdmanager"));
 }
 
+/* Captured from a Universal Receiver (256f:c652) with a CadMouse Compact
+ * Wireless paired, 2026-11-22. */
+static void test_receiver(void)
+{
+	const uint8_t self[8] = {0x42, 0x59, 0x00, 0x00, 0x48, 0xf7, 0xba, 0x8b};
+	const uint8_t empty[8] = {0x43, 0, 0, 0, 0, 0, 0, 0};
+	struct tdx_rcv_slot s;
+	CHECK(tdx_rcv_parse_slot(self, sizeof self, &s) == 1);
+	CHECK(s.code == 'Y' && s.pid == 0xC658 && s.cls == TDX_RCV_2DMOUSE);
+	CHECK(!strcmp(s.id, "0048f7ba8b"));
+	CHECK(tdx_rcv_parse_slot(empty, sizeof empty, &s) == 0 && s.code == 0);
+	CHECK(tdx_rcv_parse_slot(self, 4, &s) == -1);
+	const uint8_t wrong[8] = {0x50, 0x59};
+	CHECK(tdx_rcv_parse_slot(wrong, sizeof wrong, &s) == -1);
+	int cls;
+	CHECK(tdx_rcv_code_pid(0x5255, &cls) == 0xC652 && cls == TDX_RCV_RECEIVER); /* "UR" */
+	CHECK(tdx_rcv_code_pid('A', &cls) == 0xC62E && cls == TDX_RCV_3DMOUSE);
+	CHECK(tdx_rcv_code_pid(0x1234, &cls) == 0 && cls == 0);
+	const struct tdx_device_def *cm = tdx_device_lookup(0x256F, 0xC658);
+	CHECK(cm && !strcmp(cm->name, "CadMouse Compact Wireless"));
+
+	int lvl, chg;
+	const uint8_t bat[3] = {0x17, 0x34, 0x00};
+	CHECK(tdx_rcv_parse_battery(bat, sizeof bat, &lvl, &chg) == 1 && lvl == 52 && chg == 0);
+	const uint8_t charging[3] = {0x17, 0xc8, 0x01};
+	CHECK(tdx_rcv_parse_battery(charging, sizeof charging, &lvl, &chg) == 1 && lvl == 100 && chg);
+	const uint8_t unknown[3] = {0x17, 0x00, 0x00};
+	CHECK(tdx_rcv_parse_battery(unknown, sizeof unknown, &lvl, &chg) == 1 && lvl == -1);
+	const uint8_t motion[9] = {0x1b, 0x00, 0x34, 0x00, 0x6d, 0xff, 0, 0, 0};
+	CHECK(tdx_rcv_parse_battery(motion, sizeof motion, &lvl, &chg) == 0);
+}
+
 int main(int argc, char **argv)
 {
 	vec_dir = argc > 1 ? argv[1] : NULL;
+	test_receiver();
 	test_rezero();
 	test_actions();
 	test_lcdmgr();

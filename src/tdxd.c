@@ -35,9 +35,11 @@
 #include "output.h"
 #include "profile.h"
 #include "process.h"
+#include "receiver.h"
 #include "report.h"
 
 #define MAX_DEV 8
+#define MAX_RCV 10 /* receiver interfaces (a Universal Receiver has five) */
 #define DEFAULT_CONF "/etc/tdxd.conf"
 
 struct dev_ctx {
@@ -80,6 +82,21 @@ static struct tdx_config cfg;
 static const char *conf_path = DEFAULT_CONF;
 static struct dev_ctx devs[MAX_DEV];
 static int ndev;
+
+/* One interface of a wireless receiver. Interface N carries the device in
+ * pairing slot N; its input reports (mouse motion, buttons, battery) also go to
+ * hid-generic, so the mouse works without tdxd: tdxd only reads along for the
+ * battery level and reports the pairing for the settings panel. */
+struct rcv_ctx {
+	struct tdx_hid_node node;
+	int fd;
+	struct tdx_rcv_slot slot; /* the device on this interface (feature 0x42) */
+	int battery, charging;    /* battery -1 = not reported yet */
+	long long seen_ms;        /* last report from that device, 0 = none */
+	long long slot_ms;        /* when the slot was last read */
+};
+static struct rcv_ctx rcvs[MAX_RCV];
+static int nrcv;
 static struct tdx_spnav spnav = {.lfd = -1};
 
 /* per-application profiles */
@@ -459,6 +476,110 @@ static void dev_close(struct dev_ctx *d)
 	*d = devs[--ndev];
 }
 
+/* Feature 0x42: the device this receiver interface carries. 1 = a device,
+ * 0 = none, -1 = no answer (not a Universal Receiver style receiver). */
+static int rcv_get_slot(int fd, struct tdx_rcv_slot *s)
+{
+	uint8_t b[8] = {TDX_RCV_REPORT_SELF};
+	int r = ioctl(fd, HIDIOCGFEATURE(sizeof b), b);
+	if (r < (int)sizeof b) {
+		memset(s, 0, sizeof *s);
+		return -1;
+	}
+	return tdx_rcv_parse_slot(b, (size_t)r, s);
+}
+
+static const char *rcv_dev_name(const struct rcv_ctx *r)
+{
+	const struct tdx_device_def *def = tdx_device_lookup(r->node.vid, r->slot.pid);
+	return def ? def->name : "Unknown device";
+}
+
+static void rcv_update_slot(struct rcv_ctx *r)
+{
+	struct tdx_rcv_slot s;
+	r->slot_ms = now_ms();
+	if (rcv_get_slot(r->fd, &s) < 0)
+		return; /* keep what we had: the receiver did not answer this time */
+	if (s.code == r->slot.code && !strcmp(s.id, r->slot.id))
+		return;
+	r->slot = s;
+	r->battery = -1;
+	r->charging = 0;
+	r->seen_ms = 0;
+	if (s.code)
+		LOG(0, "%s: %s paired on slot %d (%s)\n", r->node.def->name, rcv_dev_name(r),
+		    r->node.iface, r->node.devnode);
+}
+
+static void rcv_close(struct rcv_ctx *r)
+{
+	LOG(0, "device removed: %s (%s)\n", r->node.def->name, r->node.devnode);
+	if (r->fd >= 0)
+		close(r->fd);
+	*r = rcvs[--nrcv];
+}
+
+static void rcv_read(struct rcv_ctx *r)
+{
+	uint8_t buf[64];
+	for (;;) {
+		ssize_t n = read(r->fd, buf, sizeof buf);
+		if (n < 0) {
+			if (errno == EAGAIN || errno == EINTR)
+				return;
+			rcv_close(r);
+			return;
+		}
+		if (n == 0)
+			return;
+		if (!r->slot.code) /* reports from an empty slot: something was just paired */
+			rcv_update_slot(r);
+		r->seen_ms = now_ms();
+		int lvl, chg;
+		if (tdx_rcv_parse_battery(buf, (size_t)n, &lvl, &chg)) {
+			if (lvl != r->battery || chg != r->charging)
+				LOG(1, "%s: battery %d%%%s\n", rcv_dev_name(r), lvl,
+				    chg ? " (charging)" : "");
+			r->battery = lvl;
+			r->charging = chg;
+		}
+	}
+}
+
+/* `tdxctl status` lines for the receivers: one per receiver, then one per
+ * paired device (slot, name, ids, battery, seconds since its last report). */
+static size_t rcv_status(char *reply, size_t len, size_t o)
+{
+	for (int i = 0; i < nrcv && o < len; i++) {
+		int first = 1;
+		for (int j = 0; j < i; j++)
+			if (!strcmp(rcvs[j].node.phys, rcvs[i].node.phys))
+				first = 0;
+		if (!first)
+			continue;
+		const struct rcv_ctx *r = &rcvs[i];
+		o += (size_t)snprintf(reply + o, len - o, "receiver %s [%04x:%04x] firmware %x.%02x\n",
+				      r->node.def->name, r->node.vid, r->node.pid,
+				      r->node.version >> 8, r->node.version & 0xFF);
+		for (int j = 0; j < nrcv && o < len; j++) {
+			const struct rcv_ctx *p = &rcvs[j];
+			if (strcmp(p->node.phys, r->node.phys) || !p->slot.code)
+				continue;
+			char bat[12] = "-", seen[24] = "-";
+			if (p->battery >= 0)
+				snprintf(bat, sizeof bat, "%d", p->battery);
+			if (p->seen_ms)
+				snprintf(seen, sizeof seen, "%lld", (now_ms() - p->seen_ms) / 1000);
+			o += (size_t)snprintf(reply + o, len - o,
+					      "paired %d %s [%04x:%04x] id %s battery %s charging %s seen %s\n",
+					      p->node.iface, rcv_dev_name(p), p->node.vid, p->slot.pid,
+					      p->slot.id, bat, p->charging ? "yes" : "no", seen);
+		}
+	}
+	return o;
+}
+
 /* ---- the settings panel (3DxWare's Driver_ShowDriverGUI on MENU) ----
  * tdxd runs as root outside any desktop session, so it asks the session of
  * the user at the screen (logind's active session on seat0) to start
@@ -832,6 +953,7 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 					      devs[i].node.def->name, devs[i].node.vid,
 					      devs[i].node.pid, devs[i].node.devnode,
 					      devs[i].node.version >> 8, devs[i].node.version & 0xFF);
+		o = rcv_status(reply, len, o);
 	} else {
 		snprintf(reply, len, "error: unknown command '%s'\n", verb);
 	}
@@ -846,20 +968,52 @@ static void rescan(void)
 		for (int j = 0; j < ndev; j++)
 			if (!strcmp(devs[j].node.devnode, nodes[i].devnode))
 				known = 1;
+		for (int j = 0; j < nrcv; j++)
+			if (!strcmp(rcvs[j].node.devnode, nodes[i].devnode))
+				known = 1;
 		if (known)
 			continue;
+		int fd = open(nodes[i].devnode, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+		if (fd < 0)
+			fd = open(nodes[i].devnode, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+		if (fd < 0) {
+			LOG(1, "cannot open %s: %s\n", nodes[i].devnode, strerror(errno));
+			continue;
+		}
+		struct tdx_rcv_slot slot;
+		if (nodes[i].def->dev_class == TDX_CLASS_RECEIVER && rcv_get_slot(fd, &slot) >= 0) {
+			/* A paired 3D mouse whose reports come through this interface is
+			 * driven like the wired one (untested: no such device here). */
+			const struct tdx_device_def *pd =
+				slot.cls == TDX_RCV_3DMOUSE ? tdx_device_lookup(nodes[i].vid, slot.pid) : NULL;
+			if (pd && pd->dev_class == TDX_CLASS_3DMOUSE) {
+				nodes[i].def = pd;
+			} else {
+				if (nrcv >= MAX_RCV) {
+					close(fd);
+					continue;
+				}
+				struct rcv_ctx *r = &rcvs[nrcv++];
+				memset(r, 0, sizeof *r);
+				r->node = nodes[i];
+				r->fd = fd;
+				r->battery = -1;
+				int seen = 0;
+				for (int j = 0; j < nrcv - 1; j++)
+					seen |= !strcmp(rcvs[j].node.phys, r->node.phys);
+				if (!seen) /* once per receiver, not per interface */
+					LOG(0, "device: %s [%04x:%04x] on %s\n", r->node.def->name,
+					    r->node.vid, r->node.pid, r->node.devnode);
+				rcv_update_slot(r);
+				continue;
+			}
+		}
 		struct dev_ctx *d = &devs[ndev];
 		memset(d, 0, sizeof *d);
 		d->node = nodes[i];
 		d->ui.fd = d->ui.kfd = -1;
 		d->slide_target = -1;
-		d->fd = open(d->node.devnode, O_RDWR | O_NONBLOCK | O_CLOEXEC);
-		if (d->fd < 0)
-			d->fd = open(d->node.devnode, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-		if (d->fd < 0) {
-			LOG(1, "cannot open %s: %s\n", d->node.devnode, strerror(errno));
-			continue;
-		}
+		d->fd = fd;
 		ndev++;
 		LOG(0, "device: %s [%04x:%04x] on %s\n", d->node.def->name, d->node.vid,
 		    d->node.pid, d->node.devnode);
@@ -872,6 +1026,9 @@ static void rescan(void)
 		lcd_attach(d);
 		lcdcfg_dirty = 1;
 	}
+	for (int i = 0; i < nrcv; i++) /* pairing changes (Add device, another receiver) */
+		if (now_ms() - rcvs[i].slot_ms > 10000)
+			rcv_update_slot(&rcvs[i]);
 }
 
 static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS])
@@ -1057,10 +1214,13 @@ int main(int argc, char **argv)
 			last_scan = now_ms();
 		}
 
-		struct pollfd pfd[MAX_DEV + 4 + TDX_SPNAV_MAX_CLIENTS];
+		struct pollfd pfd[MAX_DEV + MAX_RCV + 4 + TDX_SPNAV_MAX_CLIENTS];
 		int np = 0;
 		for (int i = 0; i < ndev; i++)
 			pfd[np++] = (struct pollfd){.fd = devs[i].fd, .events = POLLIN};
+		int rcv_base = np, nrcv_polled = nrcv;
+		for (int i = 0; i < nrcv; i++)
+			pfd[np++] = (struct pollfd){.fd = rcvs[i].fd, .events = POLLIN};
 		int ctl_idx = -1;
 		if (ctl_fd >= 0) {
 			ctl_idx = np;
@@ -1133,6 +1293,9 @@ int main(int argc, char **argv)
 					}
 			}
 		}
+		for (int i = nrcv_polled - 1; i >= 0; i--) /* before devs: their indices come first */
+			if (pfd[rcv_base + i].revents & (POLLIN | POLLHUP | POLLERR))
+				rcv_read(&rcvs[i]);
 		for (int i = ndev - 1; i >= 0; i--)
 			if (pfd[i].revents & (POLLIN | POLLHUP | POLLERR))
 				dev_read(&devs[i]);
@@ -1153,6 +1316,8 @@ int main(int argc, char **argv)
 
 	while (ndev)
 		dev_close(&devs[ndev - 1]);
+	while (nrcv)
+		rcv_close(&rcvs[nrcv - 1]);
 	tdx_spnav_close(&spnav);
 	if (ctl_fd >= 0) {
 		close(ctl_fd);

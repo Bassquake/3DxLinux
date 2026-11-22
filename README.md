@@ -32,6 +32,12 @@ Device support is data-driven. Button layouts come from `Base.xml`, so other
 3Dconnexion 3D mice work the same way. CadMouse and keyboards are skipped
 because they already work through `hid-generic`.
 
+The **Universal Receiver** (256f:c652) is recognised: `tdxd` reads which
+devices are paired to it and the battery level of a paired CadMouse, and
+3Dconnexion Settings shows the receiver and the CadMouse pages with 3DxWare's
+device chooser. The CadMouse itself keeps working as an ordinary mouse; its
+speed, Advanced Settings and Buttons are not available on Linux yet.
+
 ## Build
 
 The only build dependency is a C11 compiler with Linux UAPI headers. There are

@@ -41,7 +41,7 @@ BUILD   := build/$(ARCH)
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
-CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx font_aa output process profile control \
+CORE := devices_gen report config hidraw lcd lcd_ent lcd_giotto deflate gfx font_aa output process profile control receiver \
         lcdmgr_db lcdmgr_core
 CORE_OBJ := $(addprefix $(BUILD)/,$(addsuffix .o,$(CORE)))
 

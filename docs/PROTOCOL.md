@@ -710,7 +710,42 @@ directly, without the A/B/C/D buffer protocol.
   already there when a Giotto attaches is sent too. With no Giotto attached the
   file is left alone.
 
-## 7. Open items
+## 7. Universal Receiver (observed: `HIDDev.dll`, a 256f:c652 receiver)
+
+The receiver has five HID interfaces. Each one has the same vendor collection
+(usage page 0xFF0A) with feature reports 0x41 (4 data bytes), 0x42–0x47,
+0x50, 0x60 and 0x1A (7 data bytes each). Interface N carries the device in
+pairing slot N; while a device is paired, its interface's descriptor also has
+that device's collections.
+
+- **Pairing table:** `HIDDev.dll`'s GetPairingTable reads feature `0x43 + slot`.
+  Data bytes 0–1 are a little-endian device code (0 = empty slot); the other
+  five bytes are the paired device's id. Feature 0x42 on an interface returns
+  the same entry for that interface's own slot.
+- **Device codes** (table at 0x1800dbca0: code, product id, class 1 = 3D mouse,
+  2 = 2D mouse, 4 = receiver, 5 = keyboard): 'D' c631, 'A' c62e, 'T' c651,
+  'U' c654, 'V' c657, 'Y' c658, 'N' c665, 'Q' c638, 'Z' c63a, 'KA' c664,
+  'UC' c669, 'KC' c665, 'UR' c652.
+- **Battery:** input report 0x17. Data byte 0 is the level in percent
+  (0 = unknown), byte 1 bit 0 means charging. A connected CadMouse sends it
+  about every 1.5 s while it is in use. Windows also asks for it with
+  `HidD_GetInputReport`; on Linux `HIDIOCGINPUT` for 0x17 fails (EPIPE), so
+  tdxd learns the level only once the mouse sends it.
+- **CadMouse input** (report 0x1B on its interface): buttons (8 bits), X and Y
+  (int16), wheel (int16), tilt (int8). `hid-generic` turns it into a normal
+  mouse, so `tdxd` only reads along.
+
+Captured with a CadMouse Compact Wireless in slot 4:
+
+```
+feature 0x42 (interface 4)  42 59 00 00 48 f7 ba 8b   'Y' = c658
+feature 0x43..0x46          43 00 00 00 00 00 00 00   empty
+feature 0x47                47 59 00 00 48 f7 ba 8b
+input 0x17                  17 34 00                  52 %, not charging
+input 0x1b                  1b 00 34 00 6d ff 00 00 00
+```
+
+## 8. Open items
 
 **Confirmed on a real SpacePilot Pro** (2026-11-16, see `docs/HARDWARE_TESTS.md`):
 
@@ -751,3 +786,5 @@ The SpacePilot Pro's HID descriptor also declares vendor feature reports
   Windows and in `tdxd`.
 - **Unknown:** LCD soft-button reads (`LCDExtDeviceManagerReadSoftButtonsEx`).
   The SpacePilot Pro reports its keys through HID instead.
+- **Untested:** a 3D mouse paired to the Universal Receiver. `tdxd` drives its
+  interface like the wired device, assuming it sends the same reports.

@@ -326,6 +326,52 @@ def gui_tests(d, tdxd):
           btn.photo.key == ("046d", "c629"), "plugged in again: %s" % main.dev_label.get_text())
     check(not main.plain_title.get_visible() and not main.nodev_icon_box.get_visible() and
           main.speed.get_visible() and main.main_buttons[0].get_visible(), "back to the main page")
+    check(not main.name_btn.get_visible() and main.dev_label.get_visible(),
+          "one device: its name, no chooser")
+
+    # ---- a Universal Receiver with a CadMouse paired (tdxd's status lines)
+    rcv = ("receiver Universal Receiver [256f:c652] firmware 1.06\n"
+           "paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery %s "
+           "charging no seen 2\n")
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                + rcv % "52")
+    app.follow_tick()
+    r = app.status["receivers"]
+    check(len(r) == 1 and r[0]["pid"] == "c652" and r[0]["paired"][0]["battery"] == 52 and
+          r[0]["paired"][0]["slot"] == 4 and not r[0]["paired"][0]["charging"],
+          "receiver status parsed: %s" % r)
+    check([e["kind"] for e in ts.device_entries(app.status)] == ["paired", "receiver"],
+          "chooser lists the CadMouse, then the receiver")
+    check(main.mode == "paired" and main.name_btn.get_visible() and
+          not main.dev_label.get_visible() and
+          main.name_btn_label.get_text() == "CadMouse Compact Wireless", "CadMouse page")
+    check(main.photo.key == ("256f", "c658") and main.conn_box.get_visible() and
+          not main.state_wrap.get_visible() and not main.lcd_button.get_visible() and
+          main.main_buttons[1].get_visible() and not main.main_buttons[1].get_sensitive() and
+          not main.speed.get_sensitive(), "CadMouse: icons, Speed / Buttons not yet")
+    check(ts.battery_icon(52, False) == "SmartUI_Battery_50" and
+          ts.battery_icon(None, False) == "SmartUI_Battery_Unknown" and
+          ts.battery_icon(100, False) == "SmartUI_Battery_100" and
+          ts.battery_icon(3, False) == "SmartUI_Battery_Critical" and
+          ts.battery_icon(40, True) == "SmartUI_Battery_Charging_1", "battery pictures")
+    app.select_device(ts.device_entries(app.status)[1]["key"])
+    check(main.mode == "receiver" and main.photo.key == ("256f", "c652") and
+          main.recv_title.get_visible() and main.recv_buttons[1].get_visible() and
+          not main.speed.get_visible() and not main.main_buttons[0].get_visible(),
+          "receiver page")
+    with open(Args.status_file, "w") as f:  # the battery report changes: still the receiver
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                + rcv % "-")
+    app.follow_tick()
+    check(main.mode == "receiver" and app.status["receivers"][0]["paired"][0]["battery"] is None,
+          "the chosen device stays chosen")
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+                "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")
+    app.follow_tick()
+    check(main.mode == "3d" and main.speed.get_sensitive() and main.lcd_button.get_visible(),
+          "receiver unplugged: the SpacePilot again")
 
     # ---- More: 3DxWare's menu
     menu = app.build_more_menu()

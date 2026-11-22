@@ -9,6 +9,7 @@ struct tdx_hid_node {
 	uint16_t vid, pid;
 	int bus;            /* 3 = USB, 5 = Bluetooth */
 	int iface;          /* USB interface number or -1 */
+	char phys[64];      /* HID_PHYS without "/inputN": the same for every interface */
 	uint16_t version;   /* USB bcdDevice (= Windows HID VersionNumber), 0 if unknown */
 	const struct tdx_device_def *def;
 };

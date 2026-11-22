@@ -457,3 +457,16 @@ itself when 1-5 are held past about half a second.
 | Package name in Discover | **Pass** with `3DxLinux.0.3.4+46+g570f068-1.amd64.deb`: Discover's install page shows "3DxLinux" (it names a local file by its file name up to the first dot; was "tdxd_0"). Its "Unknown author" can't be set for a local file; the AppStream data (3DxLinux by Bassquake, MIT) is for installed / repository packages. |
 | About 3DxWare layout | **Pass** with test build `0.3.4+48+g95e9926`: more space between Configuration, 3DxWare Look, Start-up and Devices; the note says "3DxLinux is an independent Linux driver". |
 | More menu look (dark KDE theme) | **Pass** with test build `0.3.4+50+g09e3fe4`: no gap before the icons (GTK's tick-box column off) and 3DxWare's white menu, so its black icons show in a dark theme. |
+
+## 2026-11-22: Universal Receiver and CadMouse Compact Wireless (WSL2)
+
+The receiver (256f:c652, firmware 1.06) passed to WSL2 with usbipd-win, a
+CadMouse Compact Wireless (c658) paired to it.
+
+| Test | Result |
+|---|---|
+| Interfaces | Five HID interfaces (`/dev/hidraw0`–`4`), each with the vendor collection of feature reports 0x41–0x47, 0x50, 0x60, 0x1A; interface 4 also has the CadMouse's mouse (0x1B), button (0x03) and battery (0x17) reports. |
+| Pairing table | Feature 0x47 (slot 4) = `59 00 00 48 f7 ba 8b`: code 'Y', the CadMouse Compact Wireless; 0x43–0x46 empty. Feature 0x42 on interface 4 returns the same entry. |
+| Battery | Input report `17 34 00` (52 %, not charging) about every 1.5 s while the mouse was used. `HIDIOCGINPUT` for 0x17 fails with EPIPE. |
+| `tdxctl status` | **Pass** with test build `0.3.4+53`: `receiver Universal Receiver [256f:c652] firmware 1.06` and `paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery …`; the battery is logged once the mouse moves. |
+| Settings pages (rendered in WSL from the live status) | The device chooser lists the CadMouse and the Universal Receiver with their photos; the CadMouse page shows the receiver icon lit and the battery; the receiver page shows "Manage wireless device". Still to test on Kubuntu. |

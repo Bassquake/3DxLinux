@@ -487,7 +487,7 @@ class Daemon:
 
     def status(self):
         rc, out = self.request("status")
-        st = {"running": rc == 0, "devices": [], "raw": out}
+        st = {"running": rc == 0, "devices": [], "receivers": [], "raw": out}
         if rc:
             return st
         for line in out.splitlines():
@@ -499,6 +499,21 @@ class Daemon:
                 m = re.match(r"application (\S+) \(via (\S+)\)", line)
                 if m:
                     st["app"], st["via"] = m.group(1), m.group(2)
+            elif line.startswith("receiver "):
+                m = re.match(r"receiver (.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] firmware (\S+)", line)
+                if m:
+                    st["receivers"].append({"name": m.group(1), "vid": m.group(2),
+                                            "pid": m.group(3), "firmware": m.group(4),
+                                            "paired": []})
+            elif line.startswith("paired ") and st["receivers"]:
+                m = re.match(r"paired (\d+) (.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] id (\S+) "
+                             r"battery (\S+) charging (\S+) seen (\S+)", line)
+                if m:
+                    num = lambda v: int(v) if v.isdigit() else None
+                    st["receivers"][-1]["paired"].append({
+                        "slot": int(m.group(1)), "name": m.group(2), "vid": m.group(3),
+                        "pid": m.group(4), "id": m.group(5), "battery": num(m.group(6)),
+                        "charging": m.group(7) == "yes", "seen": num(m.group(8))})
             elif line.startswith("  "):
                 m = re.match(r"\s+(.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] (\S+) firmware (\S+)",
                              line)
@@ -1029,6 +1044,13 @@ menu.tdx-more menuitem label { color: #1e1e1e; }
 menu.tdx-more menuitem:hover { background-color: #e5f3fb; }
 menu.tdx-more menuitem:disabled label { color: #a0a0a0; }
 menu.tdx-more separator { background-color: #dcdcdc; min-height: 1px; margin: 4px 0; }
+popover.tdx-devices { background-color: #ffffff; border: 1px solid #c8c8c8;
+  border-radius: 0; padding: 0; }
+popover.tdx-devices button.tdx-tile { background: none; border: none; border-radius: 0;
+  box-shadow: none; padding: 14px 18px 16px 18px; }
+popover.tdx-devices button.tdx-tile:hover,
+popover.tdx-devices button.tdx-tile.tdx-tile-current { background-color: #e5e5e5; }
+popover.tdx-devices label { color: #1e1e1e; }
 window.tdx-frameless, window.tdx-frameless decoration {
   border: none; border-radius: 0; box-shadow: none; margin: 0; padding: 0; }
 .tdx, .tdx label, .tdx button, .tdx entry, .tdx checkbutton, .tdx radiobutton {
@@ -1037,6 +1059,7 @@ window.tdx-frameless, window.tdx-frameless decoration {
 .tdx label.tdx-status { color: #8c8c8c; }
 .tdx label.tdx-sub { font-size: 13px; color: #8a8a8a; }
 .tdx label.tdx-section { font-size: 14px; color: #2b2b2b; }
+.tdx label.tdx-recv { font-size: 15px; color: #3c3c3c; }
 .tdx label.tdx-dim { color: #6d6d6d; }
 .tdx label.tdx-more { color: #9a9a9a; }
 .tdx label.tdx-small { font-size: 11px; color: #8a8a8a; }
@@ -1220,22 +1243,24 @@ def app_icon(app, size=16):
 
 
 class DevicePhoto(Gtk.Box):
-    """The device photo, redrawn when another device (or none) is connected."""
+    """The device photo, redrawn when another device (or none) is connected.
+    @which: the device to show (default: the first 3D mouse)."""
 
-    def __init__(self, app):
+    def __init__(self, app, which=None):
         super().__init__()
         self.app, self.key = app, ()
+        self.which = which or (lambda: (self.app.status.get("devices") or [None])[0])
         self.update()
 
     def update(self):
-        devs = self.app.status.get("devices", [])
-        key = (devs[0].get("vid"), devs[0].get("pid")) if devs else None
+        dev = self.which()
+        key = (dev.get("vid"), dev.get("pid")) if dev else None
         if key == self.key:
             return
         self.key = key
         for c in self.get_children():
             self.remove(c)
-        w = device_image(devs[0] if devs else None)
+        w = device_image(dev)
         self.add(w)
         w.show_all()
 
@@ -1248,6 +1273,47 @@ def device_image(dev, w=200, h=120):
         path = ASSETS.icon("SPP_Head.png")
     img = image_widget(path)
     return img or drawing(w, h, lambda wd, cr: draw_device(wd, cr, True))
+
+
+def device_entries(st):
+    """Every device the device chooser lists, in 3DxWare's order: the 3D mice,
+    then for each wireless receiver its paired devices and the receiver itself.
+    Each gets a "kind" (3d, paired, receiver) and a "key" that stays the same
+    while it is connected."""
+    out = [dict(d, kind="3d", key=("3d", d["vid"], d["pid"], d["node"]))
+           for d in st.get("devices", [])]
+    for i, r in enumerate(st.get("receivers", [])):
+        for p in r["paired"]:
+            out.append(dict(p, kind="paired", key=("paired", p["pid"], p["id"])))
+        out.append(dict(r, kind="receiver", key=("receiver", r["vid"], r["pid"], i)))
+    return out
+
+
+def device_name(dev):
+    return dev["name"].replace(" PRO", " Pro") if dev else "No device connected"
+
+
+def battery_icon(level, charging):
+    """3DxWare's battery picture for @level percent (None: not reported yet)."""
+    if charging:
+        return "SmartUI_Battery_Charging_1"
+    if level is None:
+        return "SmartUI_Battery_Unknown"
+    for least, name in ((88, "100"), (63, "75"), (38, "50"), (15, "25"), (6, "Low")):
+        if level >= least:
+            return "SmartUI_Battery_" + name
+    return "SmartUI_Battery_Critical"
+
+
+def battery_text(dev):
+    if dev.get("charging"):
+        return "Battery charging" + (" (%d%%)" % dev["battery"] if dev.get("battery") else "")
+    if dev.get("battery") is None:
+        return "Battery level not reported yet (move the mouse)"
+    return "Battery %d%%" % dev["battery"]
+
+
+NOT_YET = "Not available on Linux yet"
 
 
 class Panel:
@@ -1380,7 +1446,34 @@ class MainPanel(Panel):
         self.nodev_text_box = self.put(text_box, 0, 226)
 
         self.dev_label = self.put(lab("", "tdx-dev"), 30, 100)
-        self.photo = self.put(DevicePhoto(self.app), 252, 42)
+        # several devices (a receiver and what is paired to it): the name is
+        # 3DxWare's device chooser
+        self.name_btn = flat_button("", 195)
+        nb = Gtk.Box(spacing=6)
+        self.name_btn_label = lab("")
+        self.name_btn_label.set_ellipsize(Pango.EllipsizeMode.END)
+        nb.pack_start(self.name_btn_label, True, True, 0)
+        chev = image_widget(ASSETS.ui("SmartUI_Button_Arrow"))
+        nb.pack_end(chev or lab(">", "tdx-more"), False, False, 0)
+        self.name_btn.remove(self.name_btn.get_child())
+        self.name_btn.add(nb)
+        self.name_btn.connect("clicked", self.device_popover)
+        self.put(self.name_btn, 30, 94)
+        self.photo = self.put(DevicePhoto(self.app, self.app.current_device), 252, 42)
+        # a wireless mouse: how it is connected and its battery
+        self.conn_box = self.put(Gtk.Box(spacing=9), 288, 173)
+        # the receiver's own page
+        self.recv_title = self.put(lab("Manage wireless device", "tdx-section tdx-recv"), 30, 196)
+        self.recv_rule = self.put(drawing(411, 1, lambda _w, cr: (
+            cr.set_source_rgb(*SECTION_LINE), cr.paint()) and None), 30, 220)
+        self.recv_text = self.put(lab("Configure which devices are paired to this receiver.",
+                                      "tdx-status"), 30, 229)
+        self.recv_buttons = []
+        for text, x in (("Advanced Settings", 30), ("Add device", 245)):
+            b = self.put(flat_button(text, 195), x, 274)
+            b.set_sensitive(False)
+            b.set_tooltip_text(NOT_YET)
+            self.recv_buttons.append(b)
         self.state_box = Gtk.Box(spacing=5)
         self.state_icon = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
         if self.state_icon:
@@ -1432,44 +1525,116 @@ class MainPanel(Panel):
                                or "Enterprise" in d["name"] or "Giotto" in d["name"]
                                for d in devs)
 
-    def show_page(self, nodev):
-        """3DxWare's main window, or its "No device found" page."""
-        for w in [self.dev_label, self.photo, self.state_wrap, self.speed_label, self.speed,
-                  self.icon_slot, self.title_btn] + self.main_buttons:
-            w.set_visible(not nodev)
-        for w in (self.plain_title, self.nodev_icon_box, self.nodev_text_box):
-            w.set_visible(nodev)
-            if nodev:
+    def show_page(self, mode, chooser=False):
+        """3DxWare's main window for a 3D mouse ("3d"), a wireless mouse
+        ("paired") or a receiver, or its "No device found" page ("nodev")."""
+        on, mouse = mode != "nodev", mode in ("3d", "paired")
+        vis = [(self.dev_label, on and not chooser), (self.name_btn, on and chooser),
+               (self.photo, on), (self.icon_slot, on), (self.title_btn, on),
+               (self.state_wrap, mode == "3d"), (self.conn_box, mode == "paired"),
+               (self.speed_label, mouse), (self.speed, mouse),
+               (self.main_buttons[0], mouse), (self.main_buttons[1], mouse),
+               (self.lcd_button, mode == "3d")]
+        vis += [(w, mode == "receiver") for w in
+                [self.recv_title, self.recv_rule, self.recv_text] + self.recv_buttons]
+        vis += [(w, mode == "nodev") for w in
+                (self.plain_title, self.nodev_icon_box, self.nodev_text_box)]
+        for w, v in vis:
+            w.set_visible(v)
+            if v and w is not self.state_wrap:
                 w.show_all()
+
+    def refresh_conn(self, dev):
+        """USB, keyboard, receiver and Bluetooth icons (the receiver lit) and
+        the battery, as 3DxWare shows them for a wireless mouse."""
+        for c in self.conn_box.get_children():
+            self.conn_box.remove(c)
+        for name, active in (("usb", False), ("keyboard", False), ("dongle", True),
+                             ("bluetooth", False)):
+            img = image_widget(ASSETS.ui("SmartUI_%s_%s" % (name, "active" if active
+                                                             else "inactive")))
+            if img:
+                img.set_tooltip_text("Connected through the Universal Receiver"
+                                     if active else None)
+                self.conn_box.pack_start(img, False, False, 0)
+        self.conn_box.pack_start(drawing(1, 15, lambda _w, cr: (
+            cr.set_source_rgb(*SECTION_LINE), cr.paint()) and None), False, False, 0)
+        bat = image_widget(ASSETS.ui(battery_icon(dev.get("battery"), dev.get("charging"))))
+        if not bat:
+            bat = lab("%s%%" % dev["battery"] if dev.get("battery") is not None else "–",
+                      "tdx-status")
+        bat.set_tooltip_text(battery_text(dev))
+        self.conn_box.pack_start(bat, False, False, 0)
+        self.conn_box.show_all()
+
+    def device_popover(self, button):
+        """3DxWare's device chooser: a photo tile per device, the shown one grey."""
+        pop = Gtk.Popover.new(button)
+        pop.set_position(Gtk.PositionType.RIGHT)
+        for c in ("tdx", "tdx-devices"):
+            pop.get_style_context().add_class(c)
+        row = Gtk.Box()
+        cur = self.app.current_device()
+        for e in device_entries(self.app.status):
+            b = Gtk.Button()
+            b.set_relief(Gtk.ReliefStyle.NONE)
+            b.set_can_focus(False)
+            b.get_style_context().add_class("tdx-tile")
+            if cur and e["key"] == cur["key"]:
+                b.get_style_context().add_class("tdx-tile-current")
+            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            v.pack_start(device_image(e), False, False, 0)
+            v.pack_start(lab(device_name(e), xalign=0.5), False, False, 0)
+            b.add(v)
+            b.connect("clicked", lambda _b, k=e["key"]: (pop.popdown(),
+                                                         self.app.select_device(k)))
+            row.pack_start(b, False, False, 0)
+        pop.add(row)
+        row.show_all()
+        pop.popup()
+        self.popover = pop
+        return pop
 
     def refresh(self):
         self.updating = True
         self.refresh_header()
         st = self.app.status
-        devs = st.get("devices", [])
-        self.nodev = not devs
-        self.show_page(self.nodev)
+        cur = self.app.current_device()
+        self.mode = cur["kind"] if cur else "nodev"
+        self.nodev = cur is None
+        self.show_page(self.mode, len(device_entries(st)) > 1)
         self.nodev_text.set_text(
             "No device found.\nPlease connect your 3Dconnexion device." if st.get("running") else
             "The 3Dconnexion driver (tdxd) is not running.\nStart it with: sudo systemctl start tdxd")
         self.photo.update()
-        name = devs[0]["name"].replace(" PRO", " Pro") if devs else "No device connected"
-        self.dev_label.set_text(name)
+        self.dev_label.set_text(device_name(cur))
+        self.name_btn_label.set_text(device_name(cur))
         if not st.get("running"):
             state = "tdxd is not running"
-        elif devs:
-            info = ASSETS.device(devs[0].get("pid"))
+        elif cur:
+            info = ASSETS.device(cur.get("pid"))
             state = SUPPORT_TEXT.get(info.get("support"), "")
             if not info:
-                state = "Firmware %s" % devs[0]["firmware"]
+                state = "Firmware %s" % cur.get("firmware", "?")
         else:
             state = "Connect a device"
+        if self.mode == "paired":
+            self.refresh_conn(cur)
+        # a wireless mouse's speed and buttons are the desktop's for now
+        mouse3d = self.mode != "paired"
+        for w in (self.speed, self.main_buttons[0], self.main_buttons[1]):
+            w.set_sensitive(mouse3d)
+            w.set_tooltip_text(None if mouse3d else NOT_YET)
         self.state_label.set_text(state)
         if self.state_icon:
             self.state_icon.set_visible(bool(state))
-        self.speed.set_value(math.log10(max(0.05, self.store.get_float("sensitivity", 1.0))))
-        self.speed.set_tooltip_text("Speed %sx" % fmt_num(self.store.get_float("sensitivity",
-                                                                               1.0)))
+        if mouse3d:
+            self.speed.set_value(math.log10(max(0.05, self.store.get_float("sensitivity",
+                                                                           1.0))))
+            self.speed.set_tooltip_text("Speed %sx" % fmt_num(self.store.get_float(
+                "sensitivity", 1.0)))
+        else:
+            self.speed.set_value(0)
         self.lcd_button.set_sensitive(self.has_lcd())
         self.save_label.set_text(self.app.save_state)
         self.updating = False
@@ -2318,6 +2483,21 @@ class App:
         # follow the application used last (follow_tick), unless -p chose one
         self.tdxd_profile = self.status.get("profile")
         self.last_app_keys = (None, {})
+        self.selected = None  # key of the device chosen in the device chooser
+
+    def current_device(self):
+        """The device the main window shows: the one chosen in the device
+        chooser while it is connected, else the first (a 3D mouse first)."""
+        entries = device_entries(self.status)
+        for e in entries:
+            if e["key"] == self.selected:
+                return e
+        return entries[0] if entries else None
+
+    def select_device(self, key):
+        self.selected = key
+        for p in self.panels:
+            p.refresh()
 
     # ---- saving
     def on_changed(self):
@@ -2427,7 +2607,9 @@ class App:
     @staticmethod
     def device_key(st):
         return (bool(st.get("running")),
-                tuple((d.get("vid"), d.get("pid"), d.get("node")) for d in st.get("devices", [])))
+                tuple((d.get("vid"), d.get("pid"), d.get("node")) for d in st.get("devices", [])),
+                tuple((r["pid"], tuple((p["slot"], p["pid"], p["id"], p["battery"], p["charging"])
+                                       for p in r["paired"])) for r in st.get("receivers", [])))
 
     def follow_tick(self):
         """Like 3DxWare's panel, show the application used last: tdxd ignores

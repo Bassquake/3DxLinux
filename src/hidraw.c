@@ -35,9 +35,13 @@ static int parse_uevent(const char *path, struct tdx_hid_node *n)
 			n->pid = (uint16_t)pid;
 			got = 1;
 		} else if (!strncmp(line, "HID_PHYS=", 9)) {
+			line[strcspn(line, "\n")] = 0;
 			char *p = strstr(line, "/input");
-			if (p)
+			if (p) {
 				n->iface = atoi(p + 6);
+				*p = 0;
+			}
+			snprintf(n->phys, sizeof n->phys, "%.63s", line + 9);
 		}
 	}
 	fclose(f);
