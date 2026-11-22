@@ -100,6 +100,13 @@ for e in /usr/local/share/applications/tdx-settings.desktop \
 	[ -f "$e" ] && [ ! -L "$e" ] || continue
 	sed -i "s/^Name=3D Mouse Settings (tdxd)\$/Name=3Dconnexion Settings/" "$e" 2>/dev/null || true
 done
+# the LCD Manager window is opened from 3Dconnexion Settings since 0.3.5, not
+# the menu: hide the importer copies of its entry too
+for e in /usr/local/share/applications/tdx-lcdmanager.desktop \
+	$(getent passwd | cut -d: -f6 | sed "s|$|/.local/share/applications/tdx-lcdmanager.desktop|"); do
+	[ -f "$e" ] && [ ! -L "$e" ] || continue
+	grep -q "^NoDisplay=" "$e" || echo NoDisplay=true >> "$e" 2>/dev/null || true
+done
 # a copy of tdxd'"'"'s own rule in /etc (the 0.3.1 workaround, or install.sh) replaces
 # the packaged one of the same name, so later fixes never apply: remove copies of
 # ours (recognised by the header line); rules of anyone else stay

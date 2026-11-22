@@ -9,3 +9,6 @@ Icon=input-mouse
 Terminal=false
 Categories=Settings;HardwareSettings;
 Keywords=3Dconnexion;SpacePilot;LCD;applet;
+# opened from 3Dconnexion Settings (LCD Manager), not the menu; the entry stays
+# for the window's taskbar icon (Wayland: the entry named like the app id)
+NoDisplay=true
