@@ -446,3 +446,9 @@ itself when 1-5 are held past about half a second.
 |---|---|
 | Quit, Start with the Desktop (tray), Start-up tick box (About) | **Pass** with test build `0.3.4+35+g7641329`. Breeze drew the check item's box in a column left of the icons; with `0.3.4+36+g10eb478` (the tick box drawn as the entry's icon) it lines up with them. |
 | Settings panel after Quit | **Pass** with test build `0.3.4+38+g1c78b45`: opening System > 3D Mouse Settings (tdxd) brings back the tray icon and the LCD Manager. |
+
+## 2026-11-22: settings app renamed (Kubuntu 26.04)
+
+| Test | Result |
+|---|---|
+| Menu entry name | **Pass** with test build `0.3.4+40+g46f3d8b`: the System menu shows "3Dconnexion Settings" (was "3D Mouse Settings (tdxd)"), also with the 3DxWare-look importer's copy of the entry in the home folder. |
