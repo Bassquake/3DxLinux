@@ -1021,6 +1021,14 @@ def css_for(assets):
         return "url('file://%s')" % p if p else fallback
 
     css = """
+menu.tdx-more, window.tdx-more-window, window.tdx-more-window decoration {
+  background-color: #ffffff; color: #1e1e1e; }
+menu.tdx-more { border: 1px solid #c8c8c8; padding: 4px 0; }
+menu.tdx-more menuitem { padding: 6px 18px 6px 12px; color: #1e1e1e; }
+menu.tdx-more menuitem label { color: #1e1e1e; }
+menu.tdx-more menuitem:hover { background-color: #e5f3fb; }
+menu.tdx-more menuitem:disabled label { color: #a0a0a0; }
+menu.tdx-more separator { background-color: #dcdcdc; min-height: 1px; margin: 4px 0; }
 window.tdx-frameless, window.tdx-frameless decoration {
   border: none; border-radius: 0; box-shadow: none; margin: 0; padding: 0; }
 .tdx, .tdx label, .tdx button, .tdx entry, .tdx checkbutton, .tdx radiobutton {
@@ -2572,6 +2580,11 @@ class App:
 
     def build_more_menu(self):
         menu = Gtk.Menu()
+        # no column for tick boxes before the icons (GTK keeps one by default),
+        # and 3DxWare's light menu (its icons are black) whatever the desktop theme
+        menu.set_reserve_toggle_size(False)
+        menu.get_style_context().add_class("tdx-more")
+        menu.get_toplevel().get_style_context().add_class("tdx-more-window")
         for entry in self.MORE:
             if entry is None:
                 menu.append(Gtk.SeparatorMenuItem())
@@ -2580,8 +2593,10 @@ class App:
             mi = Gtk.MenuItem()
             box = Gtk.Box(spacing=10)
             img = image_widget(ASSETS.ui(art), 20) if art else None
-            box.pack_start(img or Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR),
-                           False, False, 0)
+            if not img:  # the theme's one-colour icon, in the menu's text colour
+                img = Gtk.Image.new_from_icon_name(icon + "-symbolic", Gtk.IconSize.MENU)
+                img.set_pixel_size(20)
+            box.pack_start(img, False, False, 0)
             box.pack_start(Gtk.Label(label=text, xalign=0), True, True, 0)
             mi.add(box)
             if method:
