@@ -1640,10 +1640,6 @@ class MainPanel(Panel):
             state = "Connect a device"
         if self.mode == "paired":
             self.refresh_conn(cur)
-        # a CadMouse's buttons: not yet (stage 3)
-        mouse3d = self.mode != "paired"
-        self.main_buttons[1].set_sensitive(mouse3d)
-        self.main_buttons[1].set_tooltip_text(None if mouse3d else NOT_YET)
         dpi = mouse_dpi(self.store)
         self.mouse_speed.set_value(min(range(len(MOUSE_DPI_STEPS)),
                                        key=lambda i: abs(MOUSE_DPI_STEPS[i] - dpi)))
@@ -1651,7 +1647,7 @@ class MainPanel(Panel):
         self.state_label.set_text(state)
         if self.state_icon:
             self.state_icon.set_visible(bool(state))
-        if mouse3d:
+        if self.mode != "paired":
             self.speed.set_value(math.log10(max(0.05, self.store.get_float("sensitivity",
                                                                            1.0))))
             self.speed.set_tooltip_text("Speed %sx" % fmt_num(self.store.get_float(
@@ -1839,6 +1835,7 @@ class MouseAdvancedPanel(Panel):
         super().header()
         self.title_btn.set_sensitive(False)  # the device, not a profile chooser
         self.title_btn.set_tooltip_text(None)
+        self.fix.move(self.title_btn, 30, 56)  # no application icon before it
 
     def refresh_header(self):
         self.title_label.set_text(device_name(self.app.current_device()))
@@ -1861,8 +1858,8 @@ class MouseAdvancedPanel(Panel):
             self.rates[hz] = rb
         self.section("Mouse Wheel Speed", 270, 456, 136)
         lines = self.put(Gtk.RadioButton.new_with_label(None, "Lines"), 277, 143)
-        spin = self.put(Gtk.SpinButton.new_with_range(1, 100, 1), 350, 140)
-        spin.set_value(3)
+        spin = self.put(flat_button("3", 64, 25), 348, 139)
+        spin.get_child().set_xalign(0.15)
         page = self.put(Gtk.RadioButton.new_with_label_from_widget(lines,
                                                                    "One page / one screen"),
                         277, 167)
@@ -1897,6 +1894,208 @@ class MouseAdvancedPanel(Panel):
             self.store.base.remove(k)
         self.store.changed()
         self.msg.set_text("Restored")
+
+
+# a CadMouse's buttons (V2DK ids from Base.xml) as 3DxWare's Buttons window
+# lays them out: (id, key-cap image, 3DxWare's default, x of the cap, y)
+MOUSE_BUTTONS = [
+    ("V2DK_RADIALMENU", "SmartUI_V2DKey_RadialMenu", "Common Tools", 31, 182),
+    ("V2DK_WHEEL", "SmartUI_V2DKey_Wheel", "Middle Mouse Function", 31, 216),
+    ("V2DK_MIDDLE", "SmartUI_V2DKey_Middle", "Middle Mouse Function", 31, 250),
+    ("V2DK_FORWARD", "SmartUI_V2DKey_Forward", "Forward Mouse Button", 291, 182),
+    ("V2DK_BACKWARD", "SmartUI_V2DKey_Backward", "Backward Mouse Button", 291, 216),
+]
+# mouse functions: done by the mouse itself (tdxd puts them in its button map)
+MOUSE_FUNCTIONS = [
+    ("BTN_LEFT", "Left Mouse Button", "HIDMouse_Left.png"),
+    ("BTN_RIGHT", "Right Mouse Button", "HIDMouse_Right.png"),
+    ("BTN_MIDDLE", "Middle Mouse Function", "HIDMouse_Middle.png"),
+    ("BTN_EXTRA", "Forward Mouse Button", "HIDMouse_Forward.png"),
+    ("BTN_SIDE", "Backward Mouse Button", "HIDMouse_Backward.png"),
+]
+MOUSE_DEFAULT = {"V2DK_RADIALMENU": None, "V2DK_WHEEL": "BTN_MIDDLE",
+                 "V2DK_MIDDLE": "BTN_MIDDLE", "V2DK_FORWARD": "BTN_EXTRA",
+                 "V2DK_BACKWARD": "BTN_SIDE"}
+MOUSE_PROFILE_KEYS = ["key_" + b[0] for b in MOUSE_BUTTONS] + ["mouse_swap_buttons"]
+
+
+class MouseButtonsPanel(Panel):
+    """3DxWare's Buttons window for a CadMouse. Mouse functions are done by
+    the mouse itself (tdxd sends it the button map); a keystroke button
+    reports apart and tdxd sends the keys. "Application Specific Settings":
+    the shown application's profile gets its own CadMouse buttons; off, it
+    uses the global ones (tdxd.conf)."""
+    title = "Buttons"
+    subtitle = "Buttons"
+    size = (552, 407)
+    header_h = 91
+
+    def build(self):
+        self.photo = self.put(DevicePhoto(self.app, self.app.current_device), 352, 36)
+        self.app_switch = self.put(Gtk.Switch(), 31, 133)
+        self.app_switch.set_can_focus(False)
+        self.app_switch.connect("notify::active", self.guard(self.on_app_specific))
+        self.put(lab("Application Specific Settings", "tdx-section"), 94, 136)
+        self.rows = {}
+        for v2dk, cap, default, x, y in MOUSE_BUTTONS:
+            capw = image_widget(ASSETS.ui(cap)) or drawing(40, 28, draw_keycap,
+                                                           v2dk[5:].title()[:5])
+            self.put(capw, x, y)
+            btn = flat_button(None, 179 if x < 100 else 190)
+            hb = Gtk.Box(spacing=0)
+            icon = Gtk.Box()
+            icon.set_size_request(16, 16)
+            hb.pack_start(icon, False, False, 1)
+            l = lab("")
+            l.set_ellipsize(Pango.EllipsizeMode.END)
+            l.set_margin_start(6)
+            hb.pack_start(l, True, True, 0)
+            arrow = image_widget(ASSETS.ui("SmartUI_Button_Arrow")) or lab("›", "tdx-more")
+            hb.pack_end(arrow, False, False, 4)
+            btn.add(hb)
+            btn.connect("clicked", lambda b, v=v2dk, d=default: self.popup(b, v, d))
+            self.put(btn, x + 51, y)
+            self.rows[v2dk] = (btn, l, icon, default)
+        self.swap = self.put(Gtk.CheckButton(label="Swap Middle / Right Mouse Buttons"), 31, 292)
+        self.swap.connect("toggled", self.guard(
+            lambda b: self.set_value("mouse_swap_buttons", "yes" if b.get_active() else "no")))
+        osd = self.put(Gtk.CheckButton(label="Always show On-Screen Display"), 31, 314)
+        osd.set_sensitive(False)
+        osd.set_tooltip_text("3DxWare's on-screen display: not on Linux")
+        self.close = self.put(flat_button("Close", 94), 426, 362)
+
+    # ---- where the CadMouse buttons are kept
+    def specific(self):
+        """True when the shown profile has its own CadMouse buttons."""
+        p = self.store.profile
+        return bool(p) and any(p.has(k) for k in MOUSE_PROFILE_KEYS)
+
+    def conf(self):
+        return self.store.profile if self.specific() else self.store.base
+
+    def value(self, key):
+        return self.conf().get(key)
+
+    def set_value(self, key, value):
+        f = self.conf()
+        if value is None:
+            f.remove(key)
+        else:
+            f.set(key, value)
+        self.store.changed()
+
+    def on_app_specific(self, sw, _pspec):
+        p = self.store.profile
+        if not p:
+            return
+        if sw.get_active():  # start from the global buttons
+            for k in MOUSE_PROFILE_KEYS:
+                v = self.store.base.get(k)
+                p.set(k, v if v is not None else
+                      ("no" if k == "mouse_swap_buttons" else "none"))
+        else:
+            for k in MOUSE_PROFILE_KEYS:
+                p.remove(k)
+        self.store.changed()
+
+    def refresh_header(self):
+        super().refresh_header()
+        if self.store.profile and not self.specific():
+            self.title_label.set_text(self.title_label.get_text() + " - Global Settings")
+
+    # ---- the buttons
+    def binding(self, v2dk):
+        """('default', None) | ('mouse', BTN_*) | ('keys', [names])"""
+        v = self.value("key_" + v2dk)
+        names = chord_names(v)
+        if not names:
+            return "default", None
+        if len(names) == 1 and names[0].startswith("BTN_"):
+            return "mouse", names[0]
+        return "keys", names
+
+    def describe(self, v2dk, default):
+        kind, val = self.binding(v2dk)
+        if kind == "default":
+            val = MOUSE_DEFAULT[v2dk]
+            if val is None:
+                return default, ASSETS.icon("HIDMouse_RadialMenu.png"), \
+                    "3DxWare's radial menu: does nothing on Linux. Give it a keystroke " \
+                    "or a mouse function."
+            kind = "mouse"
+        if kind == "mouse":
+            for code, label, icon in MOUSE_FUNCTIONS:
+                if code == val:
+                    return label, ASSETS.icon(icon), None
+            return val, None, None
+        preset = next((n for n, p in KEY_PRESETS if p and chord_names(p) == val), None)
+        return preset or pretty_chord(val), ASSETS.icon("Keyboard.png"), None
+
+    def refresh(self):
+        self.updating = True
+        self.refresh_header()
+        self.photo.update()
+        self.app_switch.set_active(self.specific())
+        self.app_switch.set_sensitive(self.store.profile is not None)
+        self.app_switch.set_tooltip_text(
+            None if self.store.profile else
+            "Choose an application in the title to give it its own buttons")
+        for v2dk, (btn, l, slot, default) in self.rows.items():
+            text, icon, tip = self.describe(v2dk, default)
+            l.set_text(text)
+            btn.set_tooltip_text(tip)
+            for c in slot.get_children():
+                slot.remove(c)
+            img = image_widget(icon, 16)
+            if img:
+                slot.add(img)
+                img.show()
+        self.swap.set_active(parse_bool(self.value("mouse_swap_buttons") or "no"))
+        self.updating = False
+
+    def popup(self, widget, v2dk, default):
+        menu = Gtk.Menu()
+
+        def add(m, label, cb):
+            mi = Gtk.MenuItem(label=label)
+            mi.connect("activate", lambda *_: cb())
+            m.append(mi)
+
+        dflt = MOUSE_DEFAULT[v2dk]
+        dname = default if dflt is None else \
+            next(l for c, l, _i in MOUSE_FUNCTIONS if c == dflt)
+        add(menu, "%s (default)" % dname, lambda: self.assign(v2dk, None))
+        menu.append(Gtk.SeparatorMenuItem())
+        for code, label, _icon in MOUSE_FUNCTIONS:
+            add(menu, label, lambda c=code: self.assign(v2dk, c))
+        menu.append(Gtk.SeparatorMenuItem())
+        kb = Gtk.Menu()
+        for label, chord in KEY_PRESETS:
+            if label is None:
+                kb.append(Gtk.SeparatorMenuItem())
+                continue
+            add(kb, "%s  (%s)" % (label, pretty_chord(chord_names(chord))),
+                lambda c=chord: self.assign(v2dk, chord_value(chord_names(c))))
+        mi = Gtk.MenuItem(label="Keyboard")
+        mi.set_submenu(kb)
+        menu.append(mi)
+        add(menu, "Custom keystroke…", lambda: self.capture(v2dk, default))
+        menu.show_all()
+        menu.popup_at_widget(widget, Gdk.Gravity.NORTH_EAST, Gdk.Gravity.NORTH_WEST, None)
+
+    def capture(self, v2dk, default):
+        dlg = KeyCaptureDialog(self.box.get_toplevel(), default)
+        if dlg.run() == Gtk.ResponseType.OK and dlg.keys:
+            self.assign(v2dk, chord_value(dlg.keys))
+        dlg.destroy()
+
+    def assign(self, v2dk, value):
+        """@value: a BTN_* mouse function, a chord, or None for the default."""
+        key = "key_" + v2dk
+        if value is None and self.specific():
+            # a profile's own default: "none" keeps it from falling back to the global one
+            value = "none"
+        self.set_value(key, value)
 
 
 class KeyCaptureDialog(Gtk.Dialog):
@@ -2843,6 +3042,10 @@ class App:
         self.window(MouseAdvancedPanel if dev and dev["kind"] == "paired" else AdvancedPanel)
 
     def show_buttons(self):
+        dev = self.current_device()
+        if dev and dev["kind"] == "paired":
+            self.window(MouseButtonsPanel)
+            return
         self.window(ButtonsPanel)
 
     def show_lcd(self):

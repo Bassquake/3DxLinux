@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <linux/hidraw.h>
+#include <linux/input-event-codes.h>
 
 #include "config.h"
 #include "gfx.h"
@@ -97,6 +98,9 @@ struct rcv_ctx {
 	uint8_t cfg_sent[TDX_RCV_MOUSE_CONFIG_LEN]; /* CadMouse configuration last sent */
 	int cfg_valid;            /* ... and accepted */
 	long long cfg_fail_ms;    /* last failed send, to retry no sooner than 10 s */
+	struct tdx_uinput ui;     /* keyboard for its keystroke buttons */
+	int ui_tried;
+	uint8_t buttons;          /* report 0x03 bits last seen */
 };
 static struct rcv_ctx rcvs[MAX_RCV];
 static int nrcv;
@@ -520,7 +524,35 @@ static void rcv_close(struct rcv_ctx *r)
 	LOG(0, "device removed: %s (%s)\n", r->node.def->name, r->node.devnode);
 	if (r->fd >= 0)
 		close(r->fd);
+	tdx_uinput_close(&r->ui);
 	*r = rcvs[--nrcv];
+}
+
+/* The keyboard device for a CadMouse's keystroke buttons (every key any
+ * profile binds, and the whole keyboard), opened as soon as it has such a
+ * button, before it is pressed: a desktop may miss the first key of a new
+ * device. */
+static void rcv_open_keys(struct rcv_ctx *r)
+{
+	if (r->ui.kfd >= 0 || r->ui_tried || !cfg.enable_uinput)
+		return;
+	r->ui_tried = 1;
+	struct tdx_config *u = malloc(sizeof *u);
+	if (!u)
+		return;
+	*u = cfg;
+	u->nkeymap = 0;
+	for (int k = 0; k < nkey_union; k += 3) {
+		struct tdx_keymap *m = &u->keymap[u->nkeymap++];
+		memset(m, 0, sizeof *m);
+		for (int j = 0; j < 3 && k + j < nkey_union; j++)
+			m->keys[j] = key_union[k + j];
+	}
+	if (u->nkeymap < TDX_MAX_KEYMAP) /* at least one key, or no device at all */
+		u->keymap[u->nkeymap++] = (struct tdx_keymap){.keys = {KEY_ESC}};
+	if (tdx_uinput_open_keys(&r->ui, tdx_device_lookup(r->node.vid, r->slot.pid), u))
+		LOG(0, "%s: no keyboard device for its buttons\n", rcv_dev_name(r));
+	free(u);
 }
 
 /* Send a paired CadMouse its configuration (receiver.h) while it is awake:
@@ -531,8 +563,14 @@ static void rcv_mouse_config(struct rcv_ctx *r, long long gap_ms)
 {
 	if (r->slot.cls != TDX_RCV_2DMOUSE)
 		return;
-	uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN];
-	tdx_rcv_mouse_config(rep, cfg.mouse_dpi, cfg.mouse_polling_rate, cfg.mouse_smart_scrolling);
+	uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], map[7];
+	const struct tdx_device_def *def = tdx_device_lookup(r->node.vid, r->slot.pid);
+	unsigned reports = tdx_rcv_mouse_map(&cfg, def, map);
+	for (int i = 0; i < 7; i++)
+		if ((reports & (1u << i)) && tdx_rcv_mouse_binding(&cfg, def, i))
+			rcv_open_keys(r); /* a keystroke button */
+	tdx_rcv_mouse_config(rep, cfg.mouse_dpi, cfg.mouse_polling_rate, cfg.mouse_smart_scrolling,
+			     map);
 	if (r->cfg_valid && !memcmp(rep, r->cfg_sent, sizeof rep) && gap_ms < 30000)
 		return;
 	if (r->cfg_fail_ms && now_ms() - r->cfg_fail_ms < 10000)
@@ -546,8 +584,31 @@ static void rcv_mouse_config(struct rcv_ctx *r, long long gap_ms)
 	memcpy(r->cfg_sent, rep, sizeof rep);
 	r->cfg_valid = 1;
 	r->cfg_fail_ms = 0;
-	LOG(1, "%s: settings sent: %d dpi, %d Hz, Smart Scrolling %s\n", rcv_dev_name(r),
-	    cfg.mouse_dpi, cfg.mouse_polling_rate, cfg.mouse_smart_scrolling ? "on" : "off");
+	LOG(1, "%s: settings sent: %d dpi, %d Hz, Smart Scrolling %s, buttons %d %d %d %d %d %d %d\n",
+	    rcv_dev_name(r), cfg.mouse_dpi, cfg.mouse_polling_rate,
+	    cfg.mouse_smart_scrolling ? "on" : "off", map[0], map[1], map[2], map[3], map[4],
+	    map[5], map[6]);
+}
+
+/* A CadMouse button that reports in 0x03 (its binding is keystrokes):
+ * the keys, through a keyboard-only uinput device opened when first needed. */
+static void rcv_mouse_buttons(struct rcv_ctx *r, uint8_t bits)
+{
+	const struct tdx_device_def *def = tdx_device_lookup(r->node.vid, r->slot.pid);
+	uint8_t changed = bits ^ r->buttons;
+	r->buttons = bits;
+	for (int i = 0; i < 7 && changed; i++) {
+		if (!(changed & (1u << i)))
+			continue;
+		int p = (bits >> i) & 1;
+		const struct tdx_keymap *km = tdx_rcv_mouse_binding(&cfg, def, i);
+		LOG(2, "%s: button %d (%s) %s\n", rcv_dev_name(r), i + 1,
+		    def && i < def->nbuttons ? def->buttons[i].v3dk : "-", p ? "down" : "up");
+		if (!km || (km->keys[0] >= BTN_MISC && km->keys[0] < KEY_OK))
+			continue; /* nothing (the radial menu), or a mouse function */
+		rcv_open_keys(r);
+		tdx_uinput_keys(&r->ui, km, p);
+	}
 }
 
 static void rcv_read(struct rcv_ctx *r)
@@ -568,8 +629,8 @@ static void rcv_read(struct rcv_ctx *r)
 		long long gap = r->seen_ms ? now_ms() - r->seen_ms : 1LL << 40;
 		r->seen_ms = now_ms();
 		rcv_mouse_config(r, gap);
-		if (r->fd < 0)
-			return;
+		if (buf[0] == 0x03 && n >= 2 && r->slot.cls == TDX_RCV_2DMOUSE)
+			rcv_mouse_buttons(r, buf[1]);
 		int lvl, chg;
 		if (tdx_rcv_parse_battery(buf, (size_t)n, &lvl, &chg)) {
 			if (lvl != r->battery || chg != r->charging)
@@ -816,6 +877,11 @@ static void refresh_devices(void)
 		lcd_intensity_apply(&devs[i]);
 		lcd_redraw(&devs[i]);
 	}
+	/* a CadMouse's settings and buttons (the profile's): now, if it is awake;
+	 * else when it is next heard from */
+	for (int i = 0; i < nrcv; i++)
+		if (rcvs[i].seen_ms && now_ms() - rcvs[i].seen_ms < 5000)
+			rcv_mouse_config(&rcvs[i], 0);
 	lcdcfg_write();
 }
 
@@ -1037,6 +1103,7 @@ static void rescan(void)
 				memset(r, 0, sizeof *r);
 				r->node = nodes[i];
 				r->fd = fd;
+				r->ui.fd = r->ui.kfd = -1;
 				r->battery = -1;
 				int seen = 0;
 				for (int j = 0; j < nrcv - 1; j++)
@@ -1245,10 +1312,11 @@ int main(int argc, char **argv)
 				if (cfg.enable_uinput)
 					uinput_open_dev(&devs[i]);
 			}
+			for (int i = 0; i < nrcv; i++) { /* key bindings may have changed */
+				tdx_uinput_close(&rcvs[i].ui);
+				rcvs[i].ui_tried = 0;
+			}
 			refresh_devices();
-			for (int i = 0; i < nrcv; i++) /* new mouse settings: now, if it is awake */
-				if (rcvs[i].seen_ms && now_ms() - rcvs[i].seen_ms < 5000)
-					rcv_mouse_config(&rcvs[i], 0);
 			bmp_watch_setup();
 			bmp_send_pending();
 		}

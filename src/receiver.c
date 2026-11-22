@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
+#include <linux/input-event-codes.h>
 
 static const struct {
 	uint16_t code, pid;
@@ -49,9 +51,56 @@ int tdx_rcv_parse_slot(const uint8_t *buf, size_t n, struct tdx_rcv_slot *out)
 	return 1;
 }
 
-void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int rate_hz, int smart)
+const struct tdx_keymap *tdx_rcv_mouse_binding(const struct tdx_config *cfg,
+					       const struct tdx_device_def *dev, int idx)
 {
-	static const uint8_t buttons[7] = {10, 11, 12, 12, 14, 13, 47};
+	if (!dev || idx >= dev->nbuttons || !dev->buttons[idx].v3dk)
+		return NULL;
+	for (int i = 0; i < cfg->nkeymap; i++)
+		if (!strcasecmp(cfg->keymap[i].v3dk, dev->buttons[idx].v3dk))
+			return cfg->keymap[i].keys[0] ? &cfg->keymap[i] : NULL;
+	return NULL;
+}
+
+static int mouse_fn(int code)
+{
+	switch (code) {
+	case BTN_LEFT: return 1;
+	case BTN_RIGHT: return 2;
+	case BTN_MIDDLE: return 3;
+	case BTN_SIDE: return 4;  /* back */
+	case BTN_EXTRA: return 5; /* forward */
+	}
+	return 0;
+}
+
+unsigned tdx_rcv_mouse_map(const struct tdx_config *cfg, const struct tdx_device_def *dev,
+			   uint8_t map[7])
+{
+	/* 3DxWare's defaults: left, right, middle, wheel = middle, forward, back,
+	 * radial menu (reports) */
+	static const int def[7] = {1, 2, 3, 3, 5, 4, 0};
+	unsigned vendor = 0;
+	for (int i = 0; i < 7; i++) {
+		int fn = def[i];
+		const struct tdx_keymap *km = i >= 2 ? tdx_rcv_mouse_binding(cfg, dev, i) : NULL;
+		if (km)
+			fn = !km->keys[1] ? mouse_fn(km->keys[0]) : 0;
+		map[i] = (uint8_t)(fn ? 9 + fn : 40 + i + 1);
+		if (!fn)
+			vendor |= 1u << i;
+	}
+	if (cfg->mouse_swap_buttons) { /* as 3DxWare: right and middle trade places */
+		uint8_t t = map[1];
+		map[1] = map[2];
+		map[2] = t;
+	}
+	return vendor;
+}
+
+void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int rate_hz, int smart,
+			  const uint8_t map[7])
+{
 	uint8_t *b = rep + 1;
 	memset(rep, 0, TDX_RCV_MOUSE_CONFIG_LEN);
 	rep[0] = TDX_RCV_REPORT_MOUSE_CONFIG;
@@ -63,7 +112,7 @@ void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int ra
 		b[3] = 0x01;
 		b[4] = 0xFF;
 	}
-	memcpy(b + 18, buttons, sizeof buttons);
+	memcpy(b + 18, map, 7);
 	b[26] = 0x1E;
 	b[30] = rate_hz > 500 ? 1 : rate_hz > 250 ? 2 : rate_hz > 125 ? 4 : 8;
 }

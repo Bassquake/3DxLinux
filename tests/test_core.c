@@ -1299,16 +1299,41 @@ static void test_receiver(void)
 		0x10, 0x00, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x0a, 0x0b, 0x0c, 0x0c, 0x0e, 0x0d, 0x2f, 0x00, 0x1e, 0x00, 0x00,
 		0x00, 0x01};
-	tdx_rcv_mouse_config(rep, 1400, 1000, 1);
-	CHECK(!memcmp(rep, def, sizeof def));
-	tdx_rcv_mouse_config(rep, 7200, 125, 0);
-	CHECK(rep[2] == 144 && rep[31] == 8 && rep[4] == 0x01 && rep[5] == 0xff && rep[7] == 0);
-	tdx_rcv_mouse_config(rep, 200, 500, 1);
-	CHECK(rep[2] == 4 && rep[31] == 2);
-	tdx_rcv_mouse_config(rep, 1000, 250, 1);
-	CHECK(rep[2] == 20 && rep[31] == 4);
 	struct tdx_config mc;
 	tdx_config_defaults(&mc);
+	const struct tdx_device_def *cmw = tdx_device_lookup(0x256F, 0xC658);
+	uint8_t map[7];
+	CHECK(tdx_rcv_mouse_map(&mc, cmw, map) == 0x40); /* only the radial menu reports */
+	tdx_rcv_mouse_config(rep, 1400, 1000, 1, map);
+	CHECK(!memcmp(rep, def, sizeof def));
+	mc.mouse_swap_buttons = 1; /* 3DxWare's Swap Middle / Right: 10 12 11 ... */
+	tdx_rcv_mouse_map(&mc, cmw, map);
+	CHECK(map[0] == 10 && map[1] == 12 && map[2] == 11 && map[3] == 12);
+	mc.mouse_swap_buttons = 0;
+	{
+		char p[] = "/tmp/tdx-test-cm.conf";
+		FILE *f = fopen(p, "w");
+		fputs("key_V2DK_FORWARD = KEY_LEFTCTRL + KEY_Z\nkey_V2DK_RADIALMENU = BTN_MIDDLE\n"
+		      "key_V2DK_WHEEL = BTN_SIDE\nkey_BUTTON_6 = KEY_A\nkey_V2DK_LEFT = KEY_B\n", f);
+		fclose(f);
+		CHECK(tdx_config_load(&mc, p) == 0);
+		unlink(p);
+	}
+	unsigned vend = tdx_rcv_mouse_map(&mc, cmw, map);
+	/* forward -> keys (reports, 45), radial -> middle (12), wheel -> back (13),
+	 * button 6 keeps back: BUTTON_6 is not a CadMouse binding; left stays left */
+	CHECK(vend == 0x10 && map[4] == 45 && map[6] == 12 && map[3] == 13 && map[5] == 13 &&
+	      map[0] == 10);
+	CHECK(tdx_rcv_mouse_binding(&mc, cmw, 4) && tdx_rcv_mouse_binding(&mc, cmw, 4)->keys[1]);
+	CHECK(tdx_rcv_mouse_binding(&mc, cmw, 5) == NULL);
+	tdx_config_defaults(&mc);
+	tdx_rcv_mouse_map(&mc, cmw, map);
+	tdx_rcv_mouse_config(rep, 7200, 125, 0, map);
+	CHECK(rep[2] == 144 && rep[31] == 8 && rep[4] == 0x01 && rep[5] == 0xff && rep[7] == 0);
+	tdx_rcv_mouse_config(rep, 200, 500, 1, map);
+	CHECK(rep[2] == 4 && rep[31] == 2);
+	tdx_rcv_mouse_config(rep, 1000, 250, 1, map);
+	CHECK(rep[2] == 20 && rep[31] == 4);
 	CHECK(mc.mouse_dpi == 1400 && mc.mouse_polling_rate == 1000 && mc.mouse_smart_scrolling);
 	const struct tdx_device_def *cm = tdx_device_lookup(0x256F, 0xC658);
 	CHECK(cm && !strcmp(cm->name, "CadMouse Compact Wireless"));

@@ -348,9 +348,9 @@ def gui_tests(d, tdxd):
           main.name_btn_label.get_text() == "CadMouse Compact Wireless", "CadMouse page")
     check(main.photo.key == ("256f", "c658") and main.conn_box.get_visible() and
           not main.state_wrap.get_visible() and not main.lcd_button.get_visible() and
-          main.main_buttons[1].get_visible() and not main.main_buttons[1].get_sensitive() and
+          main.main_buttons[1].get_visible() and main.main_buttons[1].get_sensitive() and
           not main.speed.get_visible() and main.mouse_speed.get_visible() and
-          main.main_buttons[0].get_sensitive(), "CadMouse: icons, its own Speed, Buttons not yet")
+          main.main_buttons[0].get_sensitive(), "CadMouse: icons, its own Speed, Buttons")
     check(ts.MOUSE_DPI_STEPS[int(main.mouse_speed.get_value())] == 1400, "Speed: 1400 dpi default")
     main.mouse_speed.set_value(ts.MOUSE_DPI_STEPS.index(7200))
     check(app.store.base.get("mouse_dpi") == "7200", "CadMouse Speed -> mouse_dpi in tdxd.conf")
@@ -372,6 +372,41 @@ def gui_tests(d, tdxd):
           and madv.smart.get_active() and app.store.base.get("mouse_dpi") == "400",
           "CadMouse Restore Defaults (Speed stays: it is the main page's)")
     app.panels.remove(madv)
+    # ---- CadMouse Buttons
+    mbtn = ts.MouseButtonsPanel(app)
+    check(mbtn.rows["V2DK_RADIALMENU"][1].get_text() == "Common Tools" and
+          mbtn.rows["V2DK_FORWARD"][1].get_text() == "Forward Mouse Button" and
+          mbtn.rows["V2DK_WHEEL"][1].get_text() == "Middle Mouse Function" and
+          not mbtn.app_switch.get_sensitive(), "CadMouse Buttons: 3DxWare's defaults")
+    mbtn.assign("V2DK_FORWARD", "KEY_LEFTCTRL+KEY_Z")
+    mbtn.assign("V2DK_RADIALMENU", "BTN_MIDDLE")
+    check(app.store.base.get("key_V2DK_FORWARD") == "KEY_LEFTCTRL+KEY_Z" and
+          app.store.base.get("key_V2DK_RADIALMENU") == "BTN_MIDDLE" and
+          mbtn.rows["V2DK_FORWARD"][1].get_text() == "Undo" and
+          mbtn.rows["V2DK_RADIALMENU"][1].get_text() == "Middle Mouse Function",
+          "CadMouse Buttons: a keystroke and a mouse function (global)")
+    mbtn.swap.set_active(True)
+    check(app.store.base.get("mouse_swap_buttons") == "yes", "Swap Middle / Right")
+    app.store.select("blender")
+    mbtn.refresh()
+    check(mbtn.app_switch.get_sensitive() and not mbtn.app_switch.get_active() and
+          mbtn.title_label.get_text().endswith(" - Global Settings") and
+          mbtn.rows["V2DK_FORWARD"][1].get_text() == "Undo", "Blender: the global buttons")
+    mbtn.app_switch.set_active(True)
+    mbtn.assign("V2DK_FORWARD", None)
+    check(app.store.profile.get("key_V2DK_FORWARD") == "none" and
+          app.store.profile.get("key_V2DK_RADIALMENU") == "BTN_MIDDLE" and
+          app.store.base.get("key_V2DK_FORWARD") == "KEY_LEFTCTRL+KEY_Z" and
+          mbtn.rows["V2DK_FORWARD"][1].get_text() == "Forward Mouse Button",
+          "Application Specific: Blender's own buttons start from the global ones")
+    mbtn.app_switch.set_active(False)
+    check(not any(app.store.profile.has(k) for k in ts.MOUSE_PROFILE_KEYS),
+          "Application Specific off: back to the global buttons")
+    app.store.select(None)
+    for k in ts.MOUSE_PROFILE_KEYS:
+        app.store.base.remove(k)
+    app.store.changed()
+    app.panels.remove(mbtn)
     check(ts.battery_icon(52, False) == "SmartUI_Battery_50" and
           ts.battery_icon(None, False) == "SmartUI_Battery_Unknown" and
           ts.battery_icon(100, False) == "SmartUI_Battery_100" and

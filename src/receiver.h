@@ -18,6 +18,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "config.h"
+#include "devices.h"
+
 #define TDX_RCV_SLOTS 5
 #define TDX_RCV_REPORT_SELF 0x42
 #define TDX_RCV_REPORT_SLOT0 0x43
@@ -50,11 +53,30 @@ int tdx_rcv_parse_slot(const uint8_t *buf, size_t n, struct tdx_rcv_slot *out);
  * on); [3..6] wheel mode (01 ff 00 00 normal, 00 00 00 01 Smart Scrolling,
  * 3DxWare's "inertial wheel emulation"); [18..24] the button map for buttons
  * 1..7 (3DxWare's default 10 11 12 12 14 13 47; 3DxWare's "Swap Middle /
- * Right" sends 10 12 11 ...); [26] 0x1e; [30] the update-rate divider (1, 2,
+ * Right" sends 10 12 11 ...: see tdx_rcv_mouse_map); [26] 0x1e; [30] the
+ * update-rate divider (1, 2,
  * 4, 8 = 1000, 500, 250, 125 Hz). The values match 3DxWare's own log for a
  * CadMouse Compact Wireless, and the mouse takes the block (its DPI changes;
  * 2026-11-22). Writes @rep (report id first). */
-void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int rate_hz, int smart);
+void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int rate_hz, int smart,
+			  const uint8_t map[7]);
+
+/* The button map: 9 + n makes a button mouse button n (1 left, 2 right,
+ * 3 middle, 4 back, 5 forward), done by the mouse itself; 40 + its own number
+ * makes it report in input report 0x03 instead (bit = button - 1), which
+ * moves nothing: 3DxWare's "sent only to 3DxService", tdxd's keystrokes.
+ * From the bindings of @dev's V2DK buttons in @cfg: key_V2DK_FORWARD =
+ * BTN_EXTRA (a mouse function), = KEY_... (keystrokes); unbound, 3DxWare's
+ * default (the radial-menu button reports and does nothing on Linux). Left
+ * and right are not remapped, as in 3DxWare. Returns the bitmask of buttons
+ * that report in 0x03 (for the keystrokes). */
+unsigned tdx_rcv_mouse_map(const struct tdx_config *cfg, const struct tdx_device_def *dev,
+			   uint8_t map[7]);
+
+/* @dev's binding for button @idx, by its V2DK name only (not BUTTON_n), or
+ * NULL when it has none. */
+const struct tdx_keymap *tdx_rcv_mouse_binding(const struct tdx_config *cfg,
+					       const struct tdx_device_def *dev, int idx);
 
 /* Parse an input report. Returns 1 if it is the battery report, with the
  * level (-1 when the device does not know) and the charging flag. */

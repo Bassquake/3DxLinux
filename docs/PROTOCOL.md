@@ -757,7 +757,17 @@ that device's collections.
   | 26 | 0x1e |
   | 30 | update-rate divider: 1, 2, 4, 8 = 1000, 500, 250, 125 Hz (Polling Rate) |
 
-  Every other byte is 0. 3DxWare resends the whole block on every change. The
+  Every other byte is 0. 3DxWare resends the whole block on every change.
+
+  The button map: **9 + n** makes a button mouse button n (1 left, 2 right,
+  3 middle, 4 back, 5 forward); the mouse does it itself ("sent to system
+  for HIDMouse_Middle" in 3DxWare's log). **40 + its own number** makes it
+  report in input report 0x03 instead (one bit per button, bit 0 = button 1)
+  and move nothing ("sent only to 3DxService": the radial menu, keystrokes).
+  Checked by sending 45 for Forward: it then arrived as `03 10`, while Back
+  (13) stayed the mouse's own Back. `tdxd` builds the map from the
+  `key_V2DK_*` bindings and sends the keys of 0x03 buttons through a uinput
+  keyboard. The
   values come from 3DxWare's own log (`<LogLevel>1005</LogLevel>` in the user's
   `Cfg\Global.xml`; the `SBHID_SendPIDConfig_2DMouse` lines). The Speed steps
   are `HIDDev.dll`'s table for the CadMouse family (c651–c658, c65e). Pointer

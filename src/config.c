@@ -33,6 +33,7 @@ void tdx_config_defaults(struct tdx_config *c)
 	c->mouse_dpi = 1400;
 	c->mouse_polling_rate = 1000;
 	c->mouse_smart_scrolling = 1;
+	c->mouse_swap_buttons = 0;
 	for (int i = 0; i < TDX_MAX_LABELS; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
 	c->lcd_slide_step = 80; /* px per 25 ms step: a 1280 px slide takes 0.4 s */
@@ -93,6 +94,9 @@ static const struct { const char *name; int code; } keytab[] = {
 	K(KEY_COPY), K(KEY_PASTE), K(KEY_CUT), K(KEY_FIND),
 	K(KEY_CAPSLOCK), K(KEY_NUMLOCK), K(KEY_SCROLLLOCK), K(KEY_SYSRQ), K(KEY_102ND),
 	K(KEY_COMPOSE), K(KEY_KPEQUAL), K(KEY_KPCOMMA),
+	/* mouse buttons: a CadMouse button's mouse function (receiver.h); after the
+	 * keys, so "LEFT" still means KEY_LEFT */
+	K(BTN_LEFT), K(BTN_RIGHT), K(BTN_MIDDLE), K(BTN_SIDE), K(BTN_EXTRA),
 };
 #undef K
 
@@ -282,6 +286,7 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			int r = atoi(v);
 			c->mouse_polling_rate = r >= 1000 ? 1000 : r >= 500 ? 500 : r >= 250 ? 250 : 125;
 		} else if (!strcmp(k, "mouse_smart_scrolling")) c->mouse_smart_scrolling = parse_bool(v);
+		else if (!strcmp(k, "mouse_swap_buttons")) c->mouse_swap_buttons = parse_bool(v);
 		else if (!strcmp(k, "calibrate_button")) snprintf(c->calibrate_button, sizeof c->calibrate_button, "%s", v);
 		else if (!strcmp(k, "profile_dir")) snprintf(c->profile_dir, sizeof c->profile_dir, "%s", v);
 		else if (!strcmp(k, "control_socket")) snprintf(c->control_socket, sizeof c->control_socket, "%s", v);

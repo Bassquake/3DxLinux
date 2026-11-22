@@ -50,7 +50,10 @@ static int open_keyboard(const struct tdx_device_def *dev, const struct tdx_conf
 	ioctl(fd, UI_SET_EVBIT, EV_SYN);
 	for (int i = 0; i < cfg->nkeymap; i++)
 		for (int k = 0; k < TDX_MAX_KEYS && cfg->keymap[i].keys[k]; k++)
-			ioctl(fd, UI_SET_KEYBIT, cfg->keymap[i].keys[k]);
+			if (cfg->keymap[i].keys[k] < BTN_MISC || cfg->keymap[i].keys[k] >= KEY_OK)
+				ioctl(fd, UI_SET_KEYBIT, cfg->keymap[i].keys[k]); /* not BTN_*:
+				 * a CadMouse's mouse functions stay in the mouse, and a
+				 * BTN_LEFT here would make the keyboard look like a pointer */
 	/* and the whole keyboard (Esc .. F24), so any profile, including the
 	 * imported 3DxWare ones, can send its keys without a new device; not the
 	 * power keys (116, 142, 143), so the desktop doesn't take it for a power button */
@@ -170,6 +173,15 @@ void tdx_uinput_keys(struct tdx_uinput *u, const struct tdx_keymap *km, int pres
 			emit(fd, EV_KEY, keys[k], 0);
 	}
 	emit(fd, EV_SYN, SYN_REPORT, 0);
+}
+
+int tdx_uinput_open_keys(struct tdx_uinput *u, const struct tdx_device_def *dev,
+			 const struct tdx_config *cfg)
+{
+	u->fd = -1;
+	u->nbuttons = 0;
+	u->kfd = open_keyboard(dev, cfg);
+	return u->kfd < 0 ? -1 : 0;
 }
 
 void tdx_uinput_close(struct tdx_uinput *u)

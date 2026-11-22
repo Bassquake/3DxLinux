@@ -20,6 +20,9 @@ int tdx_uinput_open(struct tdx_uinput *u, const struct tdx_device_def *dev,
 void tdx_uinput_axes(struct tdx_uinput *u, const int axes[6]);
 void tdx_uinput_button(struct tdx_uinput *u, int idx, int pressed);
 void tdx_uinput_keys(struct tdx_uinput *u, const struct tdx_keymap *km, int pressed);
+/* Only the keyboard device (a CadMouse's keystroke buttons); fd stays -1. */
+int tdx_uinput_open_keys(struct tdx_uinput *u, const struct tdx_device_def *dev,
+			 const struct tdx_config *cfg);
 void tdx_uinput_close(struct tdx_uinput *u);
 
 /* ---- spacenavd v0 protocol server ---- */

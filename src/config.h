@@ -98,6 +98,7 @@ struct tdx_config {
 	int mouse_dpi;
 	int mouse_polling_rate;
 	int mouse_smart_scrolling;
+	int mouse_swap_buttons;   /* "Swap Middle / Right Mouse Buttons" (per profile) */
 	char calibrate_button[32];    /* V3DK id that re-zeroes the device */
 	/* per-application profiles */
 	char profile_dir[256];        /* directory of <name>.conf overlays */
