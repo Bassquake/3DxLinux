@@ -36,7 +36,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 APP_VERSION = "dev"  # set by make install / make dist
-PROJECT_URL = "https://github.com/Bassquake/SpacePilot-Pro-Linux"
+PROJECT_URL = "https://github.com/Bassquake/3DxLinux"
 
 AXES = ["tx", "ty", "tz", "rx", "ry", "rz"]
 # HID axis order and names from 3DxWare's Base.xml axis master list

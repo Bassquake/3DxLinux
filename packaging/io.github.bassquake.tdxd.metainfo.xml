@@ -29,8 +29,8 @@
     </p>
   </description>
   <launchable type="desktop-id">tdx-settings.desktop</launchable>
-  <url type="homepage">https://github.com/Bassquake/SpacePilot-Pro-Linux</url>
-  <url type="bugtracker">https://github.com/Bassquake/SpacePilot-Pro-Linux/issues</url>
+  <url type="homepage">https://github.com/Bassquake/3DxLinux</url>
+  <url type="bugtracker">https://github.com/Bassquake/3DxLinux/issues</url>
   <categories>
     <category>Settings</category>
     <category>HardwareSettings</category>

@@ -17,7 +17,7 @@ x86_64) DEB_ARCH=amd64; RPM_ARCH=x86_64; TRIPLET=x86_64-linux-gnu ;;
 arm64)  DEB_ARCH=arm64; RPM_ARCH=aarch64; TRIPLET=aarch64-linux-gnu ;;
 *) echo "unknown ARCH $ARCH" >&2; exit 1 ;;
 esac
-HOMEPAGE=https://github.com/Bassquake/SpacePilot-Pro-Linux
+HOMEPAGE=https://github.com/Bassquake/3DxLinux
 SUMMARY="3Dconnexion driver: SpacePilot PRO, SpaceMouse, LCD Manager and applets"
 DESC="tdxd drives 3Dconnexion 3D mice (SpacePilot PRO, SpaceMouse Enterprise,
 SpaceMouse Pro/Wireless, Giotto, ...) on Linux: motion and buttons for

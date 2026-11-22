@@ -38,7 +38,7 @@ sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
 import tdxlcd  # noqa: E402
 
 APP_VERSION = "dev"  # set by make install / make dist
-DOCS_URL = "https://github.com/Bassquake/SpacePilot-Pro-Linux/blob/main/docs/LCD_MANAGER.md"
+DOCS_URL = "https://github.com/Bassquake/3DxLinux/blob/main/docs/LCD_MANAGER.md"
 W, H = 804, 736          # client area of LCDMon's window in the reference screenshots
 SIDE_W = 117
 PANEL = (150, 22, 598, 684)   # x, y, w, h of the white page
