@@ -2048,7 +2048,7 @@ class LcdPanel(Panel):
 
 class AboutPanel(Panel):
     title = "About 3DxWare"
-    size = (450, 640)
+    size = (450, 720)
     header_h = 89
 
     def header(self):  # plain title, like "About 3DxWare"
@@ -2060,30 +2060,31 @@ class AboutPanel(Panel):
     def build(self):
         self.section("Software Versions", 33, 420, 136)
         self.ver = [self.put(lab("", markup=True), 34, y) for y in (145, 163)]
-        self.section("Configuration", 33, 420, 205)
-        self.cfg = [self.put(lab("", "tdx-dim"), 34, y) for y in (214, 232, 250)]
+        # 20 px more above each section than before, for air between them
+        self.section("Configuration", 33, 420, 225)
+        self.cfg = [self.put(lab("", "tdx-dim"), 34, y) for y in (234, 252, 270)]
         link = Gtk.LinkButton.new_with_label(PROJECT_URL, "tdxd project page")
         link.get_style_context().add_class("tdx-link")
-        self.put(link, 31, 272)
-        self.section("3DxWare Look", 33, 420, 313)
-        self.look = self.put(lab("", "tdx-dim"), 34, 322)
+        self.put(link, 31, 292)
+        self.section("3DxWare Look", 33, 420, 353)
+        self.look = self.put(lab("", "tdx-dim"), 34, 362)
         self.look.set_line_wrap(True)
         self.look.set_max_width_chars(60)
         self.look.set_size_request(386, -1)
-        self.import_btn = self.put(flat_button("Import 3DxWare look…", 180), 34, 364)
+        self.import_btn = self.put(flat_button("Import 3DxWare look…", 180), 34, 404)
         self.import_btn.connect("clicked", lambda *_: import_look(self.box.get_toplevel(), self.app))
-        self.section("Start-up", 33, 420, 418)
+        self.section("Start-up", 33, 420, 478)
         self.autostart = self.put(Gtk.CheckButton(
-            label="Start the tray icon and LCD Manager with the desktop"), 37, 428)
+            label="Start the tray icon and LCD Manager with the desktop"), 37, 488)
         self.autostart.set_tooltip_text("Off: they don't start at login (tdxd, the driver, still "
                                         "does). On: they start again, now and at login.")
         self.autostart.connect("toggled", self.guard(
             lambda b: set_autostart(b.get_active(), start_now=True)))
-        self.section("Devices", 33, 420, 478)
-        self.devbox = self.put(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2), 34, 487)
-        self.put(lab("tdxd is an independent Linux driver, not a 3Dconnexion product.",
-                     "tdx-small"), 34, 554)
-        self.close = self.put(flat_button("Close", 94), 324, 595)
+        self.section("Devices", 33, 420, 558)
+        self.devbox = self.put(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2), 34, 567)
+        self.put(lab("3DxLinux is an independent Linux driver, not a 3Dconnexion product.",
+                     "tdx-small"), 34, 634)
+        self.close = self.put(flat_button("Close", 94), 324, 675)
 
     def refresh(self):
         self.updating = True
