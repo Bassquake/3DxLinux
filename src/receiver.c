@@ -64,6 +64,15 @@ int tdx_rcv_parse_slot(const uint8_t *buf, size_t n, struct tdx_rcv_slot *out)
 	out->pid = tdx_rcv_code_pid(out->code, &out->cls);
 	snprintf(out->id, sizeof out->id, "%02x%02x%02x%02x%02x", buf[3], buf[4], buf[5], buf[6],
 		 buf[7]);
+	unsigned long long num = 0;
+	for (int i = 3; i < 8; i++)
+		num = num << 8 | buf[i];
+	char pre[3] = {0};
+	int np = 0;
+	for (int i = 1; i <= 2; i++)
+		if (buf[i] >= 0x20 && buf[i] < 0x7f)
+			pre[np++] = (char)buf[i];
+	snprintf(out->serial, sizeof out->serial, "%s%llu", pre, num);
 	return 1;
 }
 

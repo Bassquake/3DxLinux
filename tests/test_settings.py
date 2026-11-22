@@ -446,6 +446,33 @@ def gui_tests(d, tdxd):
     check(addp.page == "done" and "CadMouse Compact Wireless" in addp.text.get_text(),
           "Add device: paired")
     app.panels.remove(addp)
+    # ---- the receiver's Advanced Settings: the paired devices, a remove button each
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                "receiver Universal Receiver [256f:c652] firmware 1.06\n"
+                "paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery 50 "
+                "charging no seen 2 active no serial Y1224194699\n")
+    app.status = app.daemon.status()
+    check(app.status["receivers"][0]["paired"][0]["serial"] == "Y1224194699", "serial parsed")
+    remp = ts.ReceiverAdvancedPanel(app)
+    tiles = remp.grid.get_children()
+    check(len(tiles) == 1 and tiles[0].dev["name"] == "CadMouse Compact Wireless" and
+          remp.count.get_text() == "Currently paired devices (1/5)",
+          "Advanced Settings lists the CadMouse (paired, even when not heard from)")
+    tiles[0].set_hover(True)
+    check(tiles[0].xbtn.get_visible(), "the remove button shows on hover")
+    tiles[0].set_hover(False)
+    check(not tiles[0].xbtn.get_visible(), "... and goes again")
+    remp.removing = 4
+    with open(Args.status_file, "w") as f:  # gone from the receiver
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+                "receiver Universal Receiver [256f:c652] firmware 1.06\n")
+    app.status = app.daemon.status()
+    remp.refresh()
+    check(remp.removing is None and remp.msg.get_text() == "Removed." and
+          not remp.grid.get_children() and
+          remp.count.get_text() == "Currently paired devices (0/5)", "Remove: removed")
+    app.panels.remove(remp)
     with open(Args.status_file, "w") as f:  # the battery report changes: still the receiver
         f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 + rcv % "-")

@@ -53,6 +53,8 @@ struct tdx_rcv_slot {
 	uint16_t pid;    /* 0 if the code is not in 3DxWare's table */
 	int cls;         /* TDX_RCV_* or 0 */
 	char id[11];     /* the device id, hex */
+	char serial[24]; /* 3DxWare's serial number: the code's letters and the id in
+			  * decimal (Y + 0x48f7ba8b = Y1224194699) */
 };
 
 /* Device code -> product id / class (HIDDev.dll's table at 0x1800dbca0).

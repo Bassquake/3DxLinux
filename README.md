@@ -48,9 +48,11 @@ something.
 
 **Add device** on the receiver's page pairs a CadMouse (or a SpaceMouse
 Wireless, untested) as 3DxWare's pairing program does: the receiver goes into
-pairing mode for 55 seconds while you switch the device off and on. From a
-terminal: `tdxctl pair` (or `tdxctl pair spacemouse`), `tdxctl pair-stop`, and
-`tdxctl unpair SLOT` to remove a device (the slots are in `tdxctl status`).
+pairing mode for 55 seconds while you switch the device off and on. The
+receiver's **Advanced Settings** lists the paired devices with their serial
+numbers; the ✕ on a device (shown while the pointer is over it) removes it from
+the receiver. From a terminal: `tdxctl pair` (or `tdxctl pair spacemouse`),
+`tdxctl pair-stop`, and `tdxctl unpair SLOT` (the slots are in `tdxctl status`).
 
 ## Build
 

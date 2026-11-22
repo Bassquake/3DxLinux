@@ -1284,6 +1284,7 @@ static void test_receiver(void)
 	CHECK(tdx_rcv_parse_slot(self, sizeof self, &s) == 1);
 	CHECK(s.code == 'Y' && s.pid == 0xC658 && s.cls == TDX_RCV_2DMOUSE);
 	CHECK(!strcmp(s.id, "0048f7ba8b"));
+	CHECK(!strcmp(s.serial, "Y1224194699")); /* as 3DxWare's log and Advanced Settings show it */
 	CHECK(tdx_rcv_parse_slot(empty, sizeof empty, &s) == 0 && s.code == 0);
 	CHECK(tdx_rcv_parse_slot(self, 4, &s) == -1);
 	const uint8_t wrong[8] = {0x50, 0x59};

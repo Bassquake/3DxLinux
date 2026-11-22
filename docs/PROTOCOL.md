@@ -720,7 +720,9 @@ that device's collections.
 
 - **Pairing table:** `HIDDev.dll`'s GetPairingTable reads feature `0x43 + slot`.
   Data bytes 0–1 are a little-endian device code (0 = empty slot); the other
-  five bytes are the paired device's id. Feature 0x42 on an interface returns
+  five bytes are the paired device's id. 3DxWare's serial number is the
+  code's letters and the id in decimal: `59 00 | 00 48 f7 ba 8b` is
+  Y1224194699 (its log and Advanced Settings show it). Feature 0x42 on an interface returns
   the same entry for that interface's own slot.
 - **Device codes** (table at 0x1800dbca0: code, product id, class 1 = 3D mouse,
   2 = 2D mouse, 4 = receiver, 5 = keyboard): 'D' c631, 'A' c62e, 'T' c651,

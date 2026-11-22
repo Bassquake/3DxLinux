@@ -523,14 +523,15 @@ class Daemon:
                 st["receivers"][-1]["pairing"] = p
             elif line.startswith("paired ") and st["receivers"]:
                 m = re.match(r"paired (\d+) (.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] id (\S+) "
-                             r"battery (\S+) charging (\S+) seen (\S+)(?: active (\S+))?", line)
+                             r"battery (\S+) charging (\S+) seen (\S+)(?: active (\S+))?"
+                             r"(?: serial (\S+))?", line)
                 if m:
                     num = lambda v: int(v) if v.isdigit() else None
                     st["receivers"][-1]["paired"].append({
                         "slot": int(m.group(1)), "name": m.group(2), "vid": m.group(3),
                         "pid": m.group(4), "id": m.group(5), "battery": num(m.group(6)),
                         "charging": m.group(7) == "yes", "seen": num(m.group(8)),
-                        "active": m.group(9) != "no"})
+                        "active": m.group(9) != "no", "serial": m.group(10)})
             elif line.startswith("  "):
                 m = re.match(r"\s+(.+?) \[([0-9a-f]{4}):([0-9a-f]{4})\] (\S+) firmware (\S+)",
                              line)
@@ -1487,11 +1488,11 @@ class MainPanel(Panel):
         self.recv_text = self.put(lab("Configure which devices are paired to this receiver.",
                                       "tdx-status"), 30, 229)
         self.recv_buttons = []
-        for text, x in (("Advanced Settings", 30), ("Add device", 245)):
-            b = self.put(flat_button(text, 195), x, 274)
+        for text, x, y in (("Advanced Settings", 30, 274), ("Add device", 245, 274)):
+            b = self.put(flat_button(text, 195), x, y)
             self.recv_buttons.append(b)
-        self.recv_buttons[0].set_sensitive(False)
-        self.recv_buttons[0].set_tooltip_text(NOT_YET)
+        self.recv_buttons[0].connect("clicked",
+                                     lambda *_: self.app.window(ReceiverAdvancedPanel))
         self.recv_buttons[1].connect("clicked", lambda *_: self.app.window(AddDevicePanel))
         self.state_box = Gtk.Box(spacing=5)
         self.state_icon = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
@@ -2241,6 +2242,193 @@ class AddDevicePanel(Panel):
     def refresh(self):
         self.refresh_header()
         self.show(self.page)  # again after the window's show_all
+
+
+def draw_round_button(cr, size, glyph, color):
+    """3DxWare's grey round button with a white + or x."""
+    r = size / 2.0
+    cr.set_source_rgb(*color)
+    cr.arc(r, r, r, 0, 2 * math.pi)
+    cr.fill()
+    cr.set_source_rgb(1, 1, 1)
+    cr.set_line_width(max(1.6, size / 16.0))
+    d = size * (0.28 if glyph == "+" else 0.2)
+    if glyph == "+":
+        cr.move_to(r - d, r)
+        cr.line_to(r + d, r)
+        cr.move_to(r, r - d)
+        cr.line_to(r, r + d)
+    else:
+        cr.move_to(r - d, r - d)
+        cr.line_to(r + d, r + d)
+        cr.move_to(r + d, r - d)
+        cr.line_to(r - d, r + d)
+    cr.stroke()
+
+
+GREY_BUTTON = (0x8c / 255.0, 0x8c / 255.0, 0x8c / 255.0)
+GREY_BUTTON_HOVER = (0x5a / 255.0, 0x5a / 255.0, 0x5a / 255.0)
+
+
+class PairedTile(Gtk.EventBox):
+    """A paired device in the receiver's Advanced Settings: photo, name and
+    serial number; while the pointer is over it, a frame and a remove button."""
+    W, H = 220, 199
+
+    def __init__(self, dev, on_remove, removing=False):
+        super().__init__()
+        self.dev, self.hover, self.x_hover = dev, False, False
+        self.set_size_request(self.W, self.H)
+        self.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        ov = Gtk.Overlay()
+        self.add(ov)
+        self.frame = drawing(self.W, self.H, self.draw_frame)
+        ov.add(self.frame)
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        v.set_margin_top(28)
+        info = ASSETS.device(dev.get("pid"))
+        img = image_widget(ASSETS.icon(info.get("image"))) if info else None
+        v.pack_start(img or drawing(200, 120, lambda wd, cr: draw_device(wd, cr, True)),
+                     False, False, 0)
+        v.pack_start(lab(device_name(dev), xalign=0.5), False, False, 0)
+        sub = "Removing…" if removing else \
+            ("PID: %s" % dev["serial"] if dev.get("serial") else "")
+        v.pack_start(lab(sub, "tdx-small", xalign=0.5), False, False, 0)
+        ov.add_overlay(v)
+        self.xbtn = Gtk.EventBox()
+        self.xbtn.set_size_request(24, 24)
+        self.xbtn.set_halign(Gtk.Align.END)
+        self.xbtn.set_valign(Gtk.Align.START)
+        self.xbtn.set_margin_top(12)
+        self.xbtn.set_margin_end(11)
+        self.xbtn.add(drawing(24, 24, lambda _w, cr: draw_round_button(
+            cr, 24, "x", GREY_BUTTON_HOVER if self.x_hover else GREY_BUTTON)))
+        self.xbtn.set_tooltip_text("Remove this device from the receiver")
+        self.xbtn.add_events(Gdk.EventMask.BUTTON_RELEASE_MASK |
+                             Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.xbtn.connect("button-release-event", lambda *_: on_remove(dev) or True)
+        self.xbtn.connect("enter-notify-event", lambda *_: self.set_x_hover(True))
+        self.xbtn.connect("leave-notify-event", lambda *_: self.set_x_hover(False))
+        self.xbtn.set_no_show_all(True)
+        self.xbtn.get_child().show()
+        ov.add_overlay(self.xbtn)
+        self.removing = removing
+        self.connect("enter-notify-event", self.on_cross)
+        self.connect("leave-notify-event", self.on_cross)
+
+    def set_x_hover(self, on):
+        self.x_hover = on
+        self.xbtn.queue_draw()
+        return False
+
+    def on_cross(self, _w, ev):
+        if ev.detail == Gdk.NotifyType.INFERIOR:
+            return False  # into / out of a child (the remove button)
+        self.set_hover(ev.type == Gdk.EventType.ENTER_NOTIFY)
+        return False
+
+    def set_hover(self, on):
+        self.hover = on
+        self.xbtn.set_visible(on and not self.removing)
+        self.frame.queue_draw()
+
+    def draw_frame(self, _w, cr):
+        if not self.hover:
+            return
+        cr.set_source_rgb(1, 1, 1)
+        cr.paint()
+        cr.set_source_rgb(*SECTION_LINE)
+        cr.set_line_width(1)
+        cr.rectangle(0.5, 0.5, self.W - 1, self.H - 1)
+        cr.stroke()
+
+
+class ReceiverAdvancedPanel(Panel):
+    """3DxWare's Advanced Settings for a Universal Receiver: the paired devices
+    (a remove button on each while the pointer is over it: tdxctl unpair SLOT)
+    and Add device."""
+    title = "Advanced Settings"
+    subtitle = "Advanced Settings"
+    size = (734, 712)
+    header_h = 91
+
+    def header(self):
+        super().header()
+        self.title_btn.set_sensitive(False)
+        self.fix.move(self.title_btn, 30, 56)
+
+    def receiver(self):
+        return next((e for e in device_entries(self.app.status) if e["kind"] == "receiver"),
+                    None)
+
+    def refresh_header(self):
+        r = self.receiver()
+        self.title_label.set_text(r["name"] if r else "Universal Receiver")
+        for c in self.icon_slot.get_children():
+            self.icon_slot.remove(c)
+
+    def build(self):
+        self.photo = self.put(DevicePhoto(self.app, self.receiver), 530, 30)
+        self.count = self.put(lab("", "tdx-recv"), 30, 146)
+        self.lines.append((30, 704, 171))
+        plus = drawing(52, 52, lambda _w, cr: draw_round_button(cr, 52, "+", GREY_BUTTON))
+        self.put(plus, 111, 248)
+        add = self.put(flat_button("Add device", 124), 75, 337)
+        add.connect("clicked", lambda *_: self.app.window(AddDevicePanel))
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sw.set_size_request(460, 470)
+        self.grid = Gtk.Grid(column_spacing=10, row_spacing=10)
+        sw.add(self.grid)
+        self.put(sw, 258, 184)
+        self.msg = lab("", "tdx-small")
+        self.msg.set_line_wrap(True)
+        self.msg.set_size_request(440, -1)
+        self.put(self.msg, 258, 676)
+        self.close = self.put(flat_button("Close", 90), 614, 669)
+        self.removing = None  # slot asked to be removed, until it is gone
+        self.shown = None
+
+    def paired(self):
+        r = (self.app.status.get("receivers") or [{}])[0]
+        return r.get("paired", [])
+
+    def refresh(self):
+        self.refresh_header()
+        self.photo.update()
+        devs = self.paired()
+        if self.removing is not None and not any(d["slot"] == self.removing for d in devs):
+            self.msg.set_text("Removed.")
+            self.removing = None
+        self.count.set_text("Currently paired devices (%d/5)" % len(devs))
+        key = tuple((d["slot"], d["pid"], d["id"]) for d in devs) + (self.removing,)
+        if key == self.shown:
+            return
+        self.shown = key
+        for c in self.grid.get_children():
+            self.grid.remove(c)
+        for i, d in enumerate(devs):
+            t = PairedTile(d, self.on_remove, d["slot"] == self.removing)
+            self.grid.attach(t, i % 2, i // 2, 1, 1)
+        self.grid.show_all()
+
+    def on_remove(self, dev):
+        if self.removing is not None:
+            return
+        name = device_name(dev)
+        text = "The receiver forgets this device; Add device pairs it again."
+        if "CadMouse" in name:
+            text += " If it is the mouse you are using, it stops working until then."
+        if not confirm(self.box.get_toplevel(), "Remove %s?" % name, text, "Remove"):
+            return
+        rc, out = self.app.daemon.request("unpair", str(dev["slot"]))
+        if rc:
+            self.msg.set_text(out.strip().replace("error: ", "").capitalize())
+            return
+        self.removing = dev["slot"]
+        self.msg.set_text("Removing %s…" % name)
+        self.shown = None
+        self.refresh()
 
 
 class KeyCaptureDialog(Gtk.Dialog):

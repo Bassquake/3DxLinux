@@ -769,10 +769,10 @@ static size_t rcv_status(char *reply, size_t len, size_t o)
 				snprintf(seen, sizeof seen, "%lld", (now_ms() - p->seen_ms) / 1000);
 			o += (size_t)snprintf(reply + o, len - o,
 					      "paired %d %s [%04x:%04x] id %s battery %s charging %s seen %s "
-					      "active %s\n",
+					      "active %s serial %s\n",
 					      p->node.iface, rcv_dev_name(p), p->node.vid, p->slot.pid,
 					      p->slot.id, bat, p->charging ? "yes" : "no", seen,
-					      p->seen_ms ? "yes" : "no");
+					      p->seen_ms ? "yes" : "no", p->slot.serial);
 		}
 	}
 	return o;
