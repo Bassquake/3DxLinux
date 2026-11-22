@@ -4,14 +4,18 @@
 #
 #   pkexec tdx-settings-helper write /etc/tdxd.conf        < new-content
 #   pkexec tdx-settings-helper write /etc/tdxd.d/NAME.conf < new-content
+#   pkexec tdx-settings-helper remove /etc/tdxd.d/NAME.conf   (Reset all settings)
 #
 # Only those paths are accepted; NAME is limited to [A-Za-z0-9_.-] and may not
 # start with a dot. The file is replaced atomically with mode 0644, owner root.
 set -eu
 umask 022
 
-[ "$#" -eq 2 ] && [ "$1" = write ] || { echo "usage: $0 write PATH < content" >&2; exit 2; }
-path=$2
+[ "$#" -eq 2 ] && { [ "$1" = write ] || [ "$1" = remove ]; } ||
+	{ echo "usage: $0 write PATH < content | remove /etc/tdxd.d/NAME.conf" >&2; exit 2; }
+verb=$1 path=$2
+[ "$verb" = write ] || [ "$path" != /etc/tdxd.conf ] ||
+	{ echo "refusing to remove /etc/tdxd.conf" >&2; exit 1; }
 
 case "$path" in
 /etc/tdxd.conf) ;;
@@ -27,6 +31,11 @@ case "$path" in
 esac
 
 dir=$(dirname "$path")
+if [ "$verb" = remove ]; then
+	[ -f "$path" ] || [ -L "$path" ] || exit 0
+	rm -f "$path"
+	exit 0
+fi
 [ ! -L "$path" ] || { echo "refusing to write through a symlink: $path" >&2; exit 1; }
 tmp=$(mktemp "$dir/.tdx-settings.XXXXXX")
 trap 'rm -f "$tmp"' EXIT

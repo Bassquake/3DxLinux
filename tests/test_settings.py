@@ -315,12 +315,73 @@ def gui_tests(d, tdxd):
           main.state_label.get_text() == "Connect a device", "unplugged: %s / %s"
           % (main.dev_label.get_text(), main.state_label.get_text()))
     check(main.photo.key is None and btn.photo.key is None, "photos: no device")
+    check(main.plain_title.get_visible() and main.nodev_icon_box.get_visible() and
+          not main.speed.get_visible() and not main.main_buttons[0].get_visible() and
+          main.nodev_text.get_text().startswith("No device found."), "3DxWare's no-device page")
     with open(Args.status_file, "w") as f:
         f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
                 "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")
     app.follow_tick()
     check(main.dev_label.get_text() == "SpacePilot Pro" and main.photo.key == ("046d", "c629") and
           btn.photo.key == ("046d", "c629"), "plugged in again: %s" % main.dev_label.get_text())
+    check(not main.plain_title.get_visible() and not main.nodev_icon_box.get_visible() and
+          main.speed.get_visible() and main.main_buttons[0].get_visible(), "back to the main page")
+
+    # ---- More: 3DxWare's menu
+    menu = app.build_more_menu()
+    items = menu.get_children()
+    labels = [[c for c in i.get_child().get_children() if isinstance(c, ts.Gtk.Label)][0].get_text()
+              if not isinstance(i, ts.Gtk.SeparatorMenuItem) else "-" for i in items]
+    check(labels == ["Import settings", "Export settings", "Reset all settings", "-", "Manuals",
+                     "Support", "About"], "More menu: %s" % labels)
+    check(not items[4].get_sensitive() and items[6].get_sensitive(), "Manuals greyed out")
+    check(ts.AboutPanel.title == "About 3DxWare", "About 3DxWare")
+
+    # ---- Export / Import / Reset all settings
+    zpath = os.path.join(d, "exported.zip")
+    with open(os.path.join(pdir, "mine.conf"), "w") as f:
+        f.write("match = mine\nkey_V3DK_1 = KEY_F1\n")
+    app.store.select(None)
+    app.store.base.set("sensitivity", "3")
+    ts.write_file(app.store.base)
+    n = ts.export_settings(app.store, zpath)
+    base_t, profs = ts.read_settings_archive(zpath)
+    check(n == len(profs) and "sensitivity = 3" in base_t and "mine" in profs and
+          "KEY_F1" in profs["mine"], "exported: base + %d profiles" % n)
+    app.store.base.set("sensitivity", "1")
+    ts.write_file(app.store.base)
+    os.remove(os.path.join(pdir, "mine.conf"))
+    check(ts.import_settings(app.store, base_t, profs) == [] and
+          ts.ConfFile(base).get("sensitivity") == "3" and
+          os.path.isfile(os.path.join(pdir, "mine.conf")), "imported again")
+    import zipfile
+    bad = os.path.join(d, "bad.zip")
+    with zipfile.ZipFile(bad, "w") as z:
+        z.writestr("../evil.conf", "x")
+        z.writestr("tdxd.d/../../evil.conf", "x")
+        z.writestr("tdxd.d/.hidden.conf", "x")
+    try:
+        ts.read_settings_archive(bad)
+        check(False, "a zip without settings is refused")
+    except ValueError:
+        check(True, "")
+    with open(os.path.join(pdir, "freecad.conf"), "w") as f:
+        f.write("match = freecad*\n")  # changed by hand
+    check(ts.reset_settings(app.store) == [], "reset ran")
+    app.store.base.reload()
+    ship = ts.ConfFile(os.path.join(ROOT, "packaging", "tdxd.conf"))
+    check(app.store.base.get("sensitivity") == ship.get("sensitivity") and
+          app.store.base.text() == ship.text(), "reset: the default tdxd.conf")
+    check(not os.path.exists(os.path.join(pdir, "mine.conf")) and
+          ts.ConfFile(os.path.join(pdir, "freecad.conf")).get("key_V3DK_TOP") ==
+          ts.ConfFile(os.path.join(ROOT, "packaging", "profiles", "freecad.conf")).get("key_V3DK_TOP"),
+          "reset: own profiles removed, FreeCAD's back to its default")
+    # the password helper removes only profiles (refusals only: the tests may run as root)
+    helper = os.path.join(ROOT, "gui", "tdx-settings-helper")
+    for args in (["remove", "/etc/tdxd.conf"], ["remove", "/etc/passwd"],
+                 ["remove", "/etc/tdxd.d/../passwd.conf"]):
+        r = subprocess.run(["sh", helper] + args, capture_output=True, text=True)
+        check(r.returncode != 0, "helper refuses %s" % " ".join(args))
 
     # ---- the application's own key names (tdxctl app-keys; the FreeCAD add-on)
     d0 = ts.Daemon("/nonexistent")

@@ -566,6 +566,137 @@ def pkexec_write(path, data):
     return None
 
 
+def pkexec_remove(path):
+    """Remove the root-owned profile @path through `pkexec tdx-settings-helper`."""
+    helper = find_program("tdx-settings-helper")
+    pkexec = shutil.which("pkexec")
+    if not helper or not pkexec:
+        return "%s can't be removed (pkexec / tdx-settings-helper is missing)" % path
+    try:
+        p = subprocess.run([pkexec, helper, "remove", path], capture_output=True, text=True,
+                           timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return str(e)
+    if p.returncode in (126, 127):
+        return PKEXEC_CANCELLED
+    if p.returncode:
+        return (p.stderr or p.stdout or "pkexec failed (%d)" % p.returncode).strip()
+    return None
+
+
+def remove_file(path):
+    """Remove a settings file (pkexec if it is root's). An error string or None."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return None
+    except PermissionError:
+        return pkexec_remove(path)
+    except OSError as e:
+        return "%s: %s" % (path, e.strerror)
+    return None
+
+
+PROFILE_NAME = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]*$")
+
+
+def export_settings(store, path):
+    """More > Export settings: the base file and every profile in profile_dir,
+    as a zip (tdxd.conf, tdxd.d/NAME.conf). The number of profiles."""
+    import zipfile
+    names = store.profile_names()
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("tdxd.conf", store.base.text())
+        for n in names:
+            with open(store.profile_path(n), encoding="utf-8", errors="replace") as f:
+                z.writestr("tdxd.d/%s.conf" % n, f.read())
+    return len(names)
+
+
+def read_settings_archive(path):
+    """An exported settings zip -> (base text or None, {profile name: text});
+    only tdxd.conf and tdxd.d/NAME.conf, each under 1 MiB. ValueError if it
+    isn't one."""
+    import zipfile
+    try:
+        z = zipfile.ZipFile(path)
+    except (OSError, zipfile.BadZipFile) as e:
+        raise ValueError("not a settings file: %s" % e)
+    base, profiles = None, {}
+    with z:
+        for info in z.infolist():
+            name = info.filename
+            if info.is_dir():
+                continue
+            if info.file_size > 1048576:
+                raise ValueError("%s is too large" % name)
+            if name == "tdxd.conf":
+                base = z.read(info).decode("utf-8", "replace")
+            elif name.startswith("tdxd.d/") and name.endswith(".conf") and \
+                    PROFILE_NAME.match(name[7:-5]) and "/" not in name[7:]:
+                profiles[name[7:-5]] = z.read(info).decode("utf-8", "replace")
+    if base is None and not profiles:
+        raise ValueError("no tdxd settings in it")
+    return base, profiles
+
+
+def import_settings(store, base, profiles):
+    """Write imported settings: the base file and the profiles (same names are
+    replaced, others kept). Errors (list)."""
+    errors = []
+    jobs = ([(store.base.path, base)] if base is not None else []) + \
+        [(store.profile_path(n), t) for n, t in sorted(profiles.items())]
+    for path, text in jobs:
+        f = ConfFile(path)
+        f.lines = text.splitlines()
+        err = write_file(f)
+        if err:
+            errors.append(err)
+            if err == PKEXEC_CANCELLED:
+                break
+    return errors
+
+
+def shipped_default(name):
+    """The default copy of a settings file the package came with (tdxd.conf,
+    freecad.conf ...), or None."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    for d in ("/usr/share/tdxd/defaults", "/usr/local/share/tdxd/defaults",
+              os.path.join(here, "..", "packaging"), os.path.join(here, "..", "packaging", "profiles")):
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def reset_settings(store):
+    """More > Reset all settings: the base file back to its default, tdxd's own
+    profiles (FreeCAD's) back to theirs, the others in profile_dir removed (the
+    imported 3DxWare ones elsewhere stay). Errors (list)."""
+    errors = []
+    src = shipped_default("tdxd.conf")
+    if src:
+        f = ConfFile(store.base.path)
+        f.lines = ConfFile(src).lines[:]
+        err = write_file(f)
+        if err:
+            return [err]
+    for n in store.profile_names():
+        path = store.profile_path(n)
+        src = shipped_default(n + ".conf")
+        if src:
+            f = ConfFile(path)
+            f.lines = ConfFile(src).lines[:]
+            err = write_file(f)
+        else:
+            err = remove_file(path)
+        if err:
+            errors.append(err)
+            if err == PKEXEC_CANCELLED:
+                break
+    return errors
+
+
 def writable(path):
     if os.path.exists(path):
         return os.access(path, os.W_OK) and os.access(os.path.dirname(path) or ".", os.W_OK)
@@ -1225,6 +1356,21 @@ class MainPanel(Panel):
     header_h = 67
 
     def build(self):
+        # the no-device page, as 3DxWare's: title, warning triangle, two lines
+        self.plain_title = self.put(lab("3Dconnexion Settings", "tdx-title"), 30, 37)
+        self.nodev_icon = image_widget(ASSETS.ui("SmartUI_warning_icon")) or \
+            Gtk.Image.new_from_icon_name("dialog-warning", Gtk.IconSize.DIALOG)
+        icon_box = Gtk.Box()
+        icon_box.set_size_request(470, -1)
+        icon_box.set_center_widget(self.nodev_icon)
+        self.nodev_icon_box = self.put(icon_box, 0, 132)
+        self.nodev_text = lab("", "tdx-status")
+        self.nodev_text.set_justify(Gtk.Justification.CENTER)
+        text_box = Gtk.Box()
+        text_box.set_size_request(470, -1)
+        text_box.set_center_widget(self.nodev_text)
+        self.nodev_text_box = self.put(text_box, 0, 226)
+
         self.dev_label = self.put(lab("", "tdx-dev"), 30, 100)
         self.photo = self.put(DevicePhoto(self.app), 252, 42)
         self.state_box = Gtk.Box(spacing=5)
@@ -1240,15 +1386,17 @@ class MainPanel(Panel):
         self.state_wrap.set_center_widget(self.state_box)
         self.put(self.state_wrap, 252, 163)
 
-        self.put(lab("Speed"), 30, 197)
+        self.speed_label = self.put(lab("Speed"), 30, 197)
         self.speed = self.put(log_scale(422), 24, 221)
         self.speed.connect("value-changed", self.guard(self.on_speed))
+        self.main_buttons = []
 
         for text, x, y, cb in (("Advanced Settings", 30, 274, self.app.show_advanced),
                                ("Buttons", 245, 274, self.app.show_buttons),
                                ("LCD Manager", 30, 312, self.app.show_lcd)):
             b = self.put(flat_button(text, 195), x, y)
             b.connect("clicked", lambda _b, f=cb: f())
+            self.main_buttons.append(b)
             if text == "LCD Manager":
                 self.lcd_button = b
         more = Gtk.Button()
@@ -1259,7 +1407,7 @@ class MainPanel(Panel):
         arrow = image_widget(ASSETS.ui("SmartUI_Button_Arrow"))
         mb.pack_start(arrow or lab(">"), False, False, 0)
         more.add(mb)
-        more.connect("clicked", lambda *_: self.app.show_about())
+        more.connect("clicked", lambda b: self.app.more_menu(b))
         self.put(more, 396, 318)
 
         self.save_label = lab("", "tdx-small")
@@ -1276,11 +1424,26 @@ class MainPanel(Panel):
                                or "Enterprise" in d["name"] or "Giotto" in d["name"]
                                for d in devs)
 
+    def show_page(self, nodev):
+        """3DxWare's main window, or its "No device found" page."""
+        for w in [self.dev_label, self.photo, self.state_wrap, self.speed_label, self.speed,
+                  self.icon_slot, self.title_btn] + self.main_buttons:
+            w.set_visible(not nodev)
+        for w in (self.plain_title, self.nodev_icon_box, self.nodev_text_box):
+            w.set_visible(nodev)
+            if nodev:
+                w.show_all()
+
     def refresh(self):
         self.updating = True
         self.refresh_header()
         st = self.app.status
         devs = st.get("devices", [])
+        self.nodev = not devs
+        self.show_page(self.nodev)
+        self.nodev_text.set_text(
+            "No device found.\nPlease connect your 3Dconnexion device." if st.get("running") else
+            "The 3Dconnexion driver (tdxd) is not running.\nStart it with: sudo systemctl start tdxd")
         self.photo.update()
         name = devs[0]["name"].replace(" PRO", " Pro") if devs else "No device connected"
         self.dev_label.set_text(name)
@@ -1884,12 +2047,12 @@ class LcdPanel(Panel):
 
 
 class AboutPanel(Panel):
-    title = "About tdxd"
+    title = "About 3DxWare"
     size = (450, 640)
     header_h = 89
 
     def header(self):  # plain title, like "About 3DxWare"
-        self.put(lab("About tdxd", "tdx-title"), 35, 51)
+        self.put(lab("About 3DxWare", "tdx-title"), 35, 51)
 
     def refresh_header(self):
         pass
@@ -2011,6 +2174,18 @@ def message(parent, kind, text, secondary=None):
         d.format_secondary_text(secondary)
     d.run()
     d.destroy()
+
+
+def confirm(parent, text, secondary, ok_label):
+    """A question with Cancel / @ok_label; True for @ok_label."""
+    d = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=Gtk.MessageType.QUESTION,
+                          buttons=Gtk.ButtonsType.NONE, text=text)
+    d.format_secondary_text(secondary)
+    d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, ok_label, Gtk.ResponseType.OK)
+    d.set_default_response(Gtk.ResponseType.CANCEL)
+    ok = d.run() == Gtk.ResponseType.OK
+    d.destroy()
+    return ok
 
 
 def import_look(parent, app):
@@ -2385,6 +2560,122 @@ class App:
 
     def show_about(self):
         self.window(AboutPanel)
+
+    MORE = [("Import settings", "ICO_import", "document-import", "import_dialog"),
+            ("Export settings", "ICO_export", "document-export", "export_dialog"),
+            ("Reset all settings", "ICO_reset", "edit-undo", "reset_dialog"),
+            None,
+            ("Manuals", "ICO_help", "help-contents", None),  # greyed out, as in 3DxWare here
+            ("Support", None, "audio-headset", "open_support"),
+            ("About", "ICO_about", "help-about", "show_about")]
+
+    def build_more_menu(self):
+        menu = Gtk.Menu()
+        for entry in self.MORE:
+            if entry is None:
+                menu.append(Gtk.SeparatorMenuItem())
+                continue
+            text, art, icon, method = entry
+            mi = Gtk.MenuItem()
+            box = Gtk.Box(spacing=10)
+            img = image_widget(ASSETS.ui(art), 20) if art else None
+            box.pack_start(img or Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR),
+                           False, False, 0)
+            box.pack_start(Gtk.Label(label=text, xalign=0), True, True, 0)
+            mi.add(box)
+            if method:
+                mi.connect("activate", lambda _m, f=getattr(self, method): f())
+            else:
+                mi.set_sensitive(False)
+            menu.append(mi)
+        menu.show_all()
+        return menu
+
+    def more_menu(self, widget):
+        """3DxWare's More menu, beside the link."""
+        self.more = self.build_more_menu()
+        self.more.popup_at_widget(widget, Gdk.Gravity.EAST, Gdk.Gravity.WEST, None)
+
+    def open_support(self):
+        try:
+            Gtk.show_uri_on_window(self.win, PROJECT_URL + "/issues", Gdk.CURRENT_TIME)
+        except GLib.Error:
+            subprocess.Popen(["xdg-open", PROJECT_URL + "/issues"], start_new_session=True)
+
+    def settings_changed(self, errors, done_text):
+        """After import / reset: read the files again, tell tdxd, show the result."""
+        self.store.base.reload()
+        name = os.path.basename(self.store.profile.path)[:-5] if self.store.profile else None
+        self.store.select(name if name in self.store.profile_names() else None)
+        self.daemon.request("reload")
+        self.poll_status()
+        if errors:
+            message(self.win, Gtk.MessageType.ERROR, "Not all settings were changed",
+                    "\n".join(e for e in errors if e) or "")
+        else:
+            message(self.win, Gtk.MessageType.INFO, done_text, "")
+
+    def choose_file(self, title, action, name=None):
+        dlg = Gtk.FileChooserDialog(title=title, transient_for=self.win, action=action)
+        dlg.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                        "Save" if action == Gtk.FileChooserAction.SAVE else "Open",
+                        Gtk.ResponseType.OK)
+        flt = Gtk.FileFilter()
+        flt.set_name("tdxd settings (*.zip)")
+        flt.add_pattern("*.zip")
+        dlg.add_filter(flt)
+        dlg.set_current_folder(os.path.expanduser("~"))
+        if name:
+            dlg.set_current_name(name)
+            dlg.set_do_overwrite_confirmation(True)
+        path = dlg.get_filename() if dlg.run() == Gtk.ResponseType.OK else None
+        dlg.destroy()
+        return path
+
+    def export_dialog(self):
+        if self.store.dirty():
+            self.flush()
+        path = self.choose_file("Export settings", Gtk.FileChooserAction.SAVE,
+                                "tdxd-settings-%s.zip" % time.strftime("%Y%m%d"))
+        if not path:
+            return
+        try:
+            n = export_settings(self.store, path)
+        except OSError as e:
+            message(self.win, Gtk.MessageType.ERROR, "The settings were not exported", str(e))
+            return
+        message(self.win, Gtk.MessageType.INFO, "Settings exported",
+                "%s\n(the base settings and %d profile%s)" % (path, n, "" if n == 1 else "s"))
+
+    def import_dialog(self):
+        path = self.choose_file("Import settings", Gtk.FileChooserAction.OPEN)
+        if not path:
+            return
+        try:
+            base, profiles = read_settings_archive(path)
+        except ValueError as e:
+            message(self.win, Gtk.MessageType.ERROR, "The settings were not imported", str(e))
+            return
+        what = (["the base settings"] if base is not None else []) + \
+            (["%d profile%s" % (len(profiles), "" if len(profiles) == 1 else "s")] if profiles else [])
+        if not confirm(self.win, "Import settings?",
+                       "This replaces %s with the ones from %s. Profiles with other names "
+                       "stay." % (" and ".join(what), os.path.basename(path)), "Import"):
+            return
+        if self.store.dirty():
+            self.flush()
+        self.settings_changed(import_settings(self.store, base, profiles), "Settings imported")
+
+    def reset_dialog(self):
+        if not confirm(self.win, "Reset all settings?",
+                       "Speed, buttons, LCD and every other setting go back to their defaults, "
+                       "and the application profiles you made or changed are removed "
+                       "(the ones imported from 3DxWare stay).", "Reset"):
+            return
+        self.store.base.dirty = False
+        if self.store.profile:
+            self.store.profile.dirty = False
+        self.settings_changed(reset_settings(self.store), "All settings were reset")
 
     def quit(self):
         if self.store.dirty():

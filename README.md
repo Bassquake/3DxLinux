@@ -176,7 +176,18 @@ then remembers it for a few minutes. If you cancel the password prompt, the
 panel stops asking and saves when you close the window instead.
 The window title names the profile being edited; click it to switch between the
 defaults and the per-application profiles, or to create one for the focused
-application.
+application. With no device plugged in, the window shows 3DxWare's "No device
+found" page instead, until one is connected.
+
+**More ›** opens 3DxWare's menu:
+
+- **Import settings / Export settings:** a `.zip` with `/etc/tdxd.conf` and your
+  profiles in `/etc/tdxd.d`. Importing replaces the base settings and the
+  profiles of the same names; other profiles stay.
+- **Reset all settings:** the base settings back to their defaults, the FreeCAD
+  profile back to its shipped one, your other profiles removed. The profiles
+  imported from 3DxWare stay.
+- **Support** opens this project's issues page, and **About** the About window.
 
 ### The icon in the system tray (`tdx-tray`)
 
