@@ -1,16 +1,18 @@
-# tdxd — 3Dconnexion driver for Linux (x86_64, arm64, …)
+# 3DxLinux — 3Dconnexion driver for Linux (x86_64, arm64, …)
 
-`tdxd` is a user-space Linux driver for 3Dconnexion devices. It focuses on the
-**SpacePilot Pro** (046d:c629), including its 320×240 colour LCD.
+3DxLinux is a user-space Linux driver for 3Dconnexion devices. It focuses on the
+**SpacePilot Pro** (046d:c629), including its 320×240 colour LCD. Its driver
+program is `tdxd`; the commands, services and settings files keep that name
+(`tdxctl`, `tdxd.service`, `/etc/tdxd.conf`).
 
 It was rebuilt by reverse engineering the Windows package
 `3DxWare64_v10-9-14_b745.exe` (see [docs/PROTOCOL.md](docs/PROTOCOL.md)).
 
 The Windows driver can't simply be recompiled: it is a KMDF kernel filter plus
-Win32 services. Instead, `tdxd` re-implements the device protocol those
+Win32 services. Instead, 3DxLinux re-implements the device protocol those
 components speak, using standard Linux interfaces:
 
-| Windows component (3DxWare) | Linux replacement in `tdxd` |
+| Windows component (3DxWare) | Linux replacement in 3DxLinux |
 |---|---|
 | `3dxhid.sys` HID filter: report parsing, axis remap | `hidraw` reader + `report.c` / `process.c` |
 | `3DxService.exe` + `Base.xml` device database | `devices_gen.c` (generated from `Base.xml`) + `/etc/tdxd.conf` |
@@ -68,7 +70,7 @@ system, click **Install** and enter your password. That's all: the package
 pulls in Python 3 and GTK 3, loads `uinput`, sets up the udev rule, starts
 `tdxd`, and starts the LCD Manager in your session. It replaces `spacenavd` if
 that is installed. Uninstall it from the same software app: that removes
-everything tdxd added, including your settings (`/etc/tdxd.conf`, the profiles
+everything 3DxLinux added, including your settings (`/etc/tdxd.conf`, the profiles
 in `/etc/tdxd.d`, each user's `~/.config/tdxd`) and the imported 3DxWare look.
 Upgrading keeps your settings.
 
@@ -203,7 +205,7 @@ Right-click it for a menu:
 - **Open 3Dconnexion Settings** opens the panel, or brings it to the front if
   it's already open.
 - **Write Log File** writes `tdxd-log-<date>-<time>.txt` to your Desktop: the
-  versions, what tdxd sees, your settings files, and the recent messages of tdxd
+  versions, what `tdxd` sees, your settings files, and the recent messages of `tdxd`
   and the LCD Manager. A notification says where it is; click it to open the
   folder. The file includes your computer's name and your user name.
 - **Start with the Desktop** (a tick box): untick it and the tray icon and the
@@ -213,8 +215,8 @@ Right-click it for a menu:
   until you open the settings panel, which brings them back (unless Start with the
   Desktop is off).
 
-tdxd itself, the driver, keeps running either way, so the 3D mouse keeps
-working and the LCD shows tdxd's own key page. To stop the driver too, run
+`tdxd` itself, the driver, keeps running either way, so the 3D mouse keeps
+working and the LCD shows `tdxd`'s own key page. To stop the driver too, run
 `sudo systemctl stop tdxd` (and `sudo systemctl disable tdxd` to keep it from
 starting at boot).
 
@@ -229,7 +231,7 @@ it), so it needs no password.
 
 The 3DxWare artwork (backgrounds, device photos, key caps, axis icons, check
 boxes, slider thumbs, function icons) belongs to 3Dconnexion and is **not**
-included with tdxd. If you have the Windows installer (download it from
+included with 3DxLinux. If you have the Windows installer (download it from
 3Dconnexion), copy the artwork out of it once. The easiest way: in `tdx-settings`
 click **More ›**, then **About**, then **Import 3DxWare look…**, and pick the
 installer. It imports for your user (no password), then restarts the panel and
@@ -269,7 +271,7 @@ window to PNG (`--no-assets` forces the built-in drawings).
 Everything is set in `/etc/tdxd.conf` (or with `tdx-settings`); apply changes
 with `tdxctl reload` or `systemctl reload tdxd`.
 
-| 3DxWare setting | tdxd |
+| 3DxWare setting | 3DxLinux |
 |---|---|
 | Speed | `sensitivity` |
 | Pan/Zoom, Rotation, Dominant | `disable_translation`, `disable_rotation`, `dominant` |
@@ -278,8 +280,8 @@ with `tdxctl reload` or `systemctl reload tdxd`.
 | LEDs Active | `led` |
 | **Calibrate** | `tdxctl calibrate`, `calibrate_button`, or `calibrate_on_start` |
 | Buttons: keystrokes | `key_<V3DK id> = KEY [+ KEY …]` (or `none`) |
-| Buttons: Increase/Decrease Speed, Dominant/Rotation/Pan Zoom On/Off, Calibrate | `action_<V3DK id> = speed_up \| speed_down \| dominant \| rotation \| panzoom \| calibrate` (handled by tdxd, not sent to the application; the shipped config binds +, −, DOM, LOCK and PAN ZOOM like 3DxWare) |
-| LCD Manager (Logitech LCDMon: applets, switching, brightness) | `tdx-lcdmgr` + `tdx-lcdmanager`, see [docs/LCD_MANAGER.md](docs/LCD_MANAGER.md); without it tdxd's key page: `lcd_brightness`, `lcd_label_N`, `lcd_image` |
+| Buttons: Increase/Decrease Speed, Dominant/Rotation/Pan Zoom On/Off, Calibrate | `action_<V3DK id> = speed_up \| speed_down \| dominant \| rotation \| panzoom \| calibrate` (handled by `tdxd`, not sent to the application; the shipped config binds +, −, DOM, LOCK and PAN ZOOM like 3DxWare) |
+| LCD Manager (Logitech LCDMon: applets, switching, brightness) | `tdx-lcdmgr` + `tdx-lcdmanager`, see [docs/LCD_MANAGER.md](docs/LCD_MANAGER.md); without it `tdxd`'s key page: `lcd_brightness`, `lcd_label_N`, `lcd_image` |
 | **Per-application settings** | `/etc/tdxd.d/<name>.conf` profiles |
 
 ### Calibrate
@@ -310,7 +312,7 @@ sudo cp /etc/tdxd.d/blender.conf.example /etc/tdxd.d/blender.conf && tdxctl relo
 `match = blender, blender-*` lists the process names (case-insensitive, globs
 allowed). Without it, the file name is used.
 
-tdxd learns which application is focused in one of two ways:
+`tdxd` learns which application is focused in one of two ways:
 
 - **`tdx-focus` (X11 or sway).** Run it in your desktop session:
 
@@ -318,7 +320,7 @@ tdxd learns which application is focused in one of two ways:
   systemctl --user enable --now tdx-focus
   ```
 
-- **Fallback.** Without `tdx-focus`, tdxd uses the newest application connected
+- **Fallback.** Without `tdx-focus`, `tdxd` uses the newest application connected
   to the spacenavd socket (Blender, FreeCAD, …). That covers the common case of
   one 3D application, including on Wayland desktops that `tdx-focus` doesn't
   support.
@@ -330,7 +332,7 @@ tdxd learns which application is focused in one of two ways:
 
 3DxWare ships its key settings for about 280 applications as XML files
 (`Blender.xml`, `prusa-slicer.xml`, …), with the keystrokes and names in
-`en-US.xml`. Importing the 3DxWare look (above) turns every one that tdxd can do
+`en-US.xml`. Importing the 3DxWare look (above) turns every one that 3DxLinux can do
 into a profile named `3dx-<application>` in `…/3dxware-ui/profiles`. That is 66
 profiles with 3DxWare 10.9.14, among them Blender, PrusaSlicer, OrcaSlicer,
 Bambu Studio, Cura, Firefox and Chrome. On the keys, each profile has:
@@ -339,7 +341,7 @@ Bambu Studio, Cura, Firefox and Chrome. On the keys, each profile has:
 - 3DxWare's names for the LCD;
 - driver functions (speed, rotation, pan/zoom, dominant, settings panel).
 
-Some of 3DxWare's key functions don't exist on Linux, so those keys keep tdxd's
+Some of 3DxWare's key functions don't exist on Linux, so those keys keep 3DxLinux's
 defaults:
 
 - the application's own NavLib commands (FreeCAD has its add-on, below);
@@ -350,7 +352,7 @@ defaults:
 A program matches by its process name, taken from 3DxWare's `.exe` name.
 
 Your own profiles in `/etc/tdxd.d` come first: a profile there that matches the
-same program, or has the same name, wins. tdxd reads the profiles from
+same program, or has the same name, wins. `tdxd` reads the profiles from
 `/usr/local/share/tdxd/3dxware-ui/profiles` (imported as root) and from
 `~/.local/share/tdxd/3dxware-ui/profiles` of the desktop user (the one running
 `tdx-focus` or the settings panel). From a user's folder it takes only keys, key
@@ -360,7 +362,7 @@ names and actions.
 
 On Windows, 3DxWare gives FreeCAD a different set of key functions for each
 workbench (Part Design key 1 is "Create sketch", Sketcher has its own set, and
-so on), with radial menus on some keys. tdxd does the same with a small FreeCAD
+so on), with radial menus on some keys. 3DxLinux does the same with a small FreeCAD
 add-on:
 
 1. Import the 3DxWare look (above). Besides the artwork this reads the key sets
@@ -369,17 +371,17 @@ add-on:
    by `tdx-focus` at login, or by hand with `tdx-freecad-addon install`).
 2. Restart FreeCAD.
 
-The add-on tells tdxd which keys the active workbench uses and what to call them
-on the LCD (`tdxctl app-buttons`); tdxd then sends those keys only to FreeCAD,
+The add-on tells `tdxd` which keys the active workbench uses and what to call them
+on the LCD (`tdxctl app-buttons`); `tdxd` then sends those keys only to FreeCAD,
 which runs the command. A radial menu opens as a pop-up menu at the mouse
 pointer. Keys a workbench leaves out keep their usual functions, and a command
 you set yourself in FreeCAD's Spaceball button settings is left alone.
 `tdx-freecad-addon remove` takes the add-on out again. Nothing from 3DxWare is
-shipped with tdxd: the key sets come from your own installer.
+shipped with 3DxLinux: the key sets come from your own installer.
 
 FreeCAD from Flathub works too: `tdx-freecad-addon install` also puts the loader
 in `~/.var/app/org.freecad.FreeCAD/data/FreeCAD/…/Mod` and lets the sandbox
-reach tdxd's socket (`flatpak override --user --filesystem=/run/tdxd.sock
+reach `tdxd`'s socket (`flatpak override --user --filesystem=/run/tdxd.sock
 org.freecad.FreeCAD`; `remove` takes that back). FreeCAD as a Snap isn't
 supported.
 
@@ -390,14 +392,14 @@ supported.
 `tdx-lcdmgr` is a Linux port of Logitech's LCD Manager (LCDMon), which 3DxWare
 uses to run applets (Function Keys, RSS Feeds, Picture Viewer) on the
 SpacePilot PRO LCD. Run it as your user (`systemctl --user enable --now
-tdx-lcdmgr`); it takes the LCD over from tdxd, serves applets written against
+tdx-lcdmgr`); it takes the LCD over from `tdxd`, serves applets written against
 the lglcd-compatible `libtdxlcd` (C) or `tdxlcd.py`, and handles the LCD's own
 navigation keys (LCD key, UP/DOWN/OK/CANCEL). The **LCD Manager** button in
 `tdx-settings` opens its window, `tdx-lcdmanager`. Details, the recovered
 protocol and the API: [docs/LCD_MANAGER.md](docs/LCD_MANAGER.md). Try it with
 `tdx-lcd-demo -a`.
 
-### tdxd's built-in key page
+### The driver's built-in key page (`tdxd`)
 
 `tdx-lcd` finds the panel automatically: SpacePilot Pro (320×240), SpaceMouse
 Enterprise (640×150) or Giotto (1280×416). Use `-d VID:PID` to pick one.
@@ -448,7 +450,7 @@ tdx-lcd bmp sp4LCD.bmp                    # Giotto: legacy 0x13 path (24 bpp BMP
 | x86_64 and arm64 builds | Compile without warnings |
 | SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, the daemon's key page with SHIFT paging, and **Blender 3.0.1** navigation and view buttons through libspnav |
 | SpaceMouse Enterprise and Giotto | Not verified on hardware (no device available) |
-| LCD Manager (`tdx-lcdmgr`, `libtdxlcd`, `tdx-lcdmanager`) and the applets (Function Keys, RSS Feeds, Picture Viewer) | **Verified** on the SpacePilot Pro (2026-11-17): handover to and from tdxd, all eight LCD keys, the program list in the Windows look, the three applets and their Configure dialogs, autostart, Identify, brightness; end to end in `make test-lcdmgr` and `make test-lcdapplets` |
+| LCD Manager (`tdx-lcdmgr`, `libtdxlcd`, `tdx-lcdmanager`) and the applets (Function Keys, RSS Feeds, Picture Viewer) | **Verified** on the SpacePilot Pro (2026-11-17): handover to and from `tdxd`, all eight LCD keys, the program list in the Windows look, the three applets and their Configure dialogs, autostart, Identify, brightness; end to end in `make test-lcdmgr` and `make test-lcdapplets` |
 | `tdx-settings` panel and `action_*` button actions | **Verified** on the SpacePilot Pro (2026-11-17): speed ±, Dominant/Rotation/Pan Zoom toggles, and the panel's Speed, LEDs, Calibrate, button binding, LCD brightness and labels. Also unit-tested (`make test-gui`) |
 
 `docs/PROTOCOL.md` lists the open items.

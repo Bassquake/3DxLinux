@@ -3,7 +3,7 @@
 On Windows, 3DxWare installs Logitech's **LCD Manager** (`LCDMon.exe`, from
 `LADPInst.msi`) to run *applets* on the SpacePilot PRO's 320×240 LCD:
 Function Keys, RSS Feeds, Picture Viewer. The **LCD Manager** button in the
-3DxWare panel opens its window. tdxd replaces it with:
+3DxWare panel opens its window. 3DxLinux replaces it with:
 
 | Windows | Linux |
 |---|---|
@@ -19,10 +19,10 @@ tdx-lcdmanager (window) ──admin commands──┘        │  "lcd-release" 
                                                        its key page; takes the LCD back on close
 ```
 
-Start it with `systemctl --user enable --now tdx-lcdmgr`. While it runs, tdxd
+Start it with `systemctl --user enable --now tdx-lcdmgr`. While it runs, `tdxd`
 leaves the SpacePilot PRO LCD alone (`tdxctl status` shows `lcd lcdmgr`); stop it
-and tdxd's built-in key page returns. The Enterprise and Giotto LCDs are not
-LCDMon devices (3DxWare drives them itself) and stay with tdxd.
+and `tdxd`'s built-in key page returns. The Enterprise and Giotto LCDs are not
+LCDMon devices (3DxWare drives them itself) and stay with `tdxd`.
 
 ## Recovered behaviour
 
@@ -158,8 +158,8 @@ registers the installed ones in the Windows order.
 | Windows | Linux | Notes |
 |---|---|---|
 | `3DxLCD10SPPRO.exe` "Function Keys" | `tdx-lcd-functionkeys` | Three pages: keys 1-5 with the long-press keys 6-10 in blue; the views (T/B, F/BK, R/L, ISO1/ISO2, Roll); SHIFT ESC CTRL ALT MENU, speed, Pan/Zoom, Dominant, Rotation, FIT. LEFT/RIGHT switch pages. Header: the focused application's icon and name and the filter states (green on / red off). Speed and button-press pop-ups. |
-| (3DxService writes `LCDCfg.xml`) | tdxd writes `/run/tdxd/LCDCfg.xml` (`lcd_cfg`) | The same schema: Device, Filters, InfoLine (Text, Slider, ButtonPressed, ApplicationName, Image), and a `<Button><V3DK>…<Text>…` per button. The text is the explicit `lcd_label_N`, else the driver action, else the key binding (preset name or `Ctrl+Shift+P`), else the button's own function. Button presses and speed changes show for 3 s. |
-| `LcdLabelHelper.exe` | built into tdxd | Not a 3Dconnexion applet: a helper (MIT, 2026) that restores the button texts in `LCDCfg.xml` under 3DxWare 10.8 and later. tdxd writes them itself. |
+| (3DxService writes `LCDCfg.xml`) | `tdxd` writes `/run/tdxd/LCDCfg.xml` (`lcd_cfg`) | The same schema: Device, Filters, InfoLine (Text, Slider, ButtonPressed, ApplicationName, Image), and a `<Button><V3DK>…<Text>…` per button. The text is the explicit `lcd_label_N`, else the driver action, else the key binding (preset name or `Ctrl+Shift+P`), else the button's own function. Button presses and speed changes show for 3 s. |
+| `LcdLabelHelper.exe` | built into `tdxd` | Not a 3Dconnexion applet: a helper (MIT, 2026) that restores the button texts in `LCDCfg.xml` under 3DxWare 10.8 and later. `tdxd` writes them itself. |
 | `zz3DxLCD50RSSReader.exe` "RSS Feeds" | `tdx-lcd-rss` | RSS 2.0, RSS 1.0 (RDF) and Atom. One item at a time (title, date, text), next item every *Display duration* seconds; UP/DOWN items, LEFT/RIGHT feeds, OK opens the link. Configure…: the feed list (URL, optional short name), display duration, feed icon. Messages: *No Feeds Found!*, *Download failed*, *Invalid Rss Feed*. `~/.config/tdxd/rss.json`. |
 | `zz3DxLCD60Picture.exe` "Picture Viewer" | `tdx-lcd-pictures` | A folder (optionally subfolders, optionally random), every *Interval* seconds, transitions None / Fade / Wipe / Circle Wipe / Scatter or random; LEFT/RIGHT previous/next, OK pause/play. Default folder: 3Dconnexion's sample pictures. `~/.config/tdxd/pictures.json`. |
 
