@@ -22,6 +22,16 @@ KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", OPTIONS+="stati
 # reads the device through hidraw and makes its own; hide this one from
 # libinput. Only real USB/Bluetooth devices: tdxd's virtual ones have no
 # USB/Bluetooth parent and stay visible.
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c6[0-2][0-9a-f]", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="256f", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-SUBSYSTEM=="input", KERNEL=="event*", KERNELS=="0005:256F:*", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+# Not the CadMouse, the keyboards and the Universal Receiver (256f:c650-c66f):
+# they are ordinary mice and keyboards, and hiding them left the CadMouse
+# unable to move the cursor. (A 3D mouse paired to a Universal Receiver would
+# stay visible too; untested.)
+SUBSYSTEM!="input", GOTO="tdxd_input_end"
+ATTRS{idVendor}=="256f", ATTRS{idProduct}=="c65[0-9a-f]", GOTO="tdxd_input_end"
+ATTRS{idVendor}=="256f", ATTRS{idProduct}=="c66[0-9a-f]", GOTO="tdxd_input_end"
+KERNELS=="0005:256F:C65[0-9A-F].*", GOTO="tdxd_input_end"
+KERNELS=="0005:256F:C66[0-9A-F].*", GOTO="tdxd_input_end"
+KERNEL=="event*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c6[0-2][0-9a-f]", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+KERNEL=="event*", ATTRS{idVendor}=="256f", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+KERNEL=="event*", KERNELS=="0005:256F:*", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+LABEL="tdxd_input_end"
