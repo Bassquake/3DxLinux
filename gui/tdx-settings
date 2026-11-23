@@ -1180,10 +1180,12 @@ window.tdx-picker.tdx-arrowed { background-color: transparent; border: none; }
   -gtk-secondary-caret-color: #1e1e1e; background-color: #ffffff; }
 .tdx-picker button.tdx-pick-item { background: none; border: none; border-radius: 0;
   box-shadow: none; padding: 4px 2px; min-height: 0; }
-.tdx-picker button.tdx-pick-item:hover,
-.tdx-picker button.tdx-pick-item.tdx-pick-current { background-color: #e5e5e5; }
+.tdx-picker button.tdx-pick-item.tdx-pick-current { background-color: #d5d5d5; }
+.tdx-picker button.tdx-pick-item:hover { background-color: #ebebeb; }
+.tdx-picker button.tdx-pick-item:hover label,
+.tdx-picker .tdx-pick-section:hover label { font-weight: bold; }
 .tdx-picker button.tdx-pick-item:disabled label { color: #a0a0a0; }
-.tdx-picker eventbox.tdx-pick-head:hover { background-color: #f2f2f2; }
+.tdx-picker .tdx-pick-section:hover { background-color: #cccccc; }
 .tdx-picker label.tdx-pick-head { font-size: 14px; color: #1e1e1e; }
 .tdx-picker label.tdx-pick-bold { font-weight: bold; }
 .tdx-picker label.tdx-pick-link { color: #1a9ad6; }
@@ -2541,7 +2543,7 @@ class ActionPicker:
     def head(self, name, opened, bold, depth, key=None):
         key = key or name
         eb = Gtk.EventBox()
-        eb.get_style_context().add_class("tdx-pick-head")
+        eb.get_style_context().add_class("tdx-pick-section")
         hb = Gtk.Box(spacing=8)
         hb.set_margin_start(4 + 10 * depth)
         hb.set_margin_top(7)
