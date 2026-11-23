@@ -1173,6 +1173,10 @@ window.tdx-frameless, window.tdx-frameless decoration {
   min-height: 0; }
 .tdx button.tdx-link label { color: #9a9a9a; }
 .tdx button.tdx-link:hover label { color: #0078d7; }
+.tdx button.tdx-switch { background: none; border: none; box-shadow: none;
+  padding: 0; min-height: 0; min-width: 0; -gtk-icon-shadow: none; }
+.tdx button.tdx-switch label { font-size: 15px; color: #1e1e1e; }
+.tdx button.tdx-switch:disabled label { color: #a0a0a0; }
 .tdx button.tdx-title-btn { background: none; border: none; box-shadow: none;
   padding: 0; min-height: 0; }
 .tdx button.tdx-title-btn:hover { background-color: #f0f0f0; }
@@ -2057,10 +2061,7 @@ class MouseButtonsPanel(Panel):
 
     def build(self):
         self.photo = self.put(DevicePhoto(self.app, self.app.current_device), 352, 36)
-        # a tick box like Swap Middle / Right (3DxWare draws a switch)
-        self.app_switch = self.put(Gtk.CheckButton(label="Application Specific Settings"),
-                                   31, 140)
-        self.app_switch.set_can_focus(False)
+        self.app_switch = self.put(SlideSwitch("Application Specific Settings"), 31, 133)
         self.app_switch.connect("toggled", self.guard(self.on_app_specific))
         self.rows = {}
         for v2dk, cap, default, x, y in MOUSE_BUTTONS:
@@ -2384,6 +2385,42 @@ def draw_round_button(cr, size, glyph, color):
 
 GREY_BUTTON = (0x8c / 255.0, 0x8c / 255.0, 0x8c / 255.0)
 GREY_BUTTON_HOVER = (0x5a / 255.0, 0x5a / 255.0, 0x5a / 255.0)
+
+
+class SlideSwitch(Gtk.ToggleButton):
+    """3DxWare's slider switch with its label: a dark grey pill with a white
+    knob on the left when off, blue with the knob on the right when on, pale
+    when unavailable. A toggle button underneath (get_active, "toggled")."""
+    W, H = 38, 18
+
+    def __init__(self, label):
+        super().__init__()
+        self.get_style_context().add_class("tdx-switch")
+        self.set_can_focus(False)
+        self.set_relief(Gtk.ReliefStyle.NONE)
+        box = Gtk.Box(spacing=12)
+        box.pack_start(drawing(self.W, self.H, self.draw), False, False, 0)
+        box.pack_start(lab(label), False, False, 0)
+        self.add(box)
+        self.connect("toggled", lambda *_: self.queue_draw())
+
+    def draw(self, _w, cr):
+        w, h, r = self.W, self.H, self.H / 2.0
+        if not self.get_sensitive():
+            track = (0xc8 / 255.0,) * 3
+        elif self.get_active():
+            track = (0x00 / 255.0, 0x78 / 255.0, 0xd7 / 255.0)
+        else:
+            track = (0x5a / 255.0,) * 3
+        cr.set_source_rgb(*track)
+        cr.arc(r, r, r, math.pi / 2, 3 * math.pi / 2)
+        cr.arc(w - r, r, r, 3 * math.pi / 2, math.pi / 2)
+        cr.close_path()
+        cr.fill()
+        cr.set_source_rgb(1, 1, 1)
+        cx = w - r if self.get_active() else r
+        cr.arc(cx, r, r - 3, 0, 2 * math.pi)
+        cr.fill()
 
 
 class PairedTile(Gtk.EventBox):
