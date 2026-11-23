@@ -1961,10 +1961,10 @@ class MouseAdvancedPanel(Panel):
         self.lines_btn.add(lb)
         self.lines_btn.connect("clicked", self.lines_menu)
         page = self.put(Gtk.RadioButton.new_with_label_from_widget(self.lines_radio,
-                                                                   "One page / one screen"),
+                                                                   "One page / one screen (Windows only)"),
                         277, 167)
         page.set_sensitive(False)
-        page.set_tooltip_text("Not a setting KDE has")
+        page.set_tooltip_text("Windows scrolls a page per notch; Linux has no such mode")
         self.kde = []  # KWin's paths for the CadMouse, when on KDE Plasma
         self.section("Smart Scrolling", 270, 456, 232)
         self.smart = self.put(Gtk.CheckButton(label="Enable"), 277, 239)
