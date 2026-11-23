@@ -44,7 +44,7 @@ void tdx_config_defaults(struct tdx_config *c)
 
 static const char *const action_names[TDX_ACT_COUNT] = {
 	"none", "speed_up", "speed_down", "dominant", "rotation", "panzoom", "calibrate", "lcd_next",
-	"settings",
+	"settings", "disabled",
 };
 
 const char *tdx_action_name(int action)
@@ -89,7 +89,7 @@ static const struct { const char *name; int code; } keytab[] = {
 	K(KEY_MINUS), K(KEY_EQUAL), K(KEY_COMMA), K(KEY_DOT), K(KEY_SLASH),
 	K(KEY_SEMICOLON), K(KEY_APOSTROPHE), K(KEY_LEFTBRACE), K(KEY_RIGHTBRACE),
 	K(KEY_BACKSLASH), K(KEY_GRAVE), K(KEY_PRINT), K(KEY_PAUSE), K(KEY_MENU),
-	K(KEY_VOLUMEUP), K(KEY_VOLUMEDOWN), K(KEY_MUTE), K(KEY_PLAYPAUSE),
+	K(KEY_VOLUMEUP), K(KEY_VOLUMEDOWN), K(KEY_MUTE), K(KEY_MICMUTE), K(KEY_PLAYPAUSE),
 	K(KEY_NEXTSONG), K(KEY_PREVIOUSSONG), K(KEY_UNDO), K(KEY_REDO),
 	K(KEY_COPY), K(KEY_PASTE), K(KEY_CUT), K(KEY_FIND),
 	K(KEY_CAPSLOCK), K(KEY_NUMLOCK), K(KEY_SCROLLLOCK), K(KEY_SYSRQ), K(KEY_102ND),

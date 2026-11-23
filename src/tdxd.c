@@ -145,6 +145,8 @@ static int key_union[3 * TDX_MAX_KEYMAP];
 static int nkey_union;
 
 static void on_sig(int s) { if (s == SIGHUP) g_reload = 1; else g_quit = 1; }
+static void open_settings(void);
+static int device_rezero(struct dev_ctx *d);
 
 static long long now_ms(void)
 {
@@ -615,6 +617,27 @@ static void rcv_mouse_buttons(struct rcv_ctx *r, uint8_t bits)
 		if (!(changed & (1u << i)))
 			continue;
 		int p = (bits >> i) & 1;
+		int act = tdx_rcv_mouse_action(&cfg, def, i);
+		if (act != TDX_ACT_NONE) { /* a driver action, as on the 3D mice */
+			if (!p)
+				continue;
+			if (act == TDX_ACT_SETTINGS)
+				open_settings();
+			else if (act == TDX_ACT_CALIBRATE)
+				for (int k = 0; k < ndev; k++)
+					device_rezero(&devs[k]);
+			else if (tdx_apply_action(&cfg, act)) {
+				LOG(0, "%s: %s: speed %.2f, pan/zoom %s, rotation %s, dominant %s\n",
+				    rcv_dev_name(r), tdx_action_name(act), cfg.sensitivity,
+				    cfg.disable_translation ? "off" : "on",
+				    cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off");
+				if (act == TDX_ACT_SPEED_UP || act == TDX_ACT_SPEED_DOWN)
+					info_slider = (int)(cfg.sensitivity * 100 + 0.5);
+				info_until = now_ms() + 3000;
+				lcdcfg_dirty = 1;
+			}
+			continue;
+		}
 		const struct tdx_keymap *km = tdx_rcv_mouse_binding(&cfg, def, i);
 		LOG(2, "%s: button %d (%s) %s\n", rcv_dev_name(r), i + 1,
 		    def && i < def->nbuttons ? def->buttons[i].v3dk : "-", p ? "down" : "up");

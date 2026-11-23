@@ -87,6 +87,16 @@ const struct tdx_keymap *tdx_rcv_mouse_binding(const struct tdx_config *cfg,
 	return NULL;
 }
 
+int tdx_rcv_mouse_action(const struct tdx_config *cfg, const struct tdx_device_def *dev, int idx)
+{
+	if (!dev || idx >= dev->nbuttons || !dev->buttons[idx].v3dk)
+		return TDX_ACT_NONE;
+	for (int i = 0; i < cfg->nactions; i++)
+		if (!strcasecmp(cfg->actions[i].v3dk, dev->buttons[idx].v3dk))
+			return cfg->actions[i].action;
+	return TDX_ACT_NONE;
+}
+
 static int mouse_fn(int code)
 {
 	switch (code) {
@@ -109,7 +119,9 @@ unsigned tdx_rcv_mouse_map(const struct tdx_config *cfg, const struct tdx_device
 	for (int i = 0; i < 7; i++) {
 		int fn = def[i];
 		const struct tdx_keymap *km = i >= 2 ? tdx_rcv_mouse_binding(cfg, dev, i) : NULL;
-		if (km)
+		if (i >= 2 && tdx_rcv_mouse_action(cfg, dev, i) != TDX_ACT_NONE)
+			fn = 0; /* a driver action (or disabled): tdxd handles it */
+		else if (km)
 			fn = !km->keys[1] ? mouse_fn(km->keys[0]) : 0;
 		map[i] = (uint8_t)(fn ? 9 + fn : 40 + i + 1);
 		if (!fn)

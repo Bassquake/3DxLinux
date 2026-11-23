@@ -92,6 +92,11 @@ void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int ra
 unsigned tdx_rcv_mouse_map(const struct tdx_config *cfg, const struct tdx_device_def *dev,
 			   uint8_t map[7]);
 
+/* @dev's driver action for button @idx (action_V2DK_... = speed_up, ...,
+ * disabled), by its V2DK name only, or TDX_ACT_NONE. It beats a key binding,
+ * as on the 3D mice. */
+int tdx_rcv_mouse_action(const struct tdx_config *cfg, const struct tdx_device_def *dev, int idx);
+
 /* @dev's binding for button @idx, by its V2DK name only (not BUTTON_n), or
  * NULL when it has none. */
 const struct tdx_keymap *tdx_rcv_mouse_binding(const struct tdx_config *cfg,

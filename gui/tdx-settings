@@ -1173,6 +1173,19 @@ window.tdx-frameless, window.tdx-frameless decoration {
   min-height: 0; }
 .tdx button.tdx-link label { color: #9a9a9a; }
 .tdx button.tdx-link:hover label { color: #0078d7; }
+.tdx-picker { background-color: #ffffff; border: 1px solid #c8c8c8;
+  border-radius: 0; padding: 0; }
+.tdx-picker entry { min-height: 26px; }
+.tdx-picker button.tdx-pick-item { background: none; border: none; border-radius: 0;
+  box-shadow: none; padding: 4px 2px; min-height: 0; }
+.tdx-picker button.tdx-pick-item:hover,
+.tdx-picker button.tdx-pick-item.tdx-pick-current { background-color: #e5e5e5; }
+.tdx-picker button.tdx-pick-item:disabled label { color: #a0a0a0; }
+.tdx-picker eventbox.tdx-pick-head:hover { background-color: #f2f2f2; }
+.tdx-picker label.tdx-pick-head { font-size: 14px; color: #1e1e1e; }
+.tdx-picker label.tdx-pick-bold { font-weight: bold; }
+.tdx-picker label.tdx-pick-link { color: #1a9ad6; }
+.tdx-picker button.tdx-pick-item:disabled label.tdx-pick-link { color: #a9d3ea; }
 .tdx button.tdx-switch { background: none; border: none; box-shadow: none;
   padding: 0; min-height: 0; min-width: 0; -gtk-icon-shadow: none; }
 .tdx button.tdx-switch label { font-size: 15px; color: #1e1e1e; }
@@ -2036,8 +2049,8 @@ MOUSE_BUTTONS = [
 ]
 # mouse functions: done by the mouse itself (tdxd puts them in its button map)
 MOUSE_FUNCTIONS = [
-    ("BTN_LEFT", "Left Mouse Button", "HIDMouse_Left.png"),
-    ("BTN_RIGHT", "Right Mouse Button", "HIDMouse_Right.png"),
+    ("BTN_LEFT", "Primary Mouse Function", "HIDMouse_Left.png"),
+    ("BTN_RIGHT", "Secondary Mouse Function", "HIDMouse_Right.png"),
     ("BTN_MIDDLE", "Middle Mouse Function", "HIDMouse_Middle.png"),
     ("BTN_EXTRA", "Forward Mouse Button", "HIDMouse_Forward.png"),
     ("BTN_SIDE", "Backward Mouse Button", "HIDMouse_Backward.png"),
@@ -2045,7 +2058,349 @@ MOUSE_FUNCTIONS = [
 MOUSE_DEFAULT = {"V2DK_RADIALMENU": None, "V2DK_WHEEL": "BTN_MIDDLE",
                  "V2DK_MIDDLE": "BTN_MIDDLE", "V2DK_FORWARD": "BTN_EXTRA",
                  "V2DK_BACKWARD": "BTN_SIDE"}
-MOUSE_PROFILE_KEYS = ["key_" + b[0] for b in MOUSE_BUTTONS] + ["mouse_swap_buttons"]
+MOUSE_PROFILE_KEYS = (["key_" + b[0] for b in MOUSE_BUTTONS] +
+                      ["action_" + b[0] for b in MOUSE_BUTTONS] + ["mouse_swap_buttons"])
+
+# 3DxWare's action picker for a CadMouse button (Global.xml's categories and
+# SharedCfg.xml): sections of entries (label, icon, value). value: "BTN_*" a
+# mouse function, "keys:CHORD" keystrokes, "action:NAME" a driver action,
+# "default" the button's 3DxWare default, None: not on Linux yet (greyed).
+# The System Shortcuts are KDE Plasma's shortcuts for the same commands.
+NOT_LINUX = "Not on Linux yet"
+
+
+def _i(label, icon=None, value=None):
+    return {"label": label, "icon": icon, "value": value}
+
+
+PICKER = [
+    ("3Dconnexion", [
+        _i("Properties...", "Driver_ShowDriverGUI.png", "action:settings"),
+        _i("Buttons...", "Driver_ShowDriverGUI_Buttons_KB.png", "action:settings"),
+        _i("Virtual NumPad", "Driver_Toggle_3DxNumPad.png"),
+        _i("Virtual LCD"),
+        _i("Decrease Speed", None, "action:speed_down"),
+        _i("Increase Speed", None, "action:speed_up"),
+        _i("Low Speed", "Driver_LowSpeedAppScale.png"),
+        _i("Moderate Speed", "Driver_ModerateSpeedAppScale.png"),
+        _i("Fast Speed", "Driver_FastSpeedAppScale.png"),
+        _i("PanZoom Very Slow", "Driver_VerySlowDeviceTransScale.png"),
+        _i("PanZoom Slow", "Driver_SlowDeviceTransScale.png"),
+        _i("PanZoom Moderate", "Driver_ModerateDeviceTransScale.png"),
+        _i("PanZoom Fast", "Driver_FastDeviceTransScale.png"),
+        _i("PanZoom Very Fast", "Driver_VeryFastDeviceTransScale.png"),
+        _i("Pan Zoom On/Off", None, "action:panzoom"),
+        _i("Rotation On/Off", "Driver_ToggleRotations.png", "action:rotation"),
+        _i("Dominant On/Off", None, "action:dominant"),
+        _i("Disabled", None, "action:disabled"),
+        _i("Mute Microphone", "DriverFunctions_MuteMicrophone.png", "keys:MICMUTE"),
+        _i("Volume Down", "Driver_VolumeDown.png", "keys:VOLUMEDOWN"),
+        _i("Volume Up", "Driver_VolumeUp.png", "keys:VOLUMEUP"),
+        _i("Calibrate SpaceMouse", "Driver_RezeroDevice.png", "action:calibrate"),
+        _i("File Explorer", "Driver_Start_FileManager.png"),
+        _i("Internet", "Driver_Start_Browser.png"),
+        _i("Media Previous", "Driver_MediaPlayer_PreviousTrack.png", "keys:PREVIOUSSONG"),
+        _i("Media Play/Pause", "Driver_MediaPlayer_PlayPause.png", "keys:PLAYPAUSE"),
+        _i("Media Next", "Driver_MediaPlayer_NextTrack.png", "keys:NEXTSONG"),
+        _i("Open Manual", "SE_Open_Manual.png"),
+        _i("Numpad", "ControlCommand_ID_3DXLCD_TOGGLE_NUMPADAPP.png"),
+        _i("Viewer", "Viewer.png"),
+        _i("File Explorer", "AS_Start_FileManager.png"),
+        _i("Calculator", "CalculatorApp.png"),
+        _i("Web Browser", "AS_Start_Browser.png"),
+        _i("Maps", "MapsApp.png"),
+        _i("Word Processor", "AS_Start_Word.png"),
+        _i("Spreadsheet", "AS_Start_Excel.png"),
+        _i("Presentation", "AS_Start_PowerPoint.png"),
+        _i("Mail"),
+    ]),
+    ("Applications", [
+        _i("Starting applications"),
+        {"link": "New Application"},
+    ]),
+    ("Keyboard", [
+        {"folder": "System Shortcuts", "items": [
+            _i("Cut", "Macro_Cut.png", "keys:LEFTCTRL+X"),
+            _i("Copy", "Macro_Copy.png", "keys:LEFTCTRL+C"),
+            _i("Paste", "Macro_Paste.png", "keys:LEFTCTRL+V"),
+            _i("Undo", "Macro_Undo.png", "keys:LEFTCTRL+Z"),
+            _i("Redo", "Macro_Redo.png", "keys:LEFTCTRL+SHIFT+Z"),
+            _i("New", "Macro_New.png", "keys:LEFTCTRL+N"),
+            _i("Open", "Macro_Open.png", "keys:LEFTCTRL+O"),
+            _i("Save", "Macro_Save.png", "keys:LEFTCTRL+S"),
+            _i("Save As", "Macro_SaveAs.png", "keys:LEFTCTRL+SHIFT+S"),
+            _i("Select All", "Macro_SelectAll.png", "keys:LEFTCTRL+A"),
+            _i("Double-Click Left", "Macro_DoubleClickLeft.png"),
+            _i("Double-Click Middle", "Macro_DoubleClickMiddle.png"),
+            _i("Settings", "Macro_Settings.png"),
+            _i("Lock Screen", "Macro_LockScreen.png", "keys:LEFTMETA+L"),
+            _i("Quit Program", "Macro_QuitProgram.png", "keys:LEFTALT+F4"),
+            _i("Task Manager", "Macro_TaskManager.png", "keys:LEFTCTRL+ESC"),
+            _i("Tab Application", "Macro_TabApplication.png", "keys:LEFTALT+TAB"),
+            _i("Align Window Right", "Macro_AlignWindowRight.png", "keys:LEFTMETA+RIGHT"),
+            _i("Align Window Left", "Macro_AlignWindowLeft.png", "keys:LEFTMETA+LEFT"),
+            _i("Maximize Window", "Macro_MaximizeWindow.png", "keys:LEFTMETA+PAGEUP"),
+            _i("Search", "Macro_Search.png", "keys:LEFTALT+SPACE"),
+            _i("Minimize All", "Macro_MinimizeAll.png", "keys:LEFTMETA+D"),
+            _i("File Manager", "Macro_FileManager.png", "keys:LEFTMETA+E"),
+            _i("Internet Browser", "Macro_InternetBrowser.png"),
+            _i("Snipping Tool", "Macro_SnippingTool.png", "keys:LEFTMETA+LEFTSHIFT+S"),
+            _i("Task Switcher", "Macro_TaskSwitcher.png"),
+            _i("Output Mixer", "Macro_OutputMixer.png"),
+            _i("Clipboard History", "Macro_ClipboardHistory.png", "keys:LEFTMETA+V"),
+        ]},
+        _i("Esc Key", "KB_Esc.png", "keys:ESC"),
+        _i("Alt Key", "KB_Alt.png", "keys:LEFTALT"),
+        _i("Shift Key", "KB_Shift.png", "keys:LEFTSHIFT"),
+        _i("Ctrl Key", "KB_Ctrl.png", "keys:LEFTCTRL"),
+        _i("Delete Key", "KB_Delete.png", "keys:DELETE"),
+        _i("Tab Key", "KB_Tab.png", "keys:TAB"),
+        _i("Space Key", "KB_Space.png", "keys:SPACE"),
+        _i("Enter Key", "KB_Enter.png", "keys:ENTER"),
+        _i("Shift Lock", "Driver_ShiftLock.png"),
+        _i("Ctrl Lock", "Driver_CtrlLock.png"),
+        {"link": "Custom Keystroke…", "custom": True},
+    ]),
+    ("Macros", [
+        _i("Settings", "Macro_Settings.png"),
+        _i("Project", "PresentMode.png"),
+        _i("Start Menu", None, "keys:LEFTMETA"),
+        {"link": "New Macro"},
+    ]),
+    ("Mouse", [
+        _i("Primary Mouse Function", "HIDMouse_Left.png", "BTN_LEFT"),
+        _i("Middle Mouse Function", "HIDMouse_Middle.png", "BTN_MIDDLE"),
+        _i("Secondary Mouse Function", "HIDMouse_Right.png", "BTN_RIGHT"),
+        _i("Forward Mouse Button", "HIDMouse_Forward.png", "BTN_EXTRA"),
+        _i("Backward Mouse Button", "HIDMouse_Backward.png", "BTN_SIDE"),
+        _i("Double-Click Left", "Macro_DoubleClickLeft.png"),
+        _i("Double-Click Middle", "Macro_DoubleClickMiddle.png"),
+    ]),
+    ("Radial Menus", [
+        _i("Common Macros", "Base_RadialMenu_CommonMacros.png"),
+        _i("Common Tools", "HIDMouse_RadialMenu.png", "default"),
+        {"link": "New Radial Menu"},
+    ]),
+]
+
+
+def picker_items(sections=PICKER):
+    """Every entry (not links or folders), with its section, in order."""
+    for name, items in sections:
+        for it in items:
+            if "folder" in it:
+                for sub in it["items"]:
+                    yield name, sub
+            elif "label" in it:
+                yield name, it
+
+
+def picker_value_matches(item_value, kind, val):
+    """Does a picker entry's value describe this binding (kind, val)?"""
+    if not item_value:
+        return False
+    if kind == "action":
+        return item_value == "action:" + val
+    if kind == "mouse":
+        return item_value == val
+    if kind == "keys":
+        return (item_value.startswith("keys:") and
+                chord_names(item_value[5:]) == val)
+    return item_value == "default"
+
+
+class ActionPicker:
+    """3DxWare's drop-down of actions for a button: a search box, folder
+    sections that open and close (the one holding the button's function in
+    bold, that function highlighted), and a grip at the bottom to make it
+    taller. Entries that can't work on Linux yet are greyed."""
+    W, H_DEFAULT, H_MIN, H_MAX = 250, 316, 160, 900
+
+    def __init__(self, panel, widget, v2dk, default):
+        self.panel, self.v2dk, self.default = panel, v2dk, default
+        self.current = panel.current_item(v2dk)
+        self.open = set()
+        pop = self.pop = Gtk.Popover.new(widget)
+        pop.set_position(Gtk.PositionType.RIGHT)
+        for c in ("tdx", "tdx-picker"):
+            pop.get_style_context().add_class(c)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.search = Gtk.Entry()
+        self.search.set_margin_start(10)
+        self.search.set_margin_end(10)
+        self.search.set_margin_top(10)
+        self.search.set_margin_bottom(8)
+        glass = ASSETS.ui("SmartUI_Flyout_MagnifyingGlass") or ASSETS.ui("SmartUI_Icon_Magnifier")
+        if glass:
+            from gi.repository import GdkPixbuf
+            try:
+                self.search.set_icon_from_pixbuf(Gtk.EntryIconPosition.SECONDARY,
+                                                 GdkPixbuf.Pixbuf.new_from_file(glass))
+            except GLib.Error:
+                pass
+        else:
+            self.search.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY,
+                                                "edit-find-symbolic")
+        self.search.connect("changed", lambda *_: self.fill())
+        outer.pack_start(self.search, False, False, 0)
+        self.sw = Gtk.ScrolledWindow()
+        self.sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.sw.set_size_request(self.W, getattr(panel.app, "picker_height", self.H_DEFAULT))
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.list.set_margin_start(10)
+        self.list.set_margin_end(10)
+        self.sw.add(self.list)
+        outer.pack_start(self.sw, True, True, 0)
+        grip = Gtk.EventBox()
+        grip.set_tooltip_text("Drag to make the list taller or shorter")
+        img = image_widget(ASSETS.ui("SmartUI_Button_resize_handle_icon")) or lab("·····", "tdx-small",
+                                                                                 xalign=0.5)
+        grip.add(img)
+        grip.set_size_request(-1, 10)
+        grip.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_MOTION_MASK)
+        grip.connect("button-press-event", self.grip_press)
+        grip.connect("motion-notify-event", self.grip_move)
+        grip.connect("realize", lambda w: w.get_window().set_cursor(
+            Gdk.Cursor.new_from_name(w.get_display(), "ns-resize")))
+        outer.pack_start(grip, False, False, 2)
+        pop.add(outer)
+        self.fill()
+        outer.show_all()
+
+    def popup(self):
+        self.pop.popup()
+        self.search.grab_focus()
+
+    # ---- resizing by the grip
+    def grip_press(self, _w, ev):
+        self.drag = (ev.y_root, self.sw.get_allocated_height())
+        return True
+
+    def grip_move(self, _w, ev):
+        y0, h0 = getattr(self, "drag", (ev.y_root, self.H_DEFAULT))
+        h = int(max(self.H_MIN, min(self.H_MAX, h0 + ev.y_root - y0)))
+        self.sw.set_size_request(self.W, h)
+        self.panel.app.picker_height = h
+        return True
+
+    # ---- the list
+    def holds_current(self, items):
+        for it in items:
+            if it is self.current:
+                return True
+            if "folder" in it and self.holds_current(it["items"]):
+                return True
+        return False
+
+    def fill(self):
+        for c in self.list.get_children():
+            self.list.remove(c)
+        q = self.search.get_text().strip().lower()
+        for name, items in PICKER:
+            shown = self.filtered(items, q)
+            if q and not shown:
+                continue
+            opened = bool(q) or name in self.open
+            self.list.pack_start(self.head(name, opened, self.holds_current(items), 0),
+                                 False, False, 0)
+            if opened:
+                for it in shown:
+                    self.add_entry(it, q, 1)
+            self.list.pack_start(self.rule(), False, False, 0)
+        self.list.show_all()
+
+    def filtered(self, items, q):
+        if not q:
+            return items
+        out = []
+        for it in items:
+            if "folder" in it:
+                sub = self.filtered(it["items"], q)
+                if sub:
+                    out.append({"folder": it["folder"], "items": sub})
+            elif q in (it.get("label") or it.get("link") or "").lower():
+                out.append(it)
+        return out
+
+    def add_entry(self, it, q, depth):
+        if "folder" in it:
+            key = "/" + it["folder"]
+            opened = bool(q) or key in self.open
+            self.list.pack_start(self.head(it["folder"], opened,
+                                           self.holds_current(it["items"]), depth, key),
+                                 False, False, 0)
+            if opened:
+                for sub in it["items"]:
+                    self.add_entry(sub, q, depth + 1)
+            self.list.pack_start(self.rule(depth), False, False, 0)
+            return
+        b = Gtk.Button()
+        b.set_relief(Gtk.ReliefStyle.NONE)
+        b.set_can_focus(False)
+        b.get_style_context().add_class("tdx-pick-item")
+        hb = Gtk.Box(spacing=8)
+        hb.set_margin_start(6 + 10 * (depth - 1))
+        if "link" in it:
+            l = lab(it["link"], "tdx-pick-link")
+            hb.pack_start(l, False, False, 20)
+            ok = bool(it.get("custom"))
+        else:
+            icon = Gtk.Box()
+            icon.set_size_request(18, 18)
+            img = image_widget(ASSETS.icon(it["icon"]), 18) if it.get("icon") else None
+            if img:
+                icon.add(img)
+            hb.pack_start(icon, False, False, 0)
+            hb.pack_start(lab(it["label"]), False, False, 0)
+            ok = bool(it.get("value")) and (it["value"] != "default" or
+                                            self.v2dk == "V2DK_RADIALMENU")
+            if it is self.current:
+                b.get_style_context().add_class("tdx-pick-current")
+        b.add(hb)
+        b.set_sensitive(ok)
+        if not ok:
+            b.set_tooltip_text(NOT_LINUX)
+        b.connect("clicked", lambda _b, it=it: self.choose(it))
+        self.list.pack_start(b, False, False, 0)
+
+    def head(self, name, opened, bold, depth, key=None):
+        key = key or name
+        eb = Gtk.EventBox()
+        eb.get_style_context().add_class("tdx-pick-head")
+        hb = Gtk.Box(spacing=8)
+        hb.set_margin_start(4 + 10 * depth)
+        hb.set_margin_top(7)
+        hb.set_margin_bottom(7)
+        folder = image_widget(ASSETS.ui("folder_open" if opened else "folder_closed"))
+        if folder:
+            hb.pack_start(folder, False, False, 0)
+        hb.pack_start(lab(name, "tdx-pick-head" + (" tdx-pick-bold" if bold else "")),
+                      False, False, 0)
+        chev = image_widget(ASSETS.ui("SmartUI_Button_ArrowUp" if opened
+                                      else "SmartUI_Button_ArrowDown"))
+        hb.pack_end(chev or lab("^" if opened else "v", "tdx-more"), False, False, 4)
+        eb.add(hb)
+        eb.add_events(Gdk.EventMask.BUTTON_RELEASE_MASK)
+        eb.connect("button-release-event", lambda *_: self.toggle(key) or True)
+        return eb
+
+    def rule(self, depth=0):
+        r = drawing(self.W - 20 - 10 * depth, 1, lambda _w, cr: (
+            cr.set_source_rgb(*SECTION_LINE), cr.paint()) and None)
+        r.set_margin_start(10 * depth)
+        return r
+
+    def toggle(self, key):
+        self.open ^= {key}
+        self.fill()
+
+    def choose(self, it):
+        self.pop.popdown()
+        if it.get("custom"):
+            self.panel.capture(self.v2dk, self.default)
+        else:
+            self.panel.pick(self.v2dk, it["value"])
+
 
 
 class MouseButtonsPanel(Panel):
@@ -2132,7 +2487,10 @@ class MouseButtonsPanel(Panel):
 
     # ---- the buttons
     def binding(self, v2dk):
-        """('default', None) | ('mouse', BTN_*) | ('keys', [names])"""
+        """('default', None) | ('action', name) | ('mouse', BTN_*) | ('keys', [names])"""
+        act = (self.value("action_" + v2dk) or "").strip().lower()
+        if act and act != "none":
+            return "action", act
         v = self.value("key_" + v2dk)
         names = chord_names(v)
         if not names:
@@ -2141,22 +2499,31 @@ class MouseButtonsPanel(Panel):
             return "mouse", names[0]
         return "keys", names
 
-    def describe(self, v2dk, default):
+    def current_item(self, v2dk):
+        """The picker entry that is the button's function now, or None."""
         kind, val = self.binding(v2dk)
         if kind == "default":
-            val = MOUSE_DEFAULT[v2dk]
-            if val is None:
-                return default, ASSETS.icon("HIDMouse_RadialMenu.png"), \
-                    "3DxWare's radial menu: does nothing on Linux. Give it a keystroke " \
-                    "or a mouse function."
-            kind = "mouse"
+            d = MOUSE_DEFAULT[v2dk]
+            kind, val = ("mouse", d) if d else ("default", None)
+        for _sec, it in picker_items():
+            if picker_value_matches(it["value"], kind, val):
+                return it
+        return None
+
+    def describe(self, v2dk, default):
+        kind, val = self.binding(v2dk)
+        it = self.current_item(v2dk)
+        if kind == "default" and MOUSE_DEFAULT[v2dk] is None:
+            return default, ASSETS.icon("HIDMouse_RadialMenu.png"), \
+                "3DxWare's radial menu: does nothing on Linux. Give it a keystroke " \
+                "or a mouse function."
+        if it:
+            return it["label"], ASSETS.icon(it["icon"]) if it.get("icon") else None, None
+        if kind == "action":
+            return ACTION_LABEL.get(val, val), None, None
         if kind == "mouse":
-            for code, label, icon in MOUSE_FUNCTIONS:
-                if code == val:
-                    return label, ASSETS.icon(icon), None
             return val, None, None
-        preset = next((n for n, p in KEY_PRESETS if p and chord_names(p) == val), None)
-        return preset or pretty_chord(val), ASSETS.icon("Keyboard.png"), None
+        return pretty_chord(val), ASSETS.icon("Keyboard.png"), None
 
     def refresh(self):
         self.updating = True
@@ -2181,34 +2548,8 @@ class MouseButtonsPanel(Panel):
         self.updating = False
 
     def popup(self, widget, v2dk, default):
-        menu = Gtk.Menu()
-
-        def add(m, label, cb):
-            mi = Gtk.MenuItem(label=label)
-            mi.connect("activate", lambda *_: cb())
-            m.append(mi)
-
-        dflt = MOUSE_DEFAULT[v2dk]
-        dname = default if dflt is None else \
-            next(l for c, l, _i in MOUSE_FUNCTIONS if c == dflt)
-        add(menu, "%s (default)" % dname, lambda: self.assign(v2dk, None))
-        menu.append(Gtk.SeparatorMenuItem())
-        for code, label, _icon in MOUSE_FUNCTIONS:
-            add(menu, label, lambda c=code: self.assign(v2dk, c))
-        menu.append(Gtk.SeparatorMenuItem())
-        kb = Gtk.Menu()
-        for label, chord in KEY_PRESETS:
-            if label is None:
-                kb.append(Gtk.SeparatorMenuItem())
-                continue
-            add(kb, "%s  (%s)" % (label, pretty_chord(chord_names(chord))),
-                lambda c=chord: self.assign(v2dk, chord_value(chord_names(c))))
-        mi = Gtk.MenuItem(label="Keyboard")
-        mi.set_submenu(kb)
-        menu.append(mi)
-        add(menu, "Custom keystroke…", lambda: self.capture(v2dk, default))
-        menu.show_all()
-        menu.popup_at_widget(widget, Gdk.Gravity.NORTH_EAST, Gdk.Gravity.NORTH_WEST, None)
+        self.picker = ActionPicker(self, widget, v2dk, default)
+        self.picker.popup()
 
     def capture(self, v2dk, default):
         dlg = KeyCaptureDialog(self.box.get_toplevel(), default)
@@ -2216,13 +2557,40 @@ class MouseButtonsPanel(Panel):
             self.assign(v2dk, chord_value(dlg.keys))
         dlg.destroy()
 
-    def assign(self, v2dk, value):
-        """@value: a BTN_* mouse function, a chord, or None for the default."""
-        key = "key_" + v2dk
-        if value is None and self.specific():
-            # a profile's own default: "none" keeps it from falling back to the global one
-            value = "none"
-        self.set_value(key, value)
+    def pick(self, v2dk, value):
+        """A picker entry chosen: its value (see PICKER)."""
+        if value == "default":
+            self.assign(v2dk, None)
+        elif value.startswith("action:"):
+            self.assign(v2dk, None, action=value[7:])
+        elif value.startswith("keys:"):
+            self.assign(v2dk, chord_value(chord_names(value[5:])))
+        elif value == MOUSE_DEFAULT[v2dk]:
+            self.assign(v2dk, None)  # the button's own function: its default
+        else:
+            self.assign(v2dk, value)
+
+    def assign(self, v2dk, value, action=None):
+        """@value: a BTN_* mouse function, a chord, or None for the default;
+        @action: a driver action instead (it beats a key, as in tdxd)."""
+        f = self.conf()
+        key, akey = "key_" + v2dk, "action_" + v2dk
+        specific = self.specific()
+        if action:
+            f.set(akey, action)
+            f.remove(key)
+        else:
+            if specific:  # a profile's own: "none" keeps the global one from showing through
+                f.set(akey, "none")
+            else:
+                f.remove(akey)
+            if value is None and specific:
+                value = "none"
+            if value is None:
+                f.remove(key)
+            else:
+                f.set(key, value)
+        self.store.changed()
 
 
 # Add device: what 3DxPair offers for a Universal Receiver (tdxctl pair KIND)

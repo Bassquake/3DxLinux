@@ -34,6 +34,7 @@ enum tdx_action {
 	TDX_ACT_CALIBRATE,    /* "Calibrate" (Driver_RezeroDevice) */
 	TDX_ACT_LCD_NEXT,     /* Giotto: slide to the next LCD page */
 	TDX_ACT_SETTINGS,     /* "3Dconnexion Settings" (Driver_ShowDriverGUI): open tdx-settings */
+	TDX_ACT_DISABLED,     /* "Disabled" (Driver_Disabled): the button does nothing */
 	TDX_ACT_COUNT
 };
 #define TDX_MAX_ACTIONS 64

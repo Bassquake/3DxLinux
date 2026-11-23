@@ -1327,6 +1327,22 @@ static void test_receiver(void)
 	      map[0] == 10);
 	CHECK(tdx_rcv_mouse_binding(&mc, cmw, 4) && tdx_rcv_mouse_binding(&mc, cmw, 4)->keys[1]);
 	CHECK(tdx_rcv_mouse_binding(&mc, cmw, 5) == NULL);
+	{
+		char p[] = "/tmp/tdx-test-cm2.conf";
+		FILE *f = fopen(p, "w");
+		fputs("action_V2DK_BACKWARD = speed_up\naction_V2DK_WHEEL = disabled\n"
+		      "key_V2DK_RADIALMENU = KEY_MICMUTE\n", f);
+		fclose(f);
+		CHECK(tdx_config_load(&mc, p) == 0);
+		unlink(p);
+	}
+	/* a driver action or Disabled: the button reports (40 + n), tdxd acts */
+	vend = tdx_rcv_mouse_map(&mc, cmw, map);
+	CHECK(map[5] == 46 && map[3] == 44 && map[6] == 47 && (vend & 0x68) == 0x68);
+	CHECK(tdx_rcv_mouse_action(&mc, cmw, 5) == TDX_ACT_SPEED_UP &&
+	      tdx_rcv_mouse_action(&mc, cmw, 3) == TDX_ACT_DISABLED &&
+	      tdx_rcv_mouse_action(&mc, cmw, 4) == TDX_ACT_NONE);
+	CHECK(tdx_rcv_mouse_binding(&mc, cmw, 6)->keys[0] == KEY_MICMUTE);
 	tdx_config_defaults(&mc);
 	tdx_rcv_mouse_map(&mc, cmw, map);
 	tdx_rcv_mouse_config(rep, 7200, 125, 0, map);

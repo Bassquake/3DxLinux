@@ -440,6 +440,51 @@ def gui_tests(d, tdxd):
     for k in ts.MOUSE_PROFILE_KEYS:
         app.store.base.remove(k)
     app.store.changed()
+    # ---- 3DxWare's action picker
+    pk = ts.ActionPicker(mbtn, mbtn.rows["V2DK_RADIALMENU"][0], "V2DK_RADIALMENU", "Common Tools")
+    heads = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.EventBox)]
+    check([h.get_child().get_children()[1].get_text() for h in heads] ==
+          ["3Dconnexion", "Applications", "Keyboard", "Macros", "Mouse", "Radial Menus"],
+          "picker: 3DxWare's sections, closed")
+    check(pk.current and pk.current["label"] == "Common Tools" and
+          "tdx-pick-bold" in heads[5].get_child().get_children()[1].get_style_context()
+          .list_classes(), "picker: Radial Menus bold, Common Tools current")
+    pk.toggle("Radial Menus")
+    btns = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.Button)]
+    check(len(btns) == 3 and not btns[0].get_sensitive() and btns[1].get_sensitive() and
+          btns[1].get_style_context().has_class("tdx-pick-current") and
+          not btns[2].get_sensitive(), "Radial Menus: Common Macros greyed, Common Tools, New")
+    pk.search.set_text("volume")
+    btns = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.Button)]
+    check(len(btns) == 2 and all(b.get_sensitive() for b in btns), "search: Volume Down / Up")
+    pk.search.set_text("undo")
+    btns = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.Button)]
+    check(len(btns) == 1, "search finds Undo inside System Shortcuts")
+    btns[0].clicked()
+    check(app.store.base.get("key_V2DK_RADIALMENU") == "KEY_LEFTCTRL+KEY_Z" and
+          mbtn.rows["V2DK_RADIALMENU"][1].get_text() == "Undo", "picker: Undo chosen")
+    mbtn.pick("V2DK_BACKWARD", "action:speed_up")
+    mbtn.pick("V2DK_WHEEL", "action:disabled")
+    mbtn.pick("V2DK_FORWARD", "keys:MICMUTE")
+    check(app.store.base.get("action_V2DK_BACKWARD") == "speed_up" and
+          mbtn.rows["V2DK_BACKWARD"][1].get_text() == "Increase Speed" and
+          mbtn.rows["V2DK_WHEEL"][1].get_text() == "Disabled" and
+          app.store.base.get("key_V2DK_FORWARD") == "KEY_MICMUTE" and
+          mbtn.rows["V2DK_FORWARD"][1].get_text() == "Mute Microphone",
+          "picker: a driver action, Disabled, Mute Microphone")
+    mbtn.pick("V2DK_BACKWARD", "BTN_SIDE")  # its own function again: the default
+    mbtn.pick("V2DK_MIDDLE", "BTN_RIGHT")
+    check(not app.store.base.has("action_V2DK_BACKWARD") and
+          not app.store.base.has("key_V2DK_BACKWARD") and
+          app.store.base.get("key_V2DK_MIDDLE") == "BTN_RIGHT" and
+          mbtn.rows["V2DK_MIDDLE"][1].get_text() == "Secondary Mouse Function",
+          "picker: back to the default, and a mouse function")
+    greyed = [it["label"] for _s, it in ts.picker_items() if not it["value"]]
+    check("Virtual NumPad" in greyed and "Double-Click Left" in greyed and
+          "Undo" not in greyed, "picker: Windows-only entries greyed")
+    for k in ts.MOUSE_PROFILE_KEYS:
+        app.store.base.remove(k)
+    app.store.changed()
     app.panels.remove(mbtn)
     check(ts.battery_icon(52, False) == "SmartUI_Battery_50" and
           ts.battery_icon(None, False) == "SmartUI_Battery_Unknown" and
