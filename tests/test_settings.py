@@ -919,6 +919,36 @@ def numpad_tests(d):
     del os.environ["XDG_CONFIG_HOME"]
 
 
+def icon_tests(d):
+    """A radial menu's icon: Select your icon, and where it is shown."""
+    check(ts.icon_file(None) is None and ts.icon_file(os.path.join(d, "none.png")) is None and
+          ts.icon_file("theme:no-such-icon-at-all") is None, "icons: nothing for nothing")
+    png = os.path.join(d, "mine.png")
+    ts.cairo.ImageSurface(ts.cairo.FORMAT_ARGB32, 24, 24).write_to_png(png)
+    os.environ["XDG_DATA_HOME"] = os.path.join(d, "data")
+    got = []
+    sel = ts.IconSelector(None, None, got.append)
+    check(sel.tab == "gallery" and not sel.select.get_sensitive(), "icons: the gallery first")
+    if sel.all:
+        sel.chosen = sel.all[0]
+        sel.update_select()
+        check(sel.select.get_sensitive(), "icons: a gallery icon chosen")
+    sel.show("custom")
+    sel.use_file(png)
+    sel.done()
+    kept = got[0] if got else ""
+    check(kept.startswith(ts.custom_icon_dir() + os.sep) and os.path.isfile(kept) and
+          ts.icon_file(kept) == kept, "icons: a file of your own, kept in radial-icons")
+    del os.environ["XDG_DATA_HOME"]
+    f = ts.ConfFile(os.path.join(d, "icons.conf"))
+    f.set("radial_r3_name", "A")
+    f.set("radial_r3_image", kept)
+    f.set("radial_r4_name", "B")
+    secs = ts.picker_with_menus(ts.radial_menu_ids(f), images=ts.radial_menu_ids(f, what="image"))
+    icons = [it["icon"] for n, items in secs if n == "Radial Menus" for it in items if it.get("menu")]
+    check(icons == [kept, "HIDMouse_RadialMenu.png"], "icons: a menu's own icon in the picker")
+
+
 def main():
     tdxd = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build",
                                                               os.uname().machine, "tdxd")
@@ -927,6 +957,7 @@ def main():
         gui_tests(d, tdxd)
         radial_tests(d)
         numpad_tests(d)
+        icon_tests(d)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

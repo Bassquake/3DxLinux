@@ -33,7 +33,7 @@ if os.path.isdir("/mnt/wslg") and "GDK_BACKEND" not in os.environ:
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 APP_VERSION = "dev"  # set by make install / make dist
 PROJECT_URL = "https://github.com/Bassquake/3DxLinux"
@@ -1159,6 +1159,10 @@ window.tdx-frameless, window.tdx-frameless decoration {
 .tdx label.tdx-title { font-size: 18px; }
 .tdx label.tdx-status { color: #8c8c8c; }
 .tdx label.tdx-sub { font-size: 13px; color: #8a8a8a; }
+.tdx button.tdx-tab { background: none; border: none; box-shadow: none; padding: 2px 2px;
+  min-height: 0; }
+.tdx button.tdx-tab label { font-size: 13px; color: #a0a0a0; }
+.tdx button.tdx-tab.tdx-tab-active label, .tdx button.tdx-tab:hover label { color: #1e1e1e; }
 .tdx label.tdx-section { font-size: 14px; color: #2b2b2b; }
 .tdx label.tdx-recv { font-size: 15px; color: #3c3c3c; }
 .tdx label.tdx-dim { color: #6d6d6d; }
@@ -2543,7 +2547,7 @@ class ActionPicker:
         else:
             icon = Gtk.Box()
             icon.set_size_request(18, 18)
-            img = image_widget(ASSETS.icon(it["icon"]), 18) if it.get("icon") else None
+            img = image_widget(icon_file(it["icon"]), 18) if it.get("icon") else None
             if img:
                 icon.add(img)
             hb.pack_start(icon, False, False, 0)
@@ -2791,15 +2795,19 @@ class BindingRows:
         self.picker.popup()
 
 
-def radial_menu_ids(*confs):
-    """{ID: name} of the user's radial menus (radial_ID_name lines)."""
+def radial_menu_ids(*confs, what="name"):
+    """{ID: name} of the user's radial menus (radial_ID_name lines), or of
+    their icons (@what "image")."""
     out = {}
     for f in confs:
         if not f:
             continue
         for k in f.keys_with_prefix("radial_"):
             if k.endswith("_name"):
-                out[k[7:-5]] = f.get(k)
+                mid = k[7:-5]
+                v = f.get(k) if what == "name" else f.get("radial_%s_%s" % (mid, what))
+                if v or mid not in out:
+                    out[mid] = v
     return out
 
 
@@ -2807,19 +2815,333 @@ def radial_menu_order(mid):
     return (int(mid[1:]) if mid[1:].isdigit() else 1 << 30, mid)
 
 
-def picker_with_menus(menus, new_link=True):
+def picker_with_menus(menus, new_link=True, images=None):
     """PICKER with the user's radial menus under Radial Menus (and the
     working New Radial Menu link)."""
     out = []
     for name, items in PICKER:
         if name == "Radial Menus":
             items = [it for it in items if "link" not in it]
-            items += [dict(_i(menus[m] or m, "HIDMouse_RadialMenu.png", "action:radial:" + m),
-                           menu=m) for m in sorted(menus, key=radial_menu_order)]
+            items += [dict(_i(menus[m] or m, (images or {}).get(m) or "HIDMouse_RadialMenu.png",
+                              "action:radial:" + m), menu=m)
+                      for m in sorted(menus, key=radial_menu_order)]
             if new_link:
                 items.append({"link": "New Radial Menu", "new_radial": True})
         out.append((name, items))
     return out
+
+
+
+def icon_file(spec):
+    """A picker / radial menu icon's file: an imported 3DxWare icon's name,
+    "theme:NAME" (the desktop's icon theme, the Icon gallery's) or a file."""
+    if not spec:
+        return None
+    if spec.startswith("theme:"):
+        info = Gtk.IconTheme.get_default().lookup_icon(spec[6:], 24, 0)
+        return info.get_filename() if info else None
+    if os.path.isabs(spec):
+        return spec if os.path.isfile(spec) else None
+    return ASSETS.icon(spec)
+
+
+def custom_icon_dir():
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "tdxd", "radial-icons")
+
+
+class IconSelector:
+    """3DxWare's "Select your icon" (3DxSmartUi's IconSelector) for a radial
+    menu. Icon gallery: 3DxWare shows Segoe Fluent Icons' glyphs, a Windows
+    font; here the desktop's own icon theme, its symbolic icons. Custom icon:
+    an image file, dropped or chosen, copied to ~/.local/share/tdxd/radial-icons."""
+    W, H = 880, 680
+    CELL, COLS = 50, 16
+    FORMATS = "SVG, ICO, PNG, GIF, BMP and TIFF"
+
+    def __init__(self, parent, current, on_select):
+        self.on_select = on_select
+        self.tab = "custom" if current and os.path.isabs(current) else "gallery"
+        self.chosen = current[6:] if current and current.startswith("theme:") else None
+        self.custom = current if current and os.path.isabs(current) else None
+        self.cache = {}
+        theme = Gtk.IconTheme.get_default()
+        names = theme.list_icons(None)
+        sym = sorted(n for n in names if n.endswith("-symbolic"))
+        self.all = sym or sorted(names)
+        self.shown = list(self.all)
+        w = self.win = Gtk.Window(title="Select your icon")
+        if parent:
+            w.set_transient_for(parent)
+            w.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
+        w.set_modal(True)
+        frameless(w)
+        w.set_resizable(False)
+        box = Gtk.EventBox()
+        box.get_style_context().add_class("tdx")
+        box.set_size_request(self.W, self.H)
+        box.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        box.connect("button-press-event", lambda _w, ev: ev.button == 1 and w.begin_move_drag(
+            ev.button, int(ev.x_root), int(ev.y_root), ev.time) and False)
+        ov = Gtk.Overlay()
+        box.add(ov)
+        bg = drawing(self.W, self.H, lambda _w, cr: self.draw_bg(cr))
+        ov.add(bg)
+        self.bg = bg
+        fix = self.fix = Gtk.Fixed()
+        ov.add_overlay(fix)
+        put = lambda wd, x, y: fix.put(wd, int(x), int(y)) or wd
+        mn = Gtk.Button(label="" if ASSETS.ui("SmartUI_BTN_Min") else "\u2013")
+        mn.get_style_context().add_class("tdx-min")
+        cl = Gtk.Button(label="" if ASSETS.ui("SmartUI_BTN_Close") else "\u2715")
+        cl.get_style_context().add_class("tdx-close")
+        for b in (mn, cl):
+            b.set_can_focus(False)
+            b.set_size_request(29, 22)
+        put(mn, self.W - 58, 5)
+        put(cl, self.W - 29, 5)
+        mn.connect("clicked", lambda *_: w.iconify())
+        cl.connect("clicked", lambda *_: w.destroy())
+        put(lab("Select your icon", "tdx-title"), 28, 46)
+        self.tabs = {}
+        x = 26
+        for key, text in (("gallery", "Icon gallery"), ("custom", "Custom icon")):
+            b = Gtk.Button(label=text)
+            b.set_relief(Gtk.ReliefStyle.NONE)
+            b.set_can_focus(False)
+            b.get_style_context().add_class("tdx-tab")
+            b.connect("clicked", lambda _b, k=key: self.show(k))
+            put(b, x, 102)
+            self.tabs[key] = b
+            x += 84
+        # Icon gallery
+        self.search = Gtk.Entry()
+        self.search.set_size_request(802, 28)
+        self.search.set_placeholder_text("Type to search in the icon gallery")
+        self.search.connect("changed", lambda *_: self.filter())
+        put(self.search, 28, 151)
+        self.sw = Gtk.ScrolledWindow()
+        self.sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.sw.set_size_request(self.CELL * self.COLS + 22, 400)
+        self.grid = Gtk.DrawingArea()
+        self.grid.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.grid.connect("draw", self.draw_grid)
+        self.grid.connect("button-press-event", self.on_grid_click)
+        self.sw.add(self.grid)
+        put(self.sw, 28, 200)
+        # Custom icon
+        self.drop = drawing(600, 290, lambda _w, cr: self.draw_drop(cr))
+        self.drop.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
+        self.drop.drag_dest_add_uri_targets()
+        self.drop.connect("drag-data-received", self.on_drop)
+        put(self.drop, 140, 171)
+        self.choose = flat_button("Choose file", 126, 26)
+        self.choose.connect("clicked", lambda *_: self.choose_file())
+        put(self.choose, 378, 396)
+        self.formats = lab("<b>Supported file formats:</b> " + self.FORMATS, "tdx-dim",
+                           markup=True)
+        put(self.formats, 222, 482)
+        self.size_hint = lab("<b>Recommended image size:</b> 24x24 px", "tdx-dim", markup=True)
+        put(self.size_hint, 334, 510)
+        # footer
+        self.select = flat_button("Select", 101)
+        self.select.connect("clicked", lambda *_: self.done())
+        put(self.select, 637, 637)
+        cancel = flat_button("Cancel", 101)
+        cancel.connect("clicked", lambda *_: w.destroy())
+        put(cancel, 748, 637)
+        w.add(box)
+        w.show_all()
+        self.show(self.tab)
+        self.filter()
+
+    # ---- the pages
+    def show(self, tab):
+        self.tab = tab
+        g = tab == "gallery"
+        for wd in (self.search, self.sw):
+            wd.set_visible(g)
+        for wd in (self.drop, self.choose, self.formats, self.size_hint):
+            wd.set_visible(not g)
+        for k, b in self.tabs.items():
+            c = b.get_style_context()
+            (c.add_class if k == tab else c.remove_class)("tdx-tab-active")
+        self.update_select()
+        self.bg.queue_draw()
+
+    def update_select(self):
+        self.select.set_sensitive(bool(self.chosen if self.tab == "gallery" else self.custom))
+
+    def filter(self):
+        q = self.search.get_text().strip().lower().replace(" ", "-")
+        self.shown = [n for n in self.all if q in n.lower()] if q else list(self.all)
+        rows = (len(self.shown) + self.COLS - 1) // self.COLS
+        self.grid.set_size_request(self.CELL * self.COLS, max(1, rows) * self.CELL)
+        self.grid.queue_draw()
+
+    def pixbuf(self, name, white):
+        key = (name, white)
+        if key not in self.cache:
+            pb = None
+            info = Gtk.IconTheme.get_default().lookup_icon(name, 28, Gtk.IconLookupFlags.FORCE_SIZE)
+            if info:
+                try:
+                    fg = Gdk.RGBA(1, 1, 1, 1) if white else Gdk.RGBA(0, 0, 0, 1)
+                    pb, _sym = info.load_symbolic(fg, fg, fg, fg)  # one colour, as glyphs
+                except GLib.Error:
+                    pb = None
+            self.cache[key] = pb
+        return self.cache[key]
+
+    def draw_grid(self, w, cr):
+        ok, clip = Gdk.cairo_get_clip_rectangle(cr)
+        y0, y1 = (clip.y, clip.y + clip.height) if ok else (0, w.get_allocated_height())
+        c = self.CELL
+        for r in range(max(0, y0 // c), y1 // c + 1):
+            for col in range(self.COLS):
+                i = r * self.COLS + col
+                if i >= len(self.shown):
+                    return False
+                name = self.shown[i]
+                sel = name == self.chosen
+                if sel:
+                    cr.rectangle(col * c, r * c, c, c)
+                    cr.set_source_rgb(0x1b / 255, 0xa1 / 255, 0xe2 / 255)
+                    cr.fill()
+                pb = self.pixbuf(name, sel)
+                if pb:
+                    Gdk.cairo_set_source_pixbuf(cr, pb, col * c + (c - pb.get_width()) / 2,
+                                                r * c + (c - pb.get_height()) / 2)
+                    cr.paint()
+        return False
+
+    def on_grid_click(self, _w, ev):
+        i = int(ev.y // self.CELL) * self.COLS + int(ev.x // self.CELL)
+        if 0 <= ev.x < self.CELL * self.COLS and 0 <= i < len(self.shown):
+            self.chosen = self.shown[i]
+            self.grid.set_tooltip_text(self.chosen.replace("-symbolic", ""))
+            self.grid.queue_draw()
+            self.update_select()
+            if ev.type == Gdk.EventType._2BUTTON_PRESS:
+                self.done()
+        return True
+
+    def draw_bg(self, cr):
+        back = ASSETS.surface(ASSETS.ui("IconSelectorBack"))
+        if back:
+            cr.set_source_surface(back, 0, 0)
+            cr.paint()
+        else:
+            cr.set_source_rgb(1, 1, 1)
+            cr.paint()
+            cr.set_source_rgb(*BODY)
+            cr.rectangle(0, 78, self.W, self.H - 78 - 60)
+            cr.fill()
+        cr.set_source_rgb(*BLUE_LINE)
+        cr.rectangle(0, 78, self.W, 1)
+        cr.fill()
+        # the tabs' rule, the open tab underlined, with 3DxWare's notch
+        cr.set_source_rgb(*SECTION_LINE)
+        cr.rectangle(0, 130, self.W, 1)
+        cr.fill()
+        b = self.tabs.get(self.tab)
+        if b and b.get_allocated_width() > 1:
+            a = b.get_allocation()
+            cr.set_source_rgb(0.2, 0.2, 0.2)
+            cr.rectangle(a.x + 2, 129, a.width - 4, 1.5)
+            cr.fill()
+            mx = a.x + a.width / 2
+            cr.move_to(mx - 5, 130.5)
+            cr.line_to(mx, 125.5)
+            cr.line_to(mx + 5, 130.5)
+            cr.set_line_width(1)
+            cr.stroke()
+
+    def draw_drop(self, cr):
+        w, h = 600, 290
+        cr.set_source_rgb(0.7, 0.7, 0.7)
+        cr.set_line_width(1)
+        cr.set_dash([3, 3])
+        cr.rectangle(0.5, 0.5, w - 1, h - 1)
+        cr.stroke()
+        cr.set_dash([])
+        if self.custom:  # the chosen image, as 3DxWare's preview
+            try:
+                pb = GdkPixbuf.Pixbuf.new_from_file_at_size(self.custom, 96, 96)
+                Gdk.cairo_set_source_pixbuf(cr, pb, (w - pb.get_width()) / 2, 52)
+                cr.paint()
+            except GLib.Error:
+                pass
+            text = os.path.basename(self.custom)
+        else:
+            dd = ASSETS.surface(ASSETS.ui("SmartUI_DragDrop"))
+            if dd:
+                cr.set_source_surface(dd, (w - 100) / 2, 52)
+                cr.paint()
+            text = "Drag and drop your image here or"
+        layout = PangoCairo.create_layout(cr)
+        layout.set_text(text, -1)
+        layout.set_font_description(Pango.FontDescription("Sans 10"))
+        tw, _th = layout.get_pixel_size()
+        cr.set_source_rgb(0.42, 0.42, 0.42)
+        cr.move_to((w - tw) / 2, 188)
+        PangoCairo.show_layout(cr, layout)
+
+    # ---- a file of your own
+    def use_file(self, path):
+        try:
+            GdkPixbuf.Pixbuf.new_from_file_at_size(path, 24, 24)
+        except GLib.Error:
+            message(self.win, Gtk.MessageType.WARNING, "Not an image",
+                    "%s can't be shown as an icon." % os.path.basename(path))
+            return
+        self.custom = path
+        self.drop.queue_draw()
+        self.update_select()
+
+    def on_drop(self, _w, _ctx, _x, _y, data, _info, _time):
+        uris = data.get_uris() or []
+        if uris:
+            path, _host = GLib.filename_from_uri(uris[0])
+            self.use_file(path)
+
+    def choose_file(self):
+        d = Gtk.FileChooserNative.new("Choose an icon", self.win, Gtk.FileChooserAction.OPEN,
+                                      "Open", "Cancel")
+        f = Gtk.FileFilter()
+        f.set_name("Images")
+        for pat in ("*.svg", "*.png", "*.ico", "*.gif", "*.bmp", "*.tif", "*.tiff",
+                    "*.jpg", "*.jpeg", "*.xpm"):
+            f.add_pattern(pat)
+            f.add_pattern(pat.upper())
+        d.add_filter(f)
+        if d.run() == Gtk.ResponseType.ACCEPT:
+            self.use_file(d.get_filename())
+        d.destroy()
+
+    def done(self):
+        if self.tab == "gallery" and self.chosen:
+            value = "theme:" + self.chosen
+        elif self.tab == "custom" and self.custom:
+            value = self.custom
+            dest_dir = custom_icon_dir()
+            if not self.custom.startswith(dest_dir + os.sep):
+                try:  # kept with the menu, whatever happens to the file chosen
+                    os.makedirs(dest_dir, exist_ok=True)
+                    value = os.path.join(dest_dir, os.path.basename(self.custom))
+                    n = 1
+                    stem, ext = os.path.splitext(value)
+                    while os.path.exists(value):
+                        value = "%s-%d%s" % (stem, n, ext)
+                        n += 1
+                    shutil.copyfile(self.custom, value)
+                except OSError as e:
+                    message(self.win, Gtk.MessageType.WARNING, "Can't keep the icon", str(e))
+                    return
+        else:
+            return
+        self.win.destroy()
+        self.on_select(value)
 
 
 class RadialMenuEditor(BindingRows, Panel):
@@ -2848,17 +3170,23 @@ class RadialMenuEditor(BindingRows, Panel):
         self.hot = None
         self.rows = {}
         self.capturing = None
-        # the menu's picture, with 3DxWare's pencil (choosing one: not on Linux yet)
-        pic = Gtk.Fixed()
-        frame = drawing(62, 62, lambda _w, cr: draw_radial_tile(cr))
-        pic.put(frame, 0, 0)
-        img = image_widget(ASSETS.icon("HIDMouse_RadialMenu.png"), 32)
-        if img:
-            pic.put(img, 15, 15)
-        pen = drawing(20, 20, lambda _w, cr: draw_pencil(cr))
-        pen.set_tooltip_text("Choosing a picture: " + NOT_LINUX)
-        pic.put(pen, 47, 47)
-        self.put(pic, 31, 118)
+        # the menu's picture: grey on hover, click it (or its pencil) to choose one
+        self.image = None
+        self.tile_hot = False
+        tile = Gtk.EventBox()
+        tile.set_visible_window(False)
+        tile.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK |
+                        Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.tile = drawing(68, 68, lambda _w, cr: draw_radial_tile(
+            cr, self.tile_hot, icon_file(self.image) or ASSETS.icon("HIDMouse_RadialMenu.png")))
+        tile.add(self.tile)
+        tile.set_tooltip_text("Choose the menu's icon")
+        tile.connect("enter-notify-event", lambda *_: self.hover_tile(True))
+        tile.connect("leave-notify-event", lambda *_: self.hover_tile(False))
+        tile.connect("button-press-event", lambda *_: True)
+        tile.connect("button-release-event", lambda _w, ev: ev.button == 1 and
+                     self.choose_icon() or True)
+        self.put(tile, 31, 118)
         self.put(lab("Radial Menu Name", "tdx-section"), 101, 114)
         self.name = Gtk.Entry()
         self.name.set_placeholder_text("Enter your radial menu name")
@@ -2897,7 +3225,7 @@ class RadialMenuEditor(BindingRows, Panel):
         self.set_layout(self.n, force=True)
         top = self.box.get_toplevel()
         if isinstance(top, Gtk.Window):  # the name's hint shows, as in 3DxWare
-            top.set_focus(None)
+            GLib.idle_add(lambda: top.set_focus(None) or False)
 
     # ---- where it is kept: with the button's settings
     def conf(self):
@@ -2914,6 +3242,7 @@ class RadialMenuEditor(BindingRows, Panel):
         get = lambda k: f.get("radial_%s_%s" % (mid, k)) or self.store.base.get(
             "radial_%s_%s" % (mid, k))
         self.name.set_text(get("name") or "")
+        self.image = get("image")
         self.n = 8 if (get("layout") or "4").strip() == "8" else 4
         for i in range(1, 9):
             v = get(str(i))
@@ -2942,6 +3271,18 @@ class RadialMenuEditor(BindingRows, Panel):
         self.bg.queue_draw()
         self.diagram.queue_draw()
 
+    def hover_tile(self, on):
+        self.tile_hot = on
+        self.tile.queue_draw()
+        return False
+
+    def choose_icon(self):
+        IconSelector(self.box.get_toplevel(), self.image, self.icon_chosen)
+
+    def icon_chosen(self, value):
+        self.image = value
+        self.tile.queue_draw()
+
     def set_hot(self, key, leaving=None):
         if leaving is not None and self.hot != leaving:
             return False
@@ -2950,7 +3291,8 @@ class RadialMenuEditor(BindingRows, Panel):
         return False
 
     def draw_diagram(self, cr):
-        n, cx, cy, r, ri = self.n, 56, 56, 55, 16
+        n, cx, cy, r = self.n, 56, 56, 55
+        ri = 16 if n == 4 else 20
         hot = int(self.hot) - 1 if self.hot else (
             int(self.capturing) - 1 if self.capturing else None)
         for i in range(n):
@@ -3007,7 +3349,7 @@ class RadialMenuEditor(BindingRows, Panel):
             return "", None, None
         it = self.current_item(key)
         if it:
-            return it["label"], it.get("icon"), ASSETS.icon(it["icon"]) if it.get("icon") else None
+            return it["label"], it.get("icon"), icon_file(it["icon"]) if it.get("icon") else None
         if v.startswith("keys:"):
             return shortcut_label(chord_names(v[5:])), "Keyboard.png", ASSETS.icon("Keyboard.png")
         if v.startswith("action:"):
@@ -3072,6 +3414,10 @@ class RadialMenuEditor(BindingRows, Panel):
         pre = "radial_%s_" % mid
         f.set(pre + "name", name)
         f.set(pre + "layout", str(self.n))
+        if self.image:
+            f.set(pre + "image", self.image)
+        else:
+            f.remove(pre + "image")
         for i in range(1, 9):
             key = str(i)
             label, icon, _p = self.describe(key)
@@ -3115,13 +3461,30 @@ def draw_menu_tool(cr, kind, hot):
         cr.stroke()
 
 
-def draw_radial_tile(cr):
+def draw_radial_tile(cr, hot=False, icon=None):
     cr.rectangle(0.5, 0.5, 61, 61)
-    cr.set_source_rgb(1, 1, 1)
+    v = 0xdc / 255 if hot else 1
+    cr.set_source_rgb(v, v, v)
     cr.fill_preserve()
     cr.set_source_rgb(0.8, 0.8, 0.8)
     cr.set_line_width(1)
     cr.stroke()
+    if icon:
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_size(icon, 32, 32)
+            Gdk.cairo_set_source_pixbuf(cr, pb, 31 - pb.get_width() / 2, 31 - pb.get_height() / 2)
+            cr.paint()
+        except GLib.Error:
+            pass
+    pen = ASSETS.surface(ASSETS.ui("icon_pencil_hover" if hot else "icon_pencil"))
+    if pen:
+        cr.set_source_surface(pen, 46, 46)
+        cr.paint()
+    else:
+        cr.save()
+        cr.translate(46, 46)
+        draw_pencil(cr)
+        cr.restore()
 
 
 def draw_pencil(cr):
@@ -3240,7 +3603,7 @@ class MouseButtonsPanel(BindingRows, Panel):
         kind, val = self.binding(v2dk)
         it = self.current_item(v2dk)
         if it:
-            return it["label"], ASSETS.icon(it["icon"]) if it.get("icon") else None, None
+            return it["label"], icon_file(it["icon"]) if it.get("icon") else None, None
         if kind == "action":
             return ACTION_LABEL.get(val, val), None, None
         if kind == "mouse":
@@ -3275,7 +3638,9 @@ class MouseButtonsPanel(BindingRows, Panel):
 
     # ---- the user's radial menus (Radial Menu Editor)
     def picker_sections(self):
-        return picker_with_menus(radial_menu_ids(self.store.base, self.store.profile))
+        confs = (self.store.base, self.store.profile)
+        return picker_with_menus(radial_menu_ids(*confs),
+                                 images=radial_menu_ids(*confs, what="image"))
 
     def new_radial(self, v2dk):
         self.app.radial_edit = {"panel": self, "v2dk": v2dk, "menu": None}
