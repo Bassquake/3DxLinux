@@ -2553,32 +2553,30 @@ class ActionPicker:
                 b.get_style_context().add_class("tdx-pick-current")
             if it.get("menu"):  # the user's own: edit and delete, drawn on hover
                 # (always there, only painted: showing them would change the row
-                # under the pointer, and its hover state, again and again)
+                # under the pointer, and its hover state, again and again). A
+                # button's input window covers its children, so the row itself
+                # finds the icon under the pointer.
                 tools = Gtk.Box(spacing=6)
-                hovered = lambda w: bool(w.get_state_flags() & Gtk.StateFlags.PRELIGHT)
+                tool_list = []
                 for kind, tip, fn in (("edit", "Edit this radial menu", self.edit_menu),
                                       ("delete", "Delete this radial menu", self.delete_menu)):
-                    eb = Gtk.EventBox()
-                    eb.set_visible_window(False)
-                    eb.set_tooltip_text(tip)
-                    eb.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
-                                  Gdk.EventMask.BUTTON_RELEASE_MASK |
-                                  Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
-                    da = drawing(14, 14, lambda _w, cr, k=kind, e=eb, row=b: (
-                        hovered(row) or hovered(e)) and draw_menu_tool(cr, k, hovered(e)))
-                    eb.add(da)
-                    eb.connect("enter-notify-event", lambda w, _e: w.set_state_flags(
-                        Gtk.StateFlags.PRELIGHT, False) or w.queue_draw() or False)
-                    eb.connect("leave-notify-event", lambda w, _e: w.unset_state_flags(
-                        Gtk.StateFlags.PRELIGHT) or w.queue_draw() or False)
-                    eb.connect("button-press-event", lambda *_a: True)  # not the row's click
-                    eb.connect("button-release-event",
-                               lambda *_a, f=fn, m=it["menu"]: f(m) or True)
+                    da = drawing(14, 14, lambda _w, cr, k=kind, row=b: (
+                        row.get_state_flags() & Gtk.StateFlags.PRELIGHT or
+                        getattr(row, "tool_hot", None) == k) and
+                        draw_menu_tool(cr, k, getattr(row, "tool_hot", None) == k))
                     da.show()
-                    eb.show()
-                    tools.pack_start(eb, False, False, 0)
+                    tools.pack_start(da, False, False, 0)
+                    tool_list.append((kind, tip, fn, da))
                 hb.pack_end(tools, False, False, 6)
+                b.tool_hot = None
+                b.add_events(Gdk.EventMask.POINTER_MOTION_MASK)
                 b.connect("state-flags-changed", lambda _w, _o, t=tools: t.queue_draw())
+                b.connect("motion-notify-event", lambda w, e, tl=tool_list, t=tools:
+                          self.tool_hover(w, e.x, e.y, tl, t))
+                b.connect("leave-notify-event", lambda w, _e, tl=tool_list, t=tools:
+                          self.tool_hover(w, -1, -1, tl, t))
+                b.connect("button-release-event", lambda w, e, tl=tool_list, m=it["menu"]:
+                          self.tool_click(w, e, tl, m))
         b.add(hb)
         b.set_sensitive(ok)
         if not ok:
@@ -2622,6 +2620,31 @@ class ActionPicker:
     def toggle(self, key):
         self.open ^= {key}
         self.fill()
+
+    @staticmethod
+    def tool_at(row, x, y, tools):
+        """The pencil or x under (@x, @y) in @row's coordinates, or None."""
+        for kind, tip, fn, da in tools:
+            pos = da.translate_coordinates(row, 0, 0)
+            if pos and pos[0] - 3 <= x <= pos[0] + 17 and 0 <= y <= row.get_allocated_height():
+                return kind, tip, fn
+        return None
+
+    def tool_hover(self, row, x, y, tools, box):
+        t = self.tool_at(row, x, y, tools)
+        hot = t[0] if t else None
+        if hot != row.tool_hot:
+            row.tool_hot = hot
+            row.set_tooltip_text(t[1] if t else None)
+            box.queue_draw()
+        return False
+
+    def tool_click(self, row, ev, tools, mid):
+        t = self.tool_at(row, ev.x, ev.y, tools) if ev.button == 1 else None
+        if not t:
+            return False  # the row's own click: choose the menu
+        t[2](mid)  # True: the button's own release (and its "clicked") doesn't happen
+        return True
 
     def edit_menu(self, mid):
         self.close()

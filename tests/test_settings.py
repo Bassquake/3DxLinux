@@ -561,7 +561,7 @@ def gui_tests(d, tdxd):
     rows = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.Button)]
     mine = [w for w in rows if w.get_style_context().has_class("tdx-pick-current")]
     tools = [c for c in mine[0].get_child().get_children() if isinstance(c, ts.Gtk.Box)
-             and len(c.get_children()) == 2 and all(isinstance(e, ts.Gtk.EventBox)
+             and len(c.get_children()) == 2 and all(isinstance(e, ts.Gtk.DrawingArea)
                                                     for e in c.get_children())] if mine else []
     check(len(mine) == 1 and tools and tools[0].get_visible(),
           "picker: the button's own menu current, with room for its pencil and x")
