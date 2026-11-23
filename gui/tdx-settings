@@ -1169,6 +1169,17 @@ window.tdx-frameless, window.tdx-frameless decoration {
 .tdx button.tdx-btn:hover { background-color: #e5f1fb; border-color: #0078d7; }
 .tdx button.tdx-btn:active { background-color: #cce4f7; border-color: #005499; }
 .tdx button.tdx-btn:disabled label { color: #a0a0a0; }
+.tdx box.tdx-mrow { background-color: #ffffff; border: 1px solid #dddddd; }
+.tdx box.tdx-mrow button { background: none; border: 1px solid transparent;
+  border-radius: 0; box-shadow: none; padding: 0 1px 0 4px; min-height: 0; min-width: 0;
+  -gtk-icon-shadow: none; -gtk-icon-effect: none; }
+.tdx box.tdx-mrow button.tdx-mrow-text:hover { background-color: #e5f1fb; }
+.tdx box.tdx-mrow button.tdx-mrow-text.tdx-capturing { background-color: #f0ffff;
+  border-color: #c6d0d0; }
+.tdx box.tdx-mrow button.tdx-mrow-arrow { padding: 0; }
+.tdx box.tdx-mrow button.tdx-mrow-arrow:hover { background-color: #ffffff;
+  border-color: #7a7a7a; }
+.tdx label.tdx-placeholder { font-style: italic; }
 .tdx button.tdx-link { background: none; border: none; box-shadow: none; padding: 0;
   min-height: 0; }
 .tdx button.tdx-link label { color: #9a9a9a; }
@@ -2602,25 +2613,55 @@ class MouseButtonsPanel(Panel):
         self.app_switch = self.put(SlideSwitch("Application Specific Settings"), 31, 133)
         self.app_switch.connect("toggled", self.guard(self.on_app_specific))
         self.rows = {}
+        self.capturing = None
         for v2dk, cap, default, x, y in MOUSE_BUTTONS:
             capw = image_widget(ASSETS.ui(cap)) or drawing(40, 28, draw_keycap,
                                                            v2dk[5:].title()[:5])
             self.put(capw, x, y)
-            btn = flat_button(None, 179 if x < 100 else 190)
+            # 3DxWare's row: click the text and type a shortcut; the arrow
+            # opens the picker
+            w = 187 if x < 100 else 190
+            row = Gtk.Box(spacing=0)
+            row.get_style_context().add_class("tdx-mrow")
+            row.set_size_request(w, 27)
+            text = Gtk.Button()
+            text.set_relief(Gtk.ReliefStyle.NONE)
+            text.set_can_focus(False)
+            text.get_style_context().add_class("tdx-mrow-text")
             hb = Gtk.Box(spacing=0)
             icon = Gtk.Box()
             icon.set_size_request(16, 16)
             hb.pack_start(icon, False, False, 1)
             l = lab("")
             l.set_ellipsize(Pango.EllipsizeMode.END)
-            l.set_margin_start(6)
+            l.set_margin_start(5)
+            l.set_xalign(0)
             hb.pack_start(l, True, True, 0)
+            text.add(hb)
+            text.connect("clicked", lambda _b, v=v2dk: self.start_capture(v))
+            text.connect("key-press-event", lambda _b, e, v=v2dk: self.on_capture_key(v, e))
+            text.connect("focus-out-event", lambda *_a, v=v2dk: self.stop_capture(v) and False)
+            row.pack_start(text, True, True, 0)
+            btn = Gtk.Button()
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            btn.set_can_focus(False)
+            btn.get_style_context().add_class("tdx-mrow-arrow")
+            btn.set_size_request(22, -1)
+            ab = Gtk.Box()
             arrow = image_widget(ASSETS.ui("SmartUI_Button_Arrow")) or lab("›", "tdx-more")
-            hb.pack_end(arrow, False, False, 4)
-            btn.add(hb)
+            arrow_hover = image_widget(ASSETS.ui("SmartUI_Button_Arrow_hover"))
+            ab.set_center_widget(arrow)
+            if arrow_hover:  # 3DxWare's dark arrow while hovered
+                ab.pack_start(arrow_hover, True, False, 0)
+                arrow_hover.set_no_show_all(True)
+                btn.connect("state-flags-changed", lambda b, _old, a=arrow, h=arrow_hover: (
+                    lambda hov: (h.set_visible(hov), a.set_visible(not hov)))(
+                    bool(b.get_state_flags() & Gtk.StateFlags.PRELIGHT)) and None)
+            btn.add(ab)
             btn.connect("clicked", lambda b, v=v2dk, d=default: self.popup(b, v, d))
-            self.put(btn, x + 51, y)
-            self.rows[v2dk] = (btn, l, icon, default)
+            row.pack_start(btn, False, False, 0)
+            self.put(row, x + 51, y)
+            self.rows[v2dk] = (btn, l, icon, default, text)
         self.swap = self.put(Gtk.CheckButton(label="Swap Middle / Right Mouse Buttons"), 31, 292)
         self.swap.connect("toggled", self.guard(
             lambda b: self.set_value("mouse_swap_buttons", "yes" if b.get_active() else "no")))
@@ -2706,7 +2747,7 @@ class MouseButtonsPanel(Panel):
             return ACTION_LABEL.get(val, val), None, None
         if kind == "mouse":
             return val, None, None
-        return pretty_chord(val), ASSETS.icon("Keyboard.png"), None
+        return shortcut_label(val), ASSETS.icon("Keyboard.png"), None
 
     def refresh(self):
         self.updating = True
@@ -2717,18 +2758,85 @@ class MouseButtonsPanel(Panel):
         self.app_switch.set_tooltip_text(
             None if self.store.profile else
             "Choose an application in the title to give it its own buttons")
-        for v2dk, (btn, l, slot, default) in self.rows.items():
+        for v2dk, (_btn, l, slot, default, tb) in self.rows.items():
+            if v2dk == self.capturing:
+                continue
             text, icon, tip = self.describe(v2dk, default)
             l.set_text(text)
-            btn.set_tooltip_text(tip)
-            for c in slot.get_children():
-                slot.remove(c)
-            img = image_widget(icon, 16)
-            if img:
-                slot.add(img)
-                img.show()
+            l.get_style_context().remove_class("tdx-placeholder")
+            tb.set_tooltip_text(tip or "Click and type a shortcut")
+            self.set_row_icon(slot, icon)
         self.swap.set_active(parse_bool(self.value("mouse_swap_buttons") or "no"))
         self.updating = False
+
+    @staticmethod
+    def set_row_icon(slot, icon):
+        for c in slot.get_children():
+            slot.remove(c)
+        img = image_widget(icon, 16)
+        if img:
+            slot.add(img)
+            img.show()
+
+    # ---- 3DxWare's "Type a shortcut...": click a row's text, press the keys
+    def start_capture(self, v2dk):
+        if self.capturing and self.capturing != v2dk:
+            self.stop_capture(self.capturing)
+        _btn, l, slot, _d, tb = self.rows[v2dk]
+        self.capturing = v2dk
+        tb.get_style_context().add_class("tdx-capturing")
+        l.get_style_context().add_class("tdx-placeholder")
+        l.set_text("Type a shortcut…")
+        tb.set_tooltip_text(None)
+        self.set_row_icon(slot, ASSETS.icon("Keyboard.png"))
+        tb.set_can_focus(True)
+        tb.grab_focus()
+
+    def stop_capture(self, v2dk=None):
+        v2dk = v2dk or self.capturing
+        if not v2dk or v2dk != self.capturing:
+            return False
+        tb = self.rows[v2dk][4]
+        self.capturing = None
+        tb.get_style_context().remove_class("tdx-capturing")
+        tb.set_can_focus(False)
+        self.refresh()
+        return True
+
+    def on_capture_key(self, v2dk, ev):
+        if v2dk != self.capturing:
+            return False
+        mods = []
+        st = ev.state
+        if st & Gdk.ModifierType.CONTROL_MASK:
+            mods.append("LEFTCTRL")
+        if st & Gdk.ModifierType.SHIFT_MASK:
+            mods.append("LEFTSHIFT")
+        if st & Gdk.ModifierType.MOD1_MASK:
+            mods.append("LEFTALT")
+        if st & (Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.MOD4_MASK):
+            mods.append("LEFTMETA")
+        name = CODE_NAMES.get(ev.hardware_keycode - 8)  # X11/Wayland: evdev + 8
+        if ev.is_modifier or name in MODIFIER_KEYS:
+            # held so far: show it ("SHIFT+"), wait for the key
+            if name and name in MODIFIER_KEYS:
+                name = MODIFIER_KEYS[name]
+                if name not in mods:
+                    mods.append(name)
+            self.rows[v2dk][1].set_text(shortcut_label(mods) + "+")
+            return True
+        if not mods and ev.keyval == Gdk.KEY_Escape:
+            self.stop_capture(v2dk)
+            return True
+        if not name:
+            return True
+        keys = (mods + [name])[:4]
+        self.capturing = None
+        self.rows[v2dk][4].get_style_context().remove_class("tdx-capturing")
+        self.rows[v2dk][4].set_can_focus(False)
+        self.assign(v2dk, chord_value(keys))
+        self.refresh()
+        return True
 
     def popup(self, widget, v2dk, default):
         self.picker = ActionPicker(self, widget, v2dk, default)
@@ -3211,6 +3319,17 @@ def chord_names(value):
 def pretty_chord(names):
     pretty = (PRETTY_KEY.get(n, n.title() if len(n) > 1 else n) for n in names)
     return "+".join(pretty).replace("+,+", ", ")
+
+
+# a modifier key pressed on its own -> the name the chord keeps (left one)
+MODIFIER_KEYS = dict(LEFTCTRL="LEFTCTRL", RIGHTCTRL="LEFTCTRL", LEFTSHIFT="LEFTSHIFT",
+                     RIGHTSHIFT="LEFTSHIFT", LEFTALT="LEFTALT", RIGHTALT="LEFTALT",
+                     LEFTMETA="LEFTMETA", RIGHTMETA="LEFTMETA")
+
+
+def shortcut_label(names):
+    """3DxWare's way: 'SHIFT+C', 'CTRL+ALT+DELETE'."""
+    return pretty_chord(names).upper()
 
 
 def chord_value(names):

@@ -482,6 +482,28 @@ def gui_tests(d, tdxd):
     greyed = [it["label"] for _s, it in ts.picker_items() if not it["value"]]
     check("Virtual NumPad" in greyed and "Double-Click Left" in greyed and
           "Undo" not in greyed, "picker: Windows-only entries greyed")
+
+    def key(code, keyval, state=0, modifier=False):
+        ev = ts.Gdk.EventKey()
+        ev.type = ts.Gdk.EventType.KEY_PRESS
+        ev.hardware_keycode, ev.keyval, ev.state = code + 8, keyval, state
+        ev.is_modifier = int(modifier)
+        return ev
+    fwd = mbtn.rows["V2DK_FORWARD"]
+    fwd[4].clicked()  # the text: "Type a shortcut..."
+    check(mbtn.capturing == "V2DK_FORWARD" and fwd[1].get_text() == "Type a shortcut…" and
+          fwd[4].get_style_context().has_class("tdx-capturing"), "shortcut: waiting for keys")
+    mbtn.on_capture_key("V2DK_FORWARD", key(42, ts.Gdk.KEY_Shift_L, modifier=True))
+    check(fwd[1].get_text() == "SHIFT+" and mbtn.capturing, "shortcut: Shift held")
+    mbtn.on_capture_key("V2DK_FORWARD", key(46, ts.Gdk.KEY_C, ts.Gdk.ModifierType.SHIFT_MASK))
+    check(not mbtn.capturing and app.store.base.get("key_V2DK_FORWARD") == "KEY_LEFTSHIFT+KEY_C"
+          and fwd[1].get_text() == "SHIFT+C" and
+          not fwd[4].get_style_context().has_class("tdx-capturing"), "shortcut: SHIFT+C")
+    fwd[4].clicked()
+    mbtn.on_capture_key("V2DK_FORWARD", key(1, ts.Gdk.KEY_Escape))
+    check(not mbtn.capturing and fwd[1].get_text() == "SHIFT+C" and
+          app.store.base.get("key_V2DK_FORWARD") == "KEY_LEFTSHIFT+KEY_C",
+          "shortcut: Escape leaves it as it was")
     for k in ts.MOUSE_PROFILE_KEYS:
         app.store.base.remove(k)
     app.store.changed()
