@@ -1073,8 +1073,8 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 	} else if (!strcmp(verb, "pair")) {
 		/* Add device: "pair" (a CadMouse) or "pair spacemouse" */
 		char *kind = strtok_r(NULL, " \t", &save);
-		int mode = kind && !strcasecmp(kind, "spacemouse") ? TDX_RCV_PAIR_ROUND_ROBIN
-								   : TDX_RCV_PAIR_EUCLID;
+		int mode = kind && !strncasecmp(kind, "spacemouse", 10) /* and spacemousepro */
+				   ? TDX_RCV_PAIR_ROUND_ROBIN : TDX_RCV_PAIR_EUCLID;
 		struct rcv_ctx *r = rcv_control(NULL);
 		struct tdx_rcv_slot s[TDX_RCV_SLOTS];
 		if (!r) {

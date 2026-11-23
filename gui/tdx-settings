@@ -2769,18 +2769,25 @@ class MouseButtonsPanel(Panel):
 
 
 # Add device: what 3DxPair offers for a Universal Receiver (tdxctl pair KIND)
-PAIR_KINDS = [("mouse", "CadMouse", "C658_Head.png"),
-              ("spacemouse", "SpaceMouse Wireless", "SMW_Head.png")]
+# 3DxPair's Device Selection, in its order: (tdxctl pair KIND, name, its picture
+# from 3DxPair.exe, the device photo to fall back on)
+PAIR_KINDS = [("spacemousepro", "SpaceMouse Pro Wireless", "SmartUI_Device_SMpro", "SMPW_Head.png"),
+              ("spacemouse", "SpaceMouse Wireless", "SmartUI_Device_SMwireless", "SMW_Head.png"),
+              ("mouse", "CadMouse", "SmartUI_Device_Euclid", "C658_Head.png")]
+PAIR_TITLES = {"choose": "Device Selection", "pairing": "Pairing",
+               "done": "Pairing Successful", "timeout": "Pairing Failed",
+               "error": "Pairing Failed"}
 
 
 class AddDevicePanel(Panel):
     """3DxWare's "Add device" (3DxPair.exe) for a Universal Receiver: choose the
     device, follow the steps while tdxd keeps the receiver in pairing mode
     (55 s), then the result."""
-    title = "Add device"
-    subtitle = "Add device"
-    size = (470, 430)
+    title = "3Dconnexion Pairing"
+    subtitle = "3Dconnexion Pairing"
+    size = (736, 492)  # 3DxPair's window
     header_h = 91
+    TILE_W = 226
 
     def header(self):
         super().header()
@@ -2788,43 +2795,48 @@ class AddDevicePanel(Panel):
         self.fix.move(self.title_btn, 30, 56)
 
     def refresh_header(self):
-        r = (self.app.status.get("receivers") or [{}])[0]
-        self.title_label.set_text(r.get("name", "Universal Receiver"))
+        self.title_label.set_text(PAIR_TITLES.get(getattr(self, "page", "choose"),
+                                                  "Device Selection"))
         for c in self.icon_slot.get_children():
             self.icon_slot.remove(c)
 
     def build(self):
         self.kind = None
         self.timer = None
-        # page 1: which device
-        self.choose = self.put(lab("Which device do you want to pair?", "tdx-section"), 30, 112)
-        self.tiles = Gtk.Box(spacing=10)
-        for kind, name, photo in PAIR_KINDS:
+        w, h = self.size
+        # page 1: 3DxPair's Device Selection
+        cl = lab("Select the device you want to add", "tdx-recv", xalign=0.5)
+        cl.set_size_request(w, -1)
+        self.choose = self.put(cl, 0, 128)
+        self.tiles = Gtk.Box(spacing=0)
+        for kind, name, pic, photo in PAIR_KINDS:
             b = Gtk.Button()
             b.set_relief(Gtk.ReliefStyle.NONE)
             b.set_can_focus(False)
             b.get_style_context().add_class("tdx-tile")
-            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-            img = image_widget(ASSETS.icon(photo))
+            b.set_size_request(self.TILE_W, -1)
+            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+            img = image_widget(ASSETS.ui(pic)) or image_widget(ASSETS.icon(photo))
             v.pack_start(img or drawing(200, 120, lambda wd, cr: draw_device(wd, cr, True)),
                          False, False, 0)
             v.pack_start(lab(name, xalign=0.5), False, False, 0)
             b.add(v)
             b.connect("clicked", lambda _b, k=kind: self.start(k))
             self.tiles.pack_start(b, False, False, 0)
-        self.put(self.tiles, 10, 150)
-        # page 2: the steps, page 3: the result
+        self.put(self.tiles, (w - self.TILE_W * len(PAIR_KINDS)) // 2, 190)
+        # page 2: the steps, then the result
         self.text = lab("", "tdx-dim")
         self.text.set_line_wrap(True)
-        self.text.set_size_request(410, -1)
+        self.text.set_size_request(w - 120, -1)
         self.text.set_valign(Gtk.Align.START)
-        self.put(self.text, 30, 120)
-        self.progress = self.put(lab("", "tdx-status"), 30, 300)
-        self.back = self.put(flat_button("Back", 94), 222, 387)
-        self.back.connect("clicked", lambda *_: self.stop(to_start=True))
-        self.retry = self.put(flat_button("Retry", 94), 222, 387)
+        self.put(self.text, 60, 130)
+        self.progress = self.put(lab("", "tdx-status"), 60, 360)
+        bx = w - 125
+        self.back = self.put(flat_button("Back", 94), bx, h - 44)
+        self.back.connect("clicked", lambda *_: self.stop(to_start=self.page == "pairing"))
+        self.retry = self.put(flat_button("Retry", 94), bx - 104, h - 44)
         self.retry.connect("clicked", lambda *_: self.start(self.kind))
-        self.close = self.put(flat_button("Close", 94), 345, 387)
+        self.close = self.put(flat_button("Close", 94), bx, h - 44)
         self.close.connect("clicked", lambda *_: self.stop())
         self.page = "choose"
 
@@ -2832,13 +2844,16 @@ class AddDevicePanel(Panel):
         self.page = page
         for w, v in ((self.choose, page == "choose"), (self.tiles, page == "choose"),
                      (self.text, page != "choose"), (self.progress, page == "pairing"),
-                     (self.back, page == "pairing"), (self.retry, page == "timeout")):
+                     (self.back, page in ("choose", "pairing")),
+                     (self.retry, page == "timeout"),
+                     (self.close, page not in ("choose", "pairing"))):
             w.set_visible(v)
             if v:
                 w.show_all()
+        self.refresh_header()
 
     def name_of(self, kind):
-        return next(n for k, n, _p in PAIR_KINDS if k == kind)
+        return next(n for k, n, _p, _f in PAIR_KINDS if k == kind)
 
     def start(self, kind):
         self.kind = kind

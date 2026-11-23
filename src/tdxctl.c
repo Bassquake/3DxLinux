@@ -28,7 +28,7 @@ static int usage(void)
 {
 	fputs("usage: tdxctl [-s SOCKET] status | profiles | focus APP [PID] | calibrate | reload\n"
 	      "       tdxctl [-s SOCKET] buttons | app-keys | app-buttons PID [V3DK NAME]...\n"
-	      "       tdxctl [-s SOCKET] pair [mouse|spacemouse] | pair-stop | unpair SLOT\n"
+	      "       tdxctl [-s SOCKET] pair [mouse|spacemouse|spacemousepro] | pair-stop | unpair SLOT\n"
 	      "       tdxctl -V\n", stderr);
 	return 2;
 }

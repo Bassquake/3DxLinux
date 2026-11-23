@@ -18,7 +18,7 @@ desktop's taskbar shows them like Windows does.
 What it does, without running any installer code:
   installer.exe --7z--> 3DxWinCore64.msi --7z--> Data1.cab + MSI tables
   !File table (via _StringPool/_StringData) maps cab keys to file names
-  3DxSmartUi.exe: .NET .resources blobs are parsed for the named PNGs
+  3DxSmartUi.exe, 3DxPair.exe: .NET .resources blobs are parsed for the named PNGs
   Base.xml: device image and support status per USB product id
   <Application>.xml + en-US.xml: each application's key settings -> profiles/
   FreeCAD_Navlib.xml: FreeCAD's per-workbench keys -> freecad/buttons.json
@@ -916,6 +916,18 @@ def main():
             with open(os.path.join(out, "ui", name + ".png"), "wb") as f:
                 f.write(blob)
         print("%d control-panel images from 3DxSmartUi.exe" % len(imgs))
+        # 3DxWare's pairing program: its device pictures (Device Selection),
+        # pairing steps and add / remove icons; 3DxSmartUi's win on a name clash
+        pair = by_name.get("3DxPair.exe")
+        if pair:
+            n = 0
+            for name, blob in dotnet_images(pair).items():
+                dst = os.path.join(out, "ui", name + ".png")
+                if name not in imgs:
+                    with open(dst, "wb") as f:
+                        f.write(blob)
+                    n += 1
+            print("%d pairing images from 3DxPair.exe" % n)
         print("window icon sizes %s from 3DxSmartUi.exe"
               % app_icons(smartui, os.path.join(out, "appicons"), "3dxware"))
 

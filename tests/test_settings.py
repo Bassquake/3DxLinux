@@ -510,7 +510,9 @@ def gui_tests(d, tdxd):
     check(p["state"] == "done" and p["slot"] == 4 and p["name"] == "CadMouse Compact Wireless",
           "pairing done: %s" % p)
     addp = ts.AddDevicePanel(app)
-    check(addp.page == "choose" and addp.tiles.get_visible() and not addp.back.get_visible(),
+    check(addp.page == "choose" and addp.tiles.get_visible() and addp.back.get_visible() and
+          not addp.close.get_visible() and addp.title_label.get_text() == "Device Selection" and
+          [k for k, *_ in ts.PAIR_KINDS] == ["spacemousepro", "spacemouse", "mouse"],
           "Add device: choose the device first")
     addp.page = "pairing"
     addp.started = ts.time.monotonic()
@@ -522,7 +524,8 @@ def gui_tests(d, tdxd):
                 "receiver Universal Receiver [256f:c652] firmware 1.06\n"
                 "pairing done 4 CadMouse Compact Wireless\n")
     addp.tick()
-    check(addp.page == "done" and "CadMouse Compact Wireless" in addp.text.get_text(),
+    check(addp.page == "done" and "CadMouse Compact Wireless" in addp.text.get_text() and
+          addp.title_label.get_text() == "Pairing Successful" and addp.close.get_visible(),
           "Add device: paired")
     app.panels.remove(addp)
     # ---- the receiver's Advanced Settings: the paired devices, a remove button each
