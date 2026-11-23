@@ -2318,18 +2318,25 @@ class ActionPicker:
             gw.move_to_rect(rect, Gdk.Gravity.NORTH_EAST, Gdk.Gravity.NORTH_WEST,
                             Gdk.AnchorHints.FLIP_X | Gdk.AnchorHints.SLIDE_Y |
                             Gdk.AnchorHints.RESIZE_Y, 2 if self.arrowed else 10, -24)
-        self.pop.show_all()
-        self.pop.grab_add()
+        # as GtkMenu does: shown from inside the seat grab, with the click
+        # that opened it, so Wayland makes it a grabbing popup (shown first
+        # and grabbed after, KDE closes it at once)
+        self.outer.show_all()
         seat = Gdk.Display.get_default().get_default_seat()
+        grabbed = Gdk.GrabStatus.FAILED
         if gw and seat:
-            seat.grab(gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+            grabbed = seat.grab(gw, Gdk.SeatCapabilities.ALL, True, None,
+                                Gtk.get_current_event(),
+                                lambda _seat, _win, *_: self.pop.show(), None)
+        if grabbed != Gdk.GrabStatus.SUCCESS:
+            self.pop.show()  # no grab (e.g. an X11 grab refused): still usable
+        self.pop.grab_add()
         self.search.grab_focus()
 
-    def placed(self, _gw, anchor, final, flipped_x, _flipped_y):
-        """Where it went: the arrow points at the row's middle, on the left,
-        or on the right when it opened to the row's left (screen edge)."""
-        self.arrow_y = max(14, min(final.height - 14,
-                                   anchor.y + anchor.height // 2 - final.y))
+    def placed(self, _gw, _anchor, _final, flipped_x, _flipped_y):
+        """Where it went: the arrow on the left, or on the right when it
+        opened to the row's left (screen edge). (PyGObject hands the two
+        rectangles over as bare pointers, so only the flags are used.)"""
         if flipped_x != self.flipped and self.arrowed:
             self.flipped = flipped_x
             self.outer.set_margin_start(1 if flipped_x else self.ARROW)
