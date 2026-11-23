@@ -502,3 +502,4 @@ CadMouse Compact Wireless (c658) paired to it.
 | Header icon (WSLg) | **Pass:** the application icon in the title row raised 3 px, level with the title's capitals (was about 4 px low). |
 | CadMouse acceleration and wheel lines on Kubuntu 26.04 / KDE Plasma (`3DxLinux.0.3.4+67+g631c7f2`) | **Pass:** Advanced Settings' "Enable acceleration" and "Lines" are usable and work (set through KWin's input devices). |
 | CadMouse Advanced Settings label (`3DxLinux.0.3.4+69+ge279646`) | **Pass:** the greyed wheel mode reads "One page / one screen (Windows only)". |
+| Device unplugged with windows open (Kubuntu 26.04, `3DxLinux.0.3.4+71+gdde8a86`) | **Pass:** the open windows close and the main window shows what is left. |
