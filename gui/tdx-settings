@@ -2348,6 +2348,15 @@ class ActionPicker:
             self.pop.show()  # no grab (e.g. an X11 grab refused): still usable
         self.pop.grab_add()
         self.search.grab_focus()
+        # a popup window never counts as focused, so the entry would draw no
+        # text cursor; tell it it has the focus, as GtkTreeView's search
+        # popup does, so it is clear you can type
+        gw = self.pop.get_window()
+        if gw:
+            ev = Gdk.Event.new(Gdk.EventType.FOCUS_CHANGE)
+            ev.focus_change.window = gw
+            ev.focus_change.in_ = 1
+            self.search.send_focus_change(ev)
         mark("popup() returned")
 
     def placed(self, _gw, _anchor, _final, flipped_x, _flipped_y):
