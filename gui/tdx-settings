@@ -3175,6 +3175,8 @@ class RadialMenuEditor(BindingRows, Panel):
         self.tile_hot = False
         tile = Gtk.EventBox()
         tile.set_visible_window(False)
+        tile.set_above_child(True)  # the picture has a window of its own: clicks come here
+        self.tile_box = tile
         tile.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK |
                         Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         self.tile = drawing(68, 68, lambda _w, cr: draw_radial_tile(
