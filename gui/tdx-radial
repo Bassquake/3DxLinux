@@ -44,18 +44,19 @@ COMMON_TOOLS = [
 ]
 NOT_LINUX = "Not on Linux yet"
 
-# sizes and colours measured on 3DxWare's menu
-RADIUS = 131          # the disc
-CENTER_R = 25         # the close button
+# sizes and colours measured on 3DxWare's menu (100 % scaling)
+RADIUS = 105          # the disc
+CENTER_R = 20         # the close button
 BACK = (0xf0 / 255,) * 3
-HOVER = (0xdc / 255,) * 3
-PRESS = (0xc8 / 255,) * 3
+HOVER = (0xc9 / 255,) * 3
+PRESS = (0xb4 / 255,) * 3
 LINE = (0x34 / 255,) * 3
 CENTER = (0x2c / 255,) * 3
 CENTER_HOVER = (0x48 / 255,) * 3
 TEXT = (0x1e / 255,) * 3
 TEXT_OFF = (0xa0 / 255,) * 3
-ICON = 28
+ICON = 22
+FONT = "Sans 8.5"
 FADE_IN_MS = 150
 
 
@@ -113,6 +114,27 @@ def tdxd_request(sock, line):
         return "error: %s\n" % e
     finally:
         s.close()
+
+
+def run_detached(prog):
+    """Start @prog so that it outlives the menu. tdxd runs the menu as a systemd
+    user unit, and systemd stops everything in it when the menu exits: so the
+    program gets a unit of its own (tdx-settings: the one the MENU button uses,
+    so a second one isn't started). Without a user manager (WSL), a new session."""
+    unit = "tdx-settings-menu" if prog == "tdx-settings" else prog + "-radial"
+    try:
+        r = subprocess.run(["systemd-run", "--user", "--unit=" + unit, "--collect", "--quiet",
+                            prog], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=5)
+        if r.returncode == 0:
+            return
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        subprocess.Popen([prog], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    except OSError as e:
+        print("tdx-radial: %s: %s" % (prog, e), file=sys.stderr)
 
 
 def slice_at(dx, dy):
@@ -268,11 +290,7 @@ class RadialMenu(Gtk.Window):
             if not out.startswith("ok"):
                 print("tdx-radial: " + out.strip(), file=sys.stderr)
         elif a and a[0] == "run":
-            try:
-                subprocess.Popen([a[1]], start_new_session=True,
-                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-            except OSError as e:
-                print("tdx-radial: %s: %s" % (a[1], e), file=sys.stderr)
+            run_detached(a[1])
         Gtk.main_quit()
         return False
 
@@ -320,8 +338,8 @@ class RadialMenu(Gtk.Window):
         cr.set_source_rgb(*(CENTER_HOVER if self.hover == "close" else CENTER))
         cr.fill()
         cr.set_source_rgb(1, 1, 1)
-        cr.set_line_width(2.2)
-        s = 7
+        cr.set_line_width(2)
+        s = 6
         cr.move_to(cx - s, cy - s)
         cr.line_to(cx + s, cy + s)
         cr.move_to(cx + s, cy - s)
@@ -335,10 +353,10 @@ class RadialMenu(Gtk.Window):
         layout = PangoCairo.create_layout(cr)
         layout.set_text(label, -1)
         layout.set_alignment(Pango.Alignment.CENTER)
-        layout.set_font_description(Pango.FontDescription("Sans 10.5"))
+        layout.set_font_description(Pango.FontDescription(FONT))
         tw, th = layout.get_pixel_size()
         icon = self.icons[i]
-        ih = ICON + 6 if icon else 0
+        ih = ICON + 4 if icon else 0
         top = y - (ih + th) / 2
         if icon:
             Gdk.cairo_set_source_pixbuf(cr, icon, x - ICON / 2, top)
