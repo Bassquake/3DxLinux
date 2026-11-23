@@ -2306,7 +2306,22 @@ class ActionPicker:
         or Esc closes it."""
         w = self.widget
         top = w.get_toplevel()
+        t0 = time.monotonic()
+        dbg = os.environ.get("TDX_DEBUG_PICKER")
+
+        def mark(what):  # TDX_DEBUG_PICKER=1: where opening it takes its time
+            if dbg:
+                sys.stderr.write("picker: %-22s %6.3f s\n" % (what, time.monotonic() - t0))
+        if dbg:
+            sys.stderr.write("picker: display %s, GTK_IM_MODULE=%s, XMODIFIERS=%s\n" % (
+                type(Gdk.Display.get_default()).__name__, os.environ.get("GTK_IM_MODULE"),
+                os.environ.get("XMODIFIERS")))
+            self.pop.connect("map-event", lambda *_: mark("mapped") or False)
+            self.pop.connect_after("draw", lambda *_: (mark("drawn") if not getattr(
+                self, "_drawn", None) else None, setattr(self, "_drawn", 1)) and False)
+            self.search.connect("focus-in-event", lambda *_: mark("search focused") or False)
         self.pop.realize()
+        mark("realized")
         gw = self.pop.get_window()
         coords = w.translate_coordinates(top, 0, 0) if isinstance(top, Gtk.Window) else None
         if gw and coords:
@@ -2328,10 +2343,12 @@ class ActionPicker:
             grabbed = seat.grab(gw, Gdk.SeatCapabilities.ALL, True, None,
                                 Gtk.get_current_event(),
                                 lambda _seat, _win, *_: self.pop.show(), None)
+        mark("grab %s" % getattr(grabbed, "value_nick", grabbed))
         if grabbed != Gdk.GrabStatus.SUCCESS:
             self.pop.show()  # no grab (e.g. an X11 grab refused): still usable
         self.pop.grab_add()
         self.search.grab_focus()
+        mark("popup() returned")
 
     def placed(self, _gw, _anchor, _final, flipped_x, _flipped_y):
         """Where it went: the arrow on the left, or on the right when it
