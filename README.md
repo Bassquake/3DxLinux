@@ -44,9 +44,10 @@ the CadMouse's Advanced Settings sets them for the CadMouse through KWin, as
 System Settings does; elsewhere they are greyed out. Its Buttons (radial-menu, wheel, middle, forward and
 back) can be a mouse function, done by the mouse itself, or a keystroke, which
 `tdxd` sends; per application too (`key_V2DK_FORWARD = KEY_LEFTCTRL+KEY_Z`,
-`key_V2DK_WHEEL = BTN_MIDDLE`, `mouse_swap_buttons = yes`). 3DxWare's radial
-menu (Common Tools) is not on Linux: that button does nothing until you give it
-something.
+`key_V2DK_WHEEL = BTN_MIDDLE`, `mouse_swap_buttons = yes`). The radial-menu
+button opens 3DxWare's Common Tools radial menu at the pointer (`tdx-radial`):
+Undo, Redo and Properties… (Virtual NumPad is not on Linux yet). Any button can
+open it too: `action_V2DK_FORWARD = commontools`.
 
 **Add device** on the receiver's page pairs a CadMouse (or a SpaceMouse
 Wireless, untested) as 3DxWare's pairing program does: the receiver goes into
@@ -370,7 +371,7 @@ defaults:
 
 - the application's own NavLib commands (FreeCAD has its add-on, below);
 - 3DxWare's SDK view commands;
-- radial menus;
+- radial menus other than Common Tools;
 - mouse macros.
 
 A program matches by its process name, taken from 3DxWare's `.exe` name.

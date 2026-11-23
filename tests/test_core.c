@@ -1343,6 +1343,20 @@ static void test_receiver(void)
 	      tdx_rcv_mouse_action(&mc, cmw, 3) == TDX_ACT_DISABLED &&
 	      tdx_rcv_mouse_action(&mc, cmw, 4) == TDX_ACT_NONE);
 	CHECK(tdx_rcv_mouse_binding(&mc, cmw, 6)->keys[0] == KEY_MICMUTE);
+	{
+		char p[] = "/tmp/tdx-test-cm3.conf";
+		FILE *f = fopen(p, "w");
+		fputs("action_V2DK_FORWARD = commontools\n", f);
+		fclose(f);
+		CHECK(tdx_config_load(&mc, p) == 0);
+		unlink(p);
+	}
+	/* Common Tools (the radial menu) on another button: it reports, tdxd shows it */
+	vend = tdx_rcv_mouse_map(&mc, cmw, map);
+	CHECK(tdx_action_from_name("commontools") == TDX_ACT_COMMONTOOLS &&
+	      !strcmp(tdx_action_name(TDX_ACT_COMMONTOOLS), "commontools") &&
+	      tdx_rcv_mouse_action(&mc, cmw, 4) == TDX_ACT_COMMONTOOLS && map[4] == 45 &&
+	      (vend & 0x10));
 	tdx_config_defaults(&mc);
 	tdx_rcv_mouse_map(&mc, cmw, map);
 	tdx_rcv_mouse_config(rep, 7200, 125, 0, map);

@@ -479,6 +479,16 @@ def gui_tests(d, tdxd):
           app.store.base.get("key_V2DK_MIDDLE") == "BTN_RIGHT" and
           mbtn.rows["V2DK_MIDDLE"][1].get_text() == "Secondary Mouse Function",
           "picker: back to the default, and a mouse function")
+    mbtn.pick("V2DK_FORWARD", "action:commontools")
+    mbtn.pick("V2DK_RADIALMENU", "action:commontools")  # its own: the default
+    check(app.store.base.get("action_V2DK_FORWARD") == "commontools" and
+          mbtn.rows["V2DK_FORWARD"][1].get_text() == "Common Tools" and
+          not app.store.base.has("action_V2DK_RADIALMENU") and
+          not app.store.base.has("key_V2DK_RADIALMENU") and
+          mbtn.rows["V2DK_RADIALMENU"][1].get_text() == "Common Tools" and
+          mbtn.current_item("V2DK_RADIALMENU")["value"] == "action:commontools",
+          "picker: Common Tools on any button, the radial button's default")
+    mbtn.pick("V2DK_FORWARD", "BTN_EXTRA")
     greyed = [it["label"] for _s, it in ts.picker_items() if not it["value"]]
     check("Virtual NumPad" in greyed and "Double-Click Left" in greyed and
           "Undo" not in greyed, "picker: Windows-only entries greyed")
@@ -752,12 +762,56 @@ def gui_tests(d, tdxd):
     check(not app.store.profile.keys_with_prefix("key_"), "Restore Defaults: your own profile")
 
 
+def radial_tests(d):
+    """tdx-radial: 3DxWare's Common Tools radial menu."""
+    ld = importlib.machinery.SourceFileLoader("tdx_radial", os.path.join(ROOT, "gui", "tdx-radial"))
+    sp = importlib.util.spec_from_loader("tdx_radial", ld)
+    rd = importlib.util.module_from_spec(sp)
+    ld.exec_module(rd)
+    check([rd.slice_at(0, -50), rd.slice_at(50, 0), rd.slice_at(0, 50), rd.slice_at(-50, 0),
+           rd.slice_at(30, -31), rd.slice_at(31, -30)] == [0, 1, 2, 3, 0, 1],
+          "radial: the slices, clockwise from the top")
+    check(rd.menu_opacity(100) == 1 and rd.menu_opacity(10000) == 0.15 and
+          0.15 < rd.menu_opacity(200) < 1, "radial: fades away from the menu, to 0.15")
+    check([it[0] for it in rd.COMMON_TOOLS] == ["Virtual\nNumPad", "Redo", "Properties...", "Undo"]
+          and rd.COMMON_TOOLS[0][2] is None and rd.COMMON_TOOLS[3][2] == ("keys", "KEY_LEFTCTRL+KEY_Z"),
+          "radial: Common Tools as Base.xml's Base_MenuRM1, Virtual NumPad greyed")
+
+    class Ev:
+        def __init__(self, button, x, y):
+            self.button, self.x, self.y = button, x, y
+    m = rd.RadialMenu(os.path.join(d, "none.sock"))
+    m.run_and_quit = lambda: False
+    m.place(400, 300)
+    cx, cy = m.center
+    check(m.hit(cx, cy) == "close" and m.hit(cx, cy - 80) == 0 and m.hit(cx - 80, cy) == 3 and
+          m.hit(cx + rd.RADIUS + 20, cy) is None and not m.enabled(0) and m.enabled(3),
+          "radial: what is under the pointer")
+    m.on_press(None, Ev(1, cx, cy - 80))
+    m.on_release(None, Ev(1, cx, cy - 80))
+    check(m.done is None, "radial: the greyed Virtual NumPad does nothing")
+    m.on_press(None, Ev(1, cx - 80, cy))
+    m.on_release(None, Ev(1, cx - 80, cy))
+    check(m.done == ("keys", "KEY_LEFTCTRL+KEY_Z"), "radial: Undo chosen")
+    m2 = rd.RadialMenu(os.path.join(d, "none.sock"))
+    m2.run_and_quit = lambda: False
+    m2.place(400, 300)
+    m2.done = "x"
+    m2.on_release(None, Ev(1, cx + 300, cy))
+    check(m2.done is None, "radial: a click outside closes it")
+    check(rd.tdxd_request(os.path.join(d, "none.sock"), "keys KEY_Z").startswith("error"),
+          "radial: no tdxd, an error, no crash")
+    m.destroy()
+    m2.destroy()
+
+
 def main():
     tdxd = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build",
                                                               os.uname().machine, "tdxd")
     with tempfile.TemporaryDirectory() as d:
         conf_file_tests(d)
         gui_tests(d, tdxd)
+        radial_tests(d)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

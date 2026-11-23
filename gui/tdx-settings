@@ -87,6 +87,7 @@ ACTIONS = [
     ("panzoom", "Pan Zoom On/Off"),
     ("calibrate", "Calibrate"),
     ("settings", "Open Settings"),
+    ("commontools", "Common Tools"),
 ]
 ACTION_LABEL = dict(ACTIONS)
 
@@ -2194,7 +2195,7 @@ PICKER = [
     ]),
     ("Radial Menus", [
         _i("Common Macros", "Base_RadialMenu_CommonMacros.png"),
-        _i("Common Tools", "HIDMouse_RadialMenu.png", "default"),
+        _i("Common Tools", "HIDMouse_RadialMenu.png", "action:commontools"),
         {"link": "New Radial Menu"},
     ]),
 ]
@@ -2540,8 +2541,7 @@ class ActionPicker:
                 icon.add(img)
             hb.pack_start(icon, False, False, 0)
             hb.pack_start(lab(it["label"]), False, False, 0)
-            ok = bool(it.get("value")) and (it["value"] != "default" or
-                                            self.v2dk == "V2DK_RADIALMENU")
+            ok = bool(it.get("value"))
             if it is self.current:
                 b.get_style_context().add_class("tdx-pick-current")
         b.add(hb)
@@ -2728,7 +2728,8 @@ class MouseButtonsPanel(Panel):
         kind, val = self.binding(v2dk)
         if kind == "default":
             d = MOUSE_DEFAULT[v2dk]
-            kind, val = ("mouse", d) if d else ("default", None)
+            # the radial-menu button's default: Common Tools (tdx-radial)
+            kind, val = ("mouse", d) if d else ("action", "commontools")
         for _sec, it in picker_items():
             if picker_value_matches(it["value"], kind, val):
                 return it
@@ -2737,10 +2738,6 @@ class MouseButtonsPanel(Panel):
     def describe(self, v2dk, default):
         kind, val = self.binding(v2dk)
         it = self.current_item(v2dk)
-        if kind == "default" and MOUSE_DEFAULT[v2dk] is None:
-            return default, ASSETS.icon("HIDMouse_RadialMenu.png"), \
-                "3DxWare's radial menu: does nothing on Linux. Give it a keystroke " \
-                "or a mouse function."
         if it:
             return it["label"], ASSETS.icon(it["icon"]) if it.get("icon") else None, None
         if kind == "action":
@@ -2850,8 +2847,9 @@ class MouseButtonsPanel(Panel):
 
     def pick(self, v2dk, value):
         """A picker entry chosen: its value (see PICKER)."""
-        if value == "default":
-            self.assign(v2dk, None)
+        if value == "default" or (value == "action:commontools" and
+                                  MOUSE_DEFAULT[v2dk] is None):
+            self.assign(v2dk, None)  # the radial button's own: its default
         elif value.startswith("action:"):
             self.assign(v2dk, None, action=value[7:])
         elif value.startswith("keys:"):

@@ -146,6 +146,7 @@ static int nkey_union;
 
 static void on_sig(int s) { if (s == SIGHUP) g_reload = 1; else g_quit = 1; }
 static void open_settings(void);
+static void open_radial(void);
 static int device_rezero(struct dev_ctx *d);
 
 static long long now_ms(void)
@@ -623,6 +624,8 @@ static void rcv_mouse_buttons(struct rcv_ctx *r, uint8_t bits)
 				continue;
 			if (act == TDX_ACT_SETTINGS)
 				open_settings();
+			else if (act == TDX_ACT_COMMONTOOLS)
+				open_radial();
 			else if (act == TDX_ACT_CALIBRATE)
 				for (int k = 0; k < ndev; k++)
 					device_rezero(&devs[k]);
@@ -641,8 +644,14 @@ static void rcv_mouse_buttons(struct rcv_ctx *r, uint8_t bits)
 		const struct tdx_keymap *km = tdx_rcv_mouse_binding(&cfg, def, i);
 		LOG(2, "%s: button %d (%s) %s\n", rcv_dev_name(r), i + 1,
 		    def && i < def->nbuttons ? def->buttons[i].v3dk : "-", p ? "down" : "up");
+		if (!km && def && i < def->nbuttons &&
+		    !strcmp(def->buttons[i].v3dk, "V2DK_RADIALMENU")) {
+			if (p) /* its default, as 3DxWare: the Common Tools radial menu */
+				open_radial();
+			continue;
+		}
 		if (!km || (km->keys[0] >= BTN_MISC && km->keys[0] < KEY_OK))
-			continue; /* nothing (the radial menu), or a mouse function */
+			continue; /* nothing, or a mouse function */
 		rcv_open_keys(r);
 		tdx_uinput_keys(&r->ui, km, p);
 	}
@@ -807,15 +816,36 @@ static size_t rcv_status(char *reply, size_t len, size_t o)
  * tdx-settings, through that user's own systemd manager: the panel gets the
  * session's display. A fixed unit name means a second press while the panel is
  * open starts no second one. Double fork: tdxd never waits or leaves zombies. */
-static const char settings_script[] =
-	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n"
-	"[ -n \"$s\" ] || exit 0\n"
-	"u=$(loginctl show-session \"$s\" -p Name --value 2>/dev/null)\n"
+#define SESSION_USER \
+	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n" \
+	"[ -n \"$s\" ] || exit 0\n" \
+	"u=$(loginctl show-session \"$s\" -p Name --value 2>/dev/null)\n" \
 	"[ -n \"$u\" ] && [ \"$u\" != root ] || exit 0\n"
+
+static const char settings_script[] =
+	SESSION_USER
 	"exec systemd-run --user --machine=\"$u@\" --unit=tdx-settings-menu --collect --quiet "
 	"tdx-settings\n";
 
-static void open_settings(void)
+/* 3DxWare's radial menu (3DxPieMenus.exe): tdx-radial at the pointer. A press
+ * while it is open closes it. Started from a desktop's own terminal (tdxd
+ * with a DISPLAY, as when testing), it runs there; tdx-radial itself closes
+ * an open one then. */
+static const char radial_script[] =
+	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n"
+	"if [ -z \"$s\" ]; then\n"
+	"  [ -n \"$DISPLAY$WAYLAND_DISPLAY\" ] && exec tdx-radial -s \"$TDX_SOCK\"\n"
+	"  exit 0\n"
+	"fi\n"
+	"u=$(loginctl show-session \"$s\" -p Name --value 2>/dev/null)\n"
+	"[ -n \"$u\" ] && [ \"$u\" != root ] || exit 0\n"
+	"if systemctl --user --machine=\"$u@\" is-active --quiet tdx-radial-menu; then\n"
+	"  exec systemctl --user --machine=\"$u@\" stop tdx-radial-menu\n"
+	"fi\n"
+	"exec systemd-run --user --machine=\"$u@\" --unit=tdx-radial-menu --collect --quiet "
+	"tdx-radial -s \"$TDX_SOCK\"\n";
+
+static void session_run(const char *script)
 {
 	pid_t pid = fork();
 	if (pid < 0)
@@ -830,12 +860,24 @@ static void open_settings(void)
 				if (!cli_verbose)
 					dup2(nul, 2);
 			}
-			execl("/bin/sh", "sh", "-c", settings_script, (char *)NULL);
+			setenv("TDX_SOCK", cfg.control_socket, 1); /* tdx-radial's Undo/Redo */
+			execl("/bin/sh", "sh", "-c", script, (char *)NULL);
 			_exit(127);
 		}
 		_exit(0);
 	}
 	waitpid(pid, NULL, 0);
+}
+
+static void open_radial(void)
+{
+	session_run(radial_script);
+	LOG(1, "radial menu: asked the active session to show Common Tools\n");
+}
+
+static void open_settings(void)
+{
+	session_run(settings_script);
 	LOG(1, "MENU: asked the active session to open tdx-settings\n");
 }
 
@@ -1037,6 +1079,23 @@ static void uinput_open_dev(struct dev_ctx *d)
 		LOG(0, "uinput disabled: %s\n", strerror(-rc));
 }
 
+/* A keyboard device for keys that come from no button (the radial menu's):
+ * a CadMouse's, else a 3D mouse's. */
+static struct tdx_uinput *keys_device(void)
+{
+	for (int i = 0; i < nrcv; i++) {
+		if (rcvs[i].slot.cls != TDX_RCV_2DMOUSE)
+			continue;
+		rcv_open_keys(&rcvs[i]);
+		if (rcvs[i].ui.kfd >= 0)
+			return &rcvs[i].ui;
+	}
+	for (int i = 0; i < ndev; i++)
+		if (devs[i].ui.kfd >= 0)
+			return &devs[i].ui;
+	return NULL;
+}
+
 static void ctl_handler(char *cmd, char *reply, size_t len)
 {
 	char *save = NULL, *verb = strtok_r(cmd, " \t", &save);
@@ -1135,6 +1194,37 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		else {
 			LOG(0, "%s: slot %d freed\n", r->node.def->name, slot);
 			snprintf(reply, len, "ok slot %d freed\n", slot);
+		}
+	} else if (!strcmp(verb, "keys")) {
+		/* the radial menu's Undo/Redo: "keys KEY_LEFTCTRL+KEY_Z", tapped on a
+		 * keyboard device of tdxd's; only root or the desktop user may type */
+		int uid = tdx_ctl_peer_uid();
+		char *chord = strtok_r(NULL, " \t", &save);
+		if (uid != 0 && uid != session_uid) {
+			snprintf(reply, len, "error: not allowed\n");
+			return;
+		}
+		struct tdx_keymap km;
+		memset(&km, 0, sizeof km);
+		km.seq = 1; /* one chord, tapped */
+		int n = 0;
+		for (char *s2 = NULL, *t = chord ? strtok_r(chord, "+", &s2) : NULL; t;
+		     t = strtok_r(NULL, "+", &s2)) {
+			int code = tdx_key_from_name(t);
+			if (code <= 0 || n >= TDX_MAX_KEYS || (code >= BTN_MISC && code < KEY_OK)) {
+				snprintf(reply, len, "error: bad key %s\n", t);
+				return;
+			}
+			km.keys[n++] = code;
+		}
+		struct tdx_uinput *ui = keys_device();
+		if (!n)
+			snprintf(reply, len, "error: keys needs KEY_A+KEY_B...\n");
+		else if (!ui)
+			snprintf(reply, len, "error: no keyboard device\n");
+		else {
+			tdx_uinput_keys(ui, &km, 1);
+			snprintf(reply, len, "ok %d keys\n", n);
 		}
 	} else if (!strcmp(verb, "calibrate")) {
 		size_t o = 0;
@@ -1366,6 +1456,8 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 				gio_slide_next(d);
 			else if (act == TDX_ACT_SETTINGS)
 				open_settings();
+			else if (act == TDX_ACT_COMMONTOOLS)
+				open_radial();
 			continue;
 		}
 		const struct tdx_keymap *km = tdx_keymap_for(&cfg, d->node.def, i);

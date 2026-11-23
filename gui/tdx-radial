@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+"""tdx-radial: 3DxWare's radial menu (3DxPieMenus.exe) on Linux.
+
+tdxd starts it when a button shows "Common Tools" (a CadMouse's radial-menu
+button does by default); a second press closes it. The menu opens centred on
+the pointer, as 3DxWare's: four slices round a close button, as in Base.xml's
+Base_MenuRM1:
+
+    top     Virtual NumPad  (Driver_Toggle_3DxNumPad: not on Linux yet, greyed)
+    right   Redo            (Macro_Redo)
+    bottom  Properties...   (Driver_ShowDriverGUI: 3Dconnexion Settings)
+    left    Undo            (Macro_Undo)
+
+Click a slice to run it. The centre button, a right click, Escape or a click
+outside closes the menu; it fades as the pointer moves away (3DxPieMenus'
+FnOpacity, down to 0.15). Wayland lets no window place itself at the
+pointer, so the menu is drawn on a transparent full-screen window, where the
+pointer's position is known. Undo and Redo are keystrokes, sent by tdxd
+("keys" on its control socket) to the window that had the focus.
+"""
+import argparse
+import math
+import os
+import signal
+import socket
+import subprocess
+import sys
+
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+
+APP_VERSION = "dev"
+
+# Base_MenuRM1 (Common Tools), MenuButton_1..4 clockwise from the top:
+# (label, icon, what it does)
+COMMON_TOOLS = [
+    ("Virtual\nNumPad", "Driver_Toggle_3DxNumPad.png", None),  # not on Linux yet
+    ("Redo", "Macro_Redo.png", ("keys", "KEY_LEFTCTRL+KEY_LEFTSHIFT+KEY_Z")),
+    ("Properties...", "Driver_ShowDriverGUI.png", ("run", "tdx-settings")),
+    ("Undo", "Macro_Undo.png", ("keys", "KEY_LEFTCTRL+KEY_Z")),
+]
+NOT_LINUX = "Not on Linux yet"
+
+# sizes and colours measured on 3DxWare's menu
+RADIUS = 131          # the disc
+CENTER_R = 25         # the close button
+BACK = (0xf0 / 255,) * 3
+HOVER = (0xdc / 255,) * 3
+PRESS = (0xc8 / 255,) * 3
+LINE = (0x34 / 255,) * 3
+CENTER = (0x2c / 255,) * 3
+CENTER_HOVER = (0x48 / 255,) * 3
+TEXT = (0x1e / 255,) * 3
+TEXT_OFF = (0xa0 / 255,) * 3
+ICON = 28
+FADE_IN_MS = 150
+
+
+def asset_dirs():
+    env = os.environ.get("TDX_UI_ASSETS")
+    here = os.path.dirname(os.path.realpath(__file__))
+    return ([env] if env else []) + [
+        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
+        os.path.join(here, "..", "share", "tdxd", "3dxware-ui"),
+        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+
+
+def icon_path(name):
+    for d in asset_dirs():
+        p = os.path.join(d, "icons", name)
+        if d and os.path.isfile(p):
+            return p
+    return None
+
+
+def pidfile():
+    run = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    return os.path.join(run, "tdx-radial-%d.pid" % os.getuid())
+
+
+def close_running():
+    """A menu already open: close it (the button pressed again). True if so."""
+    try:
+        with open(pidfile()) as f:
+            pid = int(f.read().strip())
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            if b"tdx-radial" not in f.read():
+                return False
+        os.kill(pid, signal.SIGTERM)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def tdxd_request(sock, line):
+    """One request on tdxd's control socket; its reply."""
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(2)
+    try:
+        s.connect(sock)
+        s.sendall((line + "\n").encode())
+        out = b""
+        while True:
+            b = s.recv(4096)
+            if not b:
+                break
+            out += b
+        return out.decode(errors="replace")
+    except OSError as e:
+        return "error: %s\n" % e
+    finally:
+        s.close()
+
+
+def slice_at(dx, dy):
+    """Which slice (0 top, 1 right, 2 bottom, 3 left) a point off the centre is in."""
+    a = math.degrees(math.atan2(dx, -dy)) % 360  # 0 = up, clockwise
+    return int(((a + 45) % 360) // 90)
+
+
+def menu_opacity(dist):
+    """3DxPieMenus' FnOpacity: full on the menu, fading beyond it to 0.15."""
+    if dist <= RADIUS:
+        return 1.0
+    return max(0.15, 1.0 - (dist - RADIUS) / (RADIUS * 1.5) * 0.85)
+
+
+class RadialMenu(Gtk.Window):
+    def __init__(self, sock, items=COMMON_TOOLS):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.sock, self.items = sock, items
+        self.at = None           # the pointer when the menu opened
+        self.pointer = None
+        self.hover = None        # a slice 0..3, "close", or None
+        self.pressed = None
+        self.fade = 0.0
+        self.done = None         # what to do once the window is gone
+        self.icons = [self.load_icon(it[1]) for it in items]
+        self.set_title("Common Tools")
+        self.set_decorated(False)
+        self.set_app_paintable(True)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        screen = self.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual:
+            self.set_visual(visual)
+        self.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_PRESS_MASK |
+                        Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK |
+                        Gdk.EventMask.KEY_PRESS_MASK)
+        self.connect("draw", self.on_draw)
+        self.connect("map-event", self.on_map)
+        self.connect("enter-notify-event", self.on_motion)
+        self.connect("motion-notify-event", self.on_motion)
+        self.connect("button-press-event", self.on_press)
+        self.connect("button-release-event", self.on_release)
+        self.connect("key-press-event", self.on_key)
+        self.fullscreen()
+
+    @staticmethod
+    def load_icon(name):
+        p = icon_path(name)
+        try:
+            return GdkPixbuf.Pixbuf.new_from_file_at_size(p, ICON, ICON) if p else None
+        except GLib.Error:
+            return None
+
+    # ---- where the pointer is
+    def on_map(self, *_):
+        # X11 knows the pointer now; Wayland tells it when it enters the window
+        disp = Gdk.Display.get_default()
+        if self.center is None and "X11" in type(disp).__name__:
+            seat = disp.get_default_seat()
+            if seat and seat.get_pointer():
+                _w, x, y, _m = self.get_window().get_device_position(seat.get_pointer())
+                if x or y:  # (0, 0): not on this display yet (WSLg); wait for it to enter
+                    self.place(x, y)
+        GLib.timeout_add(16, self.fade_in)
+        return False
+
+    def place(self, x, y):
+        self.at = (x, y)
+        self.queue_draw()
+
+    @property
+    def center(self):
+        """The menu's centre: where the pointer was, the whole disc on the screen."""
+        if self.at is None:
+            return None
+        w, h = self.get_allocated_width(), self.get_allocated_height()
+        m = RADIUS + 2
+        return (min(max(self.at[0], m), max(m, w - m)), min(max(self.at[1], m), max(m, h - m)))
+
+    def fade_in(self):
+        self.fade = min(1.0, self.fade + 16 / FADE_IN_MS)
+        self.queue_draw()
+        return self.fade < 1.0
+
+    def hit(self, x, y):
+        if self.center is None:
+            return None
+        dx, dy = x - self.center[0], y - self.center[1]
+        d = math.hypot(dx, dy)
+        if d <= CENTER_R:
+            return "close"
+        if d <= RADIUS:
+            return slice_at(dx, dy)
+        return None
+
+    def enabled(self, i):
+        return isinstance(i, int) and self.items[i][2] is not None
+
+    def on_motion(self, _w, ev):
+        if self.center is None:
+            self.place(ev.x, ev.y)
+        self.pointer = (ev.x, ev.y)
+        h = self.hit(ev.x, ev.y)
+        if h != self.hover:
+            self.hover = h
+            self.set_tooltip_text(NOT_LINUX if isinstance(h, int) and not self.enabled(h)
+                                  else None)
+        self.queue_draw()
+        return False
+
+    def on_press(self, _w, ev):
+        if self.center is None:
+            self.place(ev.x, ev.y)
+            return True
+        if ev.button == 1:
+            self.pressed = self.hit(ev.x, ev.y)
+            self.queue_draw()
+        return True
+
+    def on_release(self, _w, ev):
+        if ev.button == 3:
+            return self.finish(None) or True
+        if ev.button != 1 or self.center is None:
+            return True
+        h = self.hit(ev.x, ev.y)
+        pressed, self.pressed = self.pressed, None
+        if isinstance(h, int):
+            if self.enabled(h) and h == pressed:
+                self.finish(self.items[h][2])
+            self.queue_draw()  # a greyed slice: stays open
+            return True
+        self.finish(None)  # the close button, or outside the menu
+        return True
+
+    def on_key(self, _w, ev):
+        if ev.keyval == Gdk.KEY_Escape:
+            self.finish(None)
+        return True
+
+    def finish(self, action):
+        self.done = action
+        self.hide()
+        # the window the user was in gets the focus back first
+        GLib.timeout_add(150, self.run_and_quit)
+
+    def run_and_quit(self):
+        a = self.done
+        if a and a[0] == "keys":
+            out = tdxd_request(self.sock, "keys " + a[1])
+            if not out.startswith("ok"):
+                print("tdx-radial: " + out.strip(), file=sys.stderr)
+        elif a and a[0] == "run":
+            try:
+                subprocess.Popen([a[1]], start_new_session=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+            except OSError as e:
+                print("tdx-radial: %s: %s" % (a[1], e), file=sys.stderr)
+        Gtk.main_quit()
+        return False
+
+    # ---- drawing
+    def on_draw(self, _w, cr):
+        cr.set_operator(0)  # CLEAR: the rest of the screen stays as it is
+        cr.paint()
+        cr.set_operator(2)  # OVER
+        if self.center is None:
+            return False
+        cx, cy = self.center
+        alpha = self.fade
+        if self.pointer:
+            alpha *= menu_opacity(math.hypot(self.pointer[0] - cx, self.pointer[1] - cy))
+        cr.push_group()
+        self.draw_menu(cr, cx, cy)
+        cr.pop_group_to_source()
+        cr.paint_with_alpha(alpha)
+        return False
+
+    def draw_menu(self, cr, cx, cy):
+        cr.arc(cx, cy, RADIUS, 0, 2 * math.pi)
+        cr.set_source_rgb(*BACK)
+        cr.fill()
+        # the slice under the pointer, darker while pressed
+        if isinstance(self.hover, int) and self.enabled(self.hover):
+            a0 = math.radians(-90 - 45 + 90 * self.hover)
+            cr.move_to(cx, cy)
+            cr.arc(cx, cy, RADIUS, a0, a0 + math.pi / 2)
+            cr.close_path()
+            cr.set_source_rgb(*(PRESS if self.pressed == self.hover else HOVER))
+            cr.fill()
+        # the dividers, on the diagonals
+        cr.set_source_rgb(*LINE)
+        cr.set_line_width(2)
+        for k in range(4):
+            a = math.radians(45 + 90 * k)
+            cr.move_to(cx + CENTER_R * math.cos(a), cy + CENTER_R * math.sin(a))
+            cr.line_to(cx + RADIUS * math.cos(a), cy + RADIUS * math.sin(a))
+        cr.stroke()
+        for i, (label, _icon, action) in enumerate(self.items):
+            self.draw_item(cr, cx, cy, i, label, action is not None)
+        # the close button
+        cr.arc(cx, cy, CENTER_R, 0, 2 * math.pi)
+        cr.set_source_rgb(*(CENTER_HOVER if self.hover == "close" else CENTER))
+        cr.fill()
+        cr.set_source_rgb(1, 1, 1)
+        cr.set_line_width(2.2)
+        s = 7
+        cr.move_to(cx - s, cy - s)
+        cr.line_to(cx + s, cy + s)
+        cr.move_to(cx + s, cy - s)
+        cr.line_to(cx - s, cy + s)
+        cr.stroke()
+
+    def draw_item(self, cr, cx, cy, i, label, on):
+        a = math.radians(-90 + 90 * i)
+        dist = RADIUS * 0.6
+        x, y = cx + dist * math.cos(a), cy + dist * math.sin(a)
+        layout = PangoCairo.create_layout(cr)
+        layout.set_text(label, -1)
+        layout.set_alignment(Pango.Alignment.CENTER)
+        layout.set_font_description(Pango.FontDescription("Sans 10.5"))
+        tw, th = layout.get_pixel_size()
+        icon = self.icons[i]
+        ih = ICON + 6 if icon else 0
+        top = y - (ih + th) / 2
+        if icon:
+            Gdk.cairo_set_source_pixbuf(cr, icon, x - ICON / 2, top)
+            cr.paint_with_alpha(1.0 if on else 0.35)
+        cr.set_source_rgb(*(TEXT if on else TEXT_OFF))
+        cr.move_to(x - tw / 2, top + ih)
+        PangoCairo.show_layout(cr, layout)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="3DxWare's Common Tools radial menu")
+    ap.add_argument("-s", "--socket", default="/run/tdxd.sock", help="tdxd control socket")
+    ap.add_argument("-V", "--version", action="version", version="tdx-radial " + APP_VERSION)
+    args = ap.parse_args()
+    if close_running():
+        return 0
+    try:
+        with open(pidfile(), "w") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
+    win = RadialMenu(args.socket or "/run/tdxd.sock")
+    win.connect("destroy", lambda *_: Gtk.main_quit())
+    win.show_all()
+    try:
+        Gtk.main()
+    finally:
+        try:
+            with open(pidfile()) as f:
+                if f.read().strip() == str(os.getpid()):
+                    os.unlink(pidfile())
+        except OSError:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

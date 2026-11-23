@@ -33,7 +33,7 @@ trap 'rm -rf "$STAGE"' EXIT
 stage() { # stage LIBDIR -> $STAGE/root
 	local R=$STAGE/root L=$1
 	rm -rf "$R"
-	for b in tdxd tdx-lcd tdxctl tdx-lcdmgr tdx-lcd-demo tdx-focus tdx-tray tdx-settings tdx-lcdmanager \
+	for b in tdxd tdx-lcd tdxctl tdx-lcdmgr tdx-lcd-demo tdx-focus tdx-tray tdx-radial tdx-settings tdx-lcdmanager \
 		 tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures tdx-extract-3dxware-ui; do
 		install -Dm755 "$DIST/bin/$b" "$R/usr/bin/$b"
 	done
