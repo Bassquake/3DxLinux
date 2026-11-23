@@ -51,6 +51,7 @@ NOT_LINUX = "Not on Linux yet"
 
 # sizes and colours measured on 3DxWare's menu (100 % scaling)
 RADIUS = 105          # the disc
+RADIUS_8 = 140        # with 8 sections: room for their names
 CENTER_R = 20         # the close button
 BACK = (0xf0 / 255,) * 3
 HOVER = (0xc9 / 255,) * 3
@@ -145,17 +146,53 @@ def run_detached(argv):
         print("tdx-radial: %s: %s" % (prog, e), file=sys.stderr)
 
 
-def slice_at(dx, dy):
-    """Which slice (0 top, 1 right, 2 bottom, 3 left) a point off the centre is in."""
+def slice_at(dx, dy, n=4):
+    """Which of @n slices (0 at the top, clockwise) a point off the centre is in."""
     a = math.degrees(math.atan2(dx, -dy)) % 360  # 0 = up, clockwise
-    return int(((a + 45) % 360) // 90)
+    return int(((a + 180 / n) % 360) // (360 / n)) % n
 
 
-def menu_opacity(dist):
+def slice_action(value):
+    """A user menu slice's value, as the Radial Menu Editor saves it (the
+    picker's values): what tdx-radial does, or None (empty, not on Linux)."""
+    v = (value or "").strip()
+    if v.startswith("keys:"):
+        chords = []
+        for chord in v[5:].split(","):
+            names = [n.strip().upper() for n in chord.split("+") if n.strip()]
+            if names:
+                chords.append("+".join(n if n.startswith("KEY_") else "KEY_" + n for n in names))
+        return ("keys", ",".join(chords)) if chords else None
+    if v == "action:settings":
+        return ("run", "tdx-settings")
+    if v == "action:numpad":
+        return ("numpad", "tdx-numpad")
+    if v.startswith("action:") and len(v) > 7:
+        return ("action", v[7:])
+    return None  # empty, or a mouse function (not from a menu yet)
+
+
+def load_menu(sock, menu_id):
+    """(name, items) of a user radial menu, from tdxd ("radial ID"), or None."""
+    out = tdxd_request(sock, "radial " + menu_id)
+    if out.startswith("error"):
+        print("tdx-radial: " + out.strip(), file=sys.stderr)
+        return None
+    kv = dict(line.split("\t", 1) for line in out.splitlines() if "\t" in line)
+    n = 8 if kv.get("layout", "4").strip() == "8" else 4
+    items = []
+    for i in range(1, n + 1):
+        value = kv.get(str(i), "")
+        label = kv.get("%d_label" % i, "")
+        items.append((label.replace("\\n", "\n"), kv.get("%d_icon" % i, ""), slice_action(value)))
+    return kv.get("name", menu_id), items
+
+
+def menu_opacity(dist, radius=RADIUS):
     """3DxPieMenus' FnOpacity: full on the menu, fading beyond it to 0.15."""
-    if dist <= RADIUS:
+    if dist <= radius:
         return 1.0
-    return max(0.15, 1.0 - (dist - RADIUS) / (RADIUS * 1.5) * 0.85)
+    return max(0.15, 1.0 - (dist - radius) / (radius * 1.5) * 0.85)
 
 
 def window_kind():
@@ -179,6 +216,7 @@ class RadialMenu(Gtk.Window):
         super().__init__(type=Gtk.WindowType.POPUP if self.kind == "popup"
                          else Gtk.WindowType.TOPLEVEL)
         self.sock, self.items = sock, items
+        self.radius = RADIUS if len(items) <= 4 else RADIUS_8
         self.anim = None
         self.origin = (0, 0)
         self.at = None           # the pointer when the menu opened
@@ -268,7 +306,7 @@ class RadialMenu(Gtk.Window):
         if self.at is None:
             return None
         w, h = self.get_allocated_width(), self.get_allocated_height()
-        m = RADIUS + 2
+        m = self.radius + 2
         return (min(max(self.at[0], m), max(m, w - m)), min(max(self.at[1], m), max(m, h - m)))
 
     def fade_in(self):
@@ -283,8 +321,8 @@ class RadialMenu(Gtk.Window):
         d = math.hypot(dx, dy)
         if d <= CENTER_R:
             return "close"
-        if d <= RADIUS:
-            return slice_at(dx, dy)
+        if d <= self.radius:
+            return slice_at(dx, dy, len(self.items))
         return None
 
     def enabled(self, i):
@@ -340,7 +378,12 @@ class RadialMenu(Gtk.Window):
     def run_and_quit(self):
         a = self.done
         if a and a[0] == "keys":
-            out = tdxd_request(self.sock, "keys " + a[1])
+            for chord in a[1].split(","):  # a sequence: one chord after another
+                out = tdxd_request(self.sock, "keys " + chord)
+                if not out.startswith("ok"):
+                    print("tdx-radial: " + out.strip(), file=sys.stderr)
+        elif a and a[0] == "action":  # a driver function, done by tdxd
+            out = tdxd_request(self.sock, "action " + a[1])
             if not out.startswith("ok"):
                 print("tdx-radial: " + out.strip(), file=sys.stderr)
         elif a and a[0] == "run":
@@ -362,7 +405,7 @@ class RadialMenu(Gtk.Window):
         cx, cy = self.center
         alpha = self.fade
         if self.pointer:
-            alpha *= menu_opacity(math.hypot(self.pointer[0] - cx, self.pointer[1] - cy))
+            alpha *= menu_opacity(math.hypot(self.pointer[0] - cx, self.pointer[1] - cy), self.radius)
         cr.push_group()
         # growing from the pointer while it fades in (ease out)
         t = 1 - (1 - min(self.fade, 1.0)) ** 3
@@ -377,24 +420,25 @@ class RadialMenu(Gtk.Window):
         return False
 
     def draw_menu(self, cr, cx, cy):
-        cr.arc(cx, cy, RADIUS, 0, 2 * math.pi)
+        cr.arc(cx, cy, self.radius, 0, 2 * math.pi)
         cr.set_source_rgb(*BACK)
         cr.fill()
         # the slice under the pointer, darker while pressed
+        n = len(self.items)
         if isinstance(self.hover, int) and self.enabled(self.hover):
-            a0 = math.radians(-90 - 45 + 90 * self.hover)
+            a0 = math.radians(-90 - 180 / n + 360 / n * self.hover)
             cr.move_to(cx, cy)
-            cr.arc(cx, cy, RADIUS, a0, a0 + math.pi / 2)
+            cr.arc(cx, cy, self.radius, a0, a0 + 2 * math.pi / n)
             cr.close_path()
             cr.set_source_rgb(*(PRESS if self.pressed == self.hover else HOVER))
             cr.fill()
-        # the dividers, on the diagonals
+        # the dividers, between the slices (4: on the diagonals)
         cr.set_source_rgb(*LINE)
         cr.set_line_width(2)
-        for k in range(4):
-            a = math.radians(45 + 90 * k)
+        for k in range(n):
+            a = math.radians(-90 + 180 / n + 360 / n * k)
             cr.move_to(cx + CENTER_R * math.cos(a), cy + CENTER_R * math.sin(a))
-            cr.line_to(cx + RADIUS * math.cos(a), cy + RADIUS * math.sin(a))
+            cr.line_to(cx + self.radius * math.cos(a), cy + self.radius * math.sin(a))
         cr.stroke()
         for i, (label, _icon, action) in enumerate(self.items):
             self.draw_item(cr, cx, cy, i, label, action is not None)
@@ -412,14 +456,19 @@ class RadialMenu(Gtk.Window):
         cr.stroke()
 
     def draw_item(self, cr, cx, cy, i, label, on):
-        a = math.radians(-90 + 90 * i)
-        dist = RADIUS * 0.6
+        n = len(self.items)
+        a = math.radians(-90 + 360 / n * i)
+        dist = self.radius * (0.6 if n <= 4 else 0.66)
         x, y = cx + dist * math.cos(a), cy + dist * math.sin(a)
         layout = PangoCairo.create_layout(cr)
         layout.set_text(label, -1)
         layout.set_alignment(Pango.Alignment.CENTER)
+        bw = 86 if n <= 4 else 74  # long names wrap, centred in this width
+        layout.set_width(int(bw * Pango.SCALE))
+        layout.set_wrap(Pango.WrapMode.WORD_CHAR)
         layout.set_font_description(Pango.FontDescription(FONT))
-        tw, th = layout.get_pixel_size()
+        _tw, th = layout.get_pixel_size()
+        tw = bw
         icon = self.icons[i]
         ih = ICON + 4 if icon else 0
         top = y - (ih + th) / 2
@@ -434,6 +483,7 @@ class RadialMenu(Gtk.Window):
 def main():
     ap = argparse.ArgumentParser(description="3DxWare's Common Tools radial menu")
     ap.add_argument("-s", "--socket", default="/run/tdxd.sock", help="tdxd control socket")
+    ap.add_argument("--menu", help="a radial menu of your own (its ID), instead of Common Tools")
     ap.add_argument("-V", "--version", action="version", version="tdx-radial " + APP_VERSION)
     args = ap.parse_args()
     if close_running():
@@ -444,7 +494,16 @@ def main():
     except OSError:
         pass
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
-    win = RadialMenu(args.socket or "/run/tdxd.sock")
+    sock = args.socket or "/run/tdxd.sock"
+    items = COMMON_TOOLS
+    title = "Common Tools"
+    if args.menu:
+        menu = load_menu(sock, args.menu)
+        if not menu:
+            return 1
+        title, items = menu
+    win = RadialMenu(sock, items)
+    win.set_title(title)
     win.connect("destroy", lambda *_: Gtk.main_quit())
     win.show_all()
     try:

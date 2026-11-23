@@ -39,13 +39,17 @@ enum tdx_action {
 			       * radial menu, shown by tdx-radial; a CadMouse's radial
 			       * button does it by default */
 	TDX_ACT_NUMPAD,       /* "Virtual NumPad" (Driver_Toggle_3DxNumPad): tdx-numpad */
+	TDX_ACT_RADIAL,       /* "radial:ID": a radial menu of the user's own (the
+			       * Radial Menu Editor's), its radial_ID_* lines */
 	TDX_ACT_COUNT
 };
 #define TDX_MAX_ACTIONS 64
+#define TDX_MAX_RADIAL_KV 192
 
 struct tdx_button_action {
 	char v3dk[32];
 	int action;
+	char menu[24]; /* TDX_ACT_RADIAL: the menu's ID */
 };
 
 const char *tdx_action_name(int action);
@@ -82,6 +86,10 @@ struct tdx_config {
 	int lcd_label_max;        /* highest lcd_label_N set in the file */
 	struct tdx_named_label named_label[TDX_MAX_NAMED_LABELS];
 	int nnamed_label;
+	/* the user's radial menus: radial_<ID>_name, _layout, _<n>, _<n>_label, _<n>_icon
+	 * lines, kept as they are for tdx-radial ("radial ID" on the control socket) */
+	struct tdx_kv { char key[48]; char val[160]; } radial[TDX_MAX_RADIAL_KV];
+	int nradial;
 	/* runtime, not from a file: names the focused application gave its keys
 	 * (tdxctl app-buttons, e.g. the FreeCAD add-on); first in tdx_button_text */
 	struct tdx_named_label app_label[TDX_MAX_NAMED_LABELS];

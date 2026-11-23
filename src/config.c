@@ -44,7 +44,7 @@ void tdx_config_defaults(struct tdx_config *c)
 
 static const char *const action_names[TDX_ACT_COUNT] = {
 	"none", "speed_up", "speed_down", "dominant", "rotation", "panzoom", "calibrate", "lcd_next",
-	"settings", "disabled", "commontools", "numpad",
+	"settings", "disabled", "commontools", "numpad", "radial",
 };
 
 const char *tdx_action_name(int action)
@@ -54,6 +54,18 @@ const char *tdx_action_name(int action)
 
 int tdx_action_from_name(const char *name)
 {
+	if (!strncasecmp(name, "radial:", 7)) { /* radial:ID - letters, digits, _ */
+		const char *id = name + 7;
+		size_t n = strlen(id);
+		if (!n || n >= sizeof ((struct tdx_button_action *)0)->menu)
+			return -1;
+		for (const char *p = id; *p; p++)
+			if (!isalnum((unsigned char)*p) && *p != '_')
+				return -1;
+		return TDX_ACT_RADIAL;
+	}
+	if (!strcasecmp(name, "radial"))
+		return -1;
 	for (int i = 0; i < TDX_ACT_COUNT; i++)
 		if (!strcasecmp(name, action_names[i]))
 			return i;
@@ -105,6 +117,16 @@ int tdx_key_from_name(const char *name)
 	for (size_t i = 0; i < sizeof keytab / sizeof keytab[0]; i++)
 		if (!strcasecmp(keytab[i].name, name) || !strcasecmp(keytab[i].name + 4, name))
 			return keytab[i].code;
+	/* a modifier without its side (3DxWare's "Ctrl+Shift+Z", the picker's
+	 * Redo and Save As): the left one */
+	static const struct { const char *name; int code; } mods[] = {
+		{"SHIFT", KEY_LEFTSHIFT}, {"CTRL", KEY_LEFTCTRL}, {"CONTROL", KEY_LEFTCTRL},
+		{"ALT", KEY_LEFTALT}, {"META", KEY_LEFTMETA}, {"SUPER", KEY_LEFTMETA},
+		{"WIN", KEY_LEFTMETA}};
+	const char *bare = !strncasecmp(name, "KEY_", 4) ? name + 4 : name;
+	for (size_t i = 0; i < sizeof mods / sizeof mods[0]; i++)
+		if (!strcasecmp(bare, mods[i].name))
+			return mods[i].code;
 	char *end;
 	long v = strtol(name, &end, 0);
 	return (*name && !*end && v > 0 && v < KEY_MAX) ? (int)v : -1;
@@ -382,6 +404,8 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 				if (profile)
 					drop_old_label(c, &seen, k + 7);
 				a->action = act; /* "none" (0) clears a base action */
+				snprintf(a->menu, sizeof a->menu, "%s",
+					 act == TDX_ACT_RADIAL ? v + 7 : "");
 			}
 		} else if (!strncmp(k, "key_", 4)) {
 			/* later files override earlier ones; "none" removes the binding.
@@ -421,6 +445,18 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			memcpy(m->keys, keys, sizeof keys);
 			memcpy(m->step, step, sizeof step);
 			m->seq = ns > 1;
+		} else if (!strncmp(k, "radial_", 7) && strlen(k) < sizeof c->radial[0].key) {
+			/* a radial menu's line: later files (the profile) override */
+			struct tdx_kv *kv = NULL;
+			for (int i = 0; i < c->nradial && !kv; i++)
+				if (!strcmp(c->radial[i].key, k))
+					kv = &c->radial[i];
+			if (!kv && c->nradial < TDX_MAX_RADIAL_KV)
+				kv = &c->radial[c->nradial++];
+			if (kv) {
+				snprintf(kv->key, sizeof kv->key, "%s", k);
+				snprintf(kv->val, sizeof kv->val, "%s", v);
+			}
 		} else
 			fprintf(stderr, "%s:%d: unknown option '%s'\n", path, ln, k);
 	}

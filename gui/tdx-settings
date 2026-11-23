@@ -1478,8 +1478,8 @@ class Panel:
         self.box.add(overlay)
         self.bg = Gtk.DrawingArea()
         self.bg.set_size_request(w, h)
-        self.bg.connect("draw", lambda _w, cr: paint_background(cr, w, h, self.header_h,
-                                                               self.lines))
+        self.bg.connect("draw", lambda _w, cr: paint_background(cr, self.size[0], self.size[1],
+                                                               self.header_h, self.lines))
         overlay.add(self.bg)
         self.fix = Gtk.Fixed()
         overlay.add_overlay(self.fix)
@@ -2237,6 +2237,7 @@ class ActionPicker:
 
     def __init__(self, panel, widget, v2dk, default):
         self.panel, self.v2dk, self.default = panel, v2dk, default
+        self.sections = panel.picker_sections() if hasattr(panel, "picker_sections") else PICKER
         self.current = panel.current_item(v2dk)
         self.open = set()
         # a pop-up window, as GTK's menus are, not a Gtk.Popover: a popover
@@ -2486,7 +2487,7 @@ class ActionPicker:
         for c in self.list.get_children():
             self.list.remove(c)
         q = self.search.get_text().strip().lower()
-        for name, items in PICKER:
+        for name, items in self.sections:
             shown = self.filtered(items, q)
             if q and not shown:
                 continue
@@ -2533,7 +2534,7 @@ class ActionPicker:
         if "link" in it:
             l = lab(it["link"], "tdx-pick-link")
             hb.pack_start(l, False, False, 20)
-            ok = bool(it.get("custom"))
+            ok = bool(it.get("custom") or it.get("new_radial"))
         else:
             icon = Gtk.Box()
             icon.set_size_request(18, 18)
@@ -2593,179 +2594,64 @@ class ActionPicker:
         self.close()
         if it.get("custom"):
             self.panel.capture(self.v2dk, self.default)
+        elif it.get("new_radial"):
+            self.panel.new_radial(self.v2dk)
         else:
             self.panel.pick(self.v2dk, it["value"])
 
 
 
-class MouseButtonsPanel(Panel):
-    """3DxWare's Buttons window for a CadMouse. Mouse functions are done by
-    the mouse itself (tdxd sends it the button map); a keystroke button
-    reports apart and tdxd sends the keys. "Application Specific Settings":
-    the shown application's profile gets its own CadMouse buttons; off, it
-    uses the global ones (tdxd.conf)."""
-    title = "Buttons"
-    subtitle = "Buttons"
-    size = (552, 407)
-    header_h = 91
+class BindingRows:
+    """3DxWare's binding rows (CadMouse Buttons, Radial Menu Editor): the text
+    shows the function; click it and press keys ("Type a shortcut..."); the
+    arrow opens the action picker. The class using it has self.rows = {},
+    self.capturing = None, and assign(key, chord), refresh(), current_item(key),
+    pick(key, value), capture(key, default)."""
 
-    def build(self):
-        self.photo = self.put(DevicePhoto(self.app, self.app.current_device), 352, 36)
-        self.app_switch = self.put(SlideSwitch("Application Specific Settings"), 31, 133)
-        self.app_switch.connect("toggled", self.guard(self.on_app_specific))
-        self.rows = {}
-        self.capturing = None
-        for v2dk, cap, default, x, y in MOUSE_BUTTONS:
-            capw = image_widget(ASSETS.ui(cap)) or drawing(40, 28, draw_keycap,
-                                                           v2dk[5:].title()[:5])
-            self.put(capw, x, y)
-            # 3DxWare's row: click the text and type a shortcut; the arrow
-            # opens the picker
-            w = 187 if x < 100 else 190
-            row = Gtk.Box(spacing=0)
-            row.get_style_context().add_class("tdx-mrow")
-            row.set_size_request(w, 27)
-            text = Gtk.Button()
-            text.set_relief(Gtk.ReliefStyle.NONE)
-            text.set_can_focus(False)
-            text.get_style_context().add_class("tdx-mrow-text")
-            hb = Gtk.Box(spacing=0)
-            icon = Gtk.Box()
-            icon.set_size_request(16, 16)
-            hb.pack_start(icon, False, False, 1)
-            l = lab("")
-            l.set_ellipsize(Pango.EllipsizeMode.END)
-            l.set_margin_start(5)
-            l.set_xalign(0)
-            hb.pack_start(l, True, True, 0)
-            text.add(hb)
-            text.connect("clicked", lambda _b, v=v2dk: self.start_capture(v))
-            text.connect("key-press-event", lambda _b, e, v=v2dk: self.on_capture_key(v, e))
-            text.connect("focus-out-event", lambda *_a, v=v2dk: self.stop_capture(v) and False)
-            row.pack_start(text, True, True, 0)
-            btn = Gtk.Button()
-            btn.set_relief(Gtk.ReliefStyle.NONE)
-            btn.set_can_focus(False)
-            btn.get_style_context().add_class("tdx-mrow-arrow")
-            btn.set_size_request(22, -1)
-            ab = Gtk.Box()
-            arrow = image_widget(ASSETS.ui("SmartUI_Button_Arrow")) or lab("›", "tdx-more")
-            arrow_hover = image_widget(ASSETS.ui("SmartUI_Button_Arrow_hover"))
-            ab.set_center_widget(arrow)
-            if arrow_hover:  # 3DxWare's dark arrow while hovered
-                ab.pack_start(arrow_hover, True, False, 0)
-                arrow_hover.set_no_show_all(True)
-                btn.connect("state-flags-changed", lambda b, _old, a=arrow, h=arrow_hover: (
-                    lambda hov: (h.set_visible(hov), a.set_visible(not hov)))(
-                    bool(b.get_state_flags() & Gtk.StateFlags.PRELIGHT)) and None)
-            btn.add(ab)
-            btn.connect("clicked", lambda b, v=v2dk, d=default: self.popup(b, v, d))
-            row.pack_start(btn, False, False, 0)
-            self.put(row, x + 51, y)
-            self.rows[v2dk] = (btn, l, icon, default, text)
-        self.swap = self.put(Gtk.CheckButton(label="Swap Middle / Right Mouse Buttons"), 31, 292)
-        self.swap.connect("toggled", self.guard(
-            lambda b: self.set_value("mouse_swap_buttons", "yes" if b.get_active() else "no")))
-        osd = self.put(Gtk.CheckButton(label="Always show On-Screen Display"), 31, 314)
-        osd.set_sensitive(False)
-        osd.set_tooltip_text("3DxWare's on-screen display: not on Linux")
-        self.close = self.put(flat_button("Close", 94), 426, 362)
-
-    # ---- where the CadMouse buttons are kept
-    def specific(self):
-        """True when the shown profile has its own CadMouse buttons."""
-        p = self.store.profile
-        return bool(p) and any(p.has(k) for k in MOUSE_PROFILE_KEYS)
-
-    def conf(self):
-        return self.store.profile if self.specific() else self.store.base
-
-    def value(self, key):
-        return self.conf().get(key)
-
-    def set_value(self, key, value):
-        f = self.conf()
-        if value is None:
-            f.remove(key)
-        else:
-            f.set(key, value)
-        self.store.changed()
-
-    def on_app_specific(self, sw):
-        p = self.store.profile
-        if not p:
-            return
-        if sw.get_active():  # start from the global buttons
-            for k in MOUSE_PROFILE_KEYS:
-                v = self.store.base.get(k)
-                p.set(k, v if v is not None else
-                      ("no" if k == "mouse_swap_buttons" else "none"))
-        else:
-            for k in MOUSE_PROFILE_KEYS:
-                p.remove(k)
-        self.store.changed()
-
-    def refresh_header(self):
-        super().refresh_header()
-        if self.store.profile and not self.specific():
-            self.title_label.set_text(self.title_label.get_text() + " - Global Settings")
-
-    # ---- the buttons
-    def binding(self, v2dk):
-        """('default', None) | ('action', name) | ('mouse', BTN_*) | ('keys', [names])"""
-        act = (self.value("action_" + v2dk) or "").strip().lower()
-        if act and act != "none":
-            return "action", act
-        v = self.value("key_" + v2dk)
-        names = chord_names(v)
-        if not names:
-            return "default", None
-        if len(names) == 1 and names[0].startswith("BTN_"):
-            return "mouse", names[0]
-        return "keys", names
-
-    def current_item(self, v2dk):
-        """The picker entry that is the button's function now, or None."""
-        kind, val = self.binding(v2dk)
-        if kind == "default":
-            d = MOUSE_DEFAULT[v2dk]
-            # the radial-menu button's default: Common Tools (tdx-radial)
-            kind, val = ("mouse", d) if d else ("action", "commontools")
-        for _sec, it in picker_items():
-            if picker_value_matches(it["value"], kind, val):
-                return it
-        return None
-
-    def describe(self, v2dk, default):
-        kind, val = self.binding(v2dk)
-        it = self.current_item(v2dk)
-        if it:
-            return it["label"], ASSETS.icon(it["icon"]) if it.get("icon") else None, None
-        if kind == "action":
-            return ACTION_LABEL.get(val, val), None, None
-        if kind == "mouse":
-            return val, None, None
-        return shortcut_label(val), ASSETS.icon("Keyboard.png"), None
-
-    def refresh(self):
-        self.updating = True
-        self.refresh_header()
-        self.photo.update()
-        self.app_switch.set_active(self.specific())
-        self.app_switch.set_sensitive(self.store.profile is not None)
-        self.app_switch.set_tooltip_text(
-            None if self.store.profile else
-            "Choose an application in the title to give it its own buttons")
-        for v2dk, (_btn, l, slot, default, tb) in self.rows.items():
-            if v2dk == self.capturing:
-                continue
-            text, icon, tip = self.describe(v2dk, default)
-            l.set_text(text)
-            l.get_style_context().remove_class("tdx-placeholder")
-            tb.set_tooltip_text(tip or "Click and type a shortcut")
-            self.set_row_icon(slot, icon)
-        self.swap.set_active(parse_bool(self.value("mouse_swap_buttons") or "no"))
-        self.updating = False
+    def make_row(self, v2dk, default, w):
+        # 3DxWare's row: click the text and type a shortcut; the arrow
+        # opens the picker
+        row = Gtk.Box(spacing=0)
+        row.get_style_context().add_class("tdx-mrow")
+        row.set_size_request(w, 27)
+        text = Gtk.Button()
+        text.set_relief(Gtk.ReliefStyle.NONE)
+        text.set_can_focus(False)
+        text.get_style_context().add_class("tdx-mrow-text")
+        hb = Gtk.Box(spacing=0)
+        icon = Gtk.Box()
+        icon.set_size_request(16, 16)
+        hb.pack_start(icon, False, False, 1)
+        l = lab("")
+        l.set_ellipsize(Pango.EllipsizeMode.END)
+        l.set_margin_start(5)
+        l.set_xalign(0)
+        hb.pack_start(l, True, True, 0)
+        text.add(hb)
+        text.connect("clicked", lambda _b, v=v2dk: self.start_capture(v))
+        text.connect("key-press-event", lambda _b, e, v=v2dk: self.on_capture_key(v, e))
+        text.connect("focus-out-event", lambda *_a, v=v2dk: self.stop_capture(v) and False)
+        row.pack_start(text, True, True, 0)
+        btn = Gtk.Button()
+        btn.set_relief(Gtk.ReliefStyle.NONE)
+        btn.set_can_focus(False)
+        btn.get_style_context().add_class("tdx-mrow-arrow")
+        btn.set_size_request(22, -1)
+        ab = Gtk.Box()
+        arrow = image_widget(ASSETS.ui("SmartUI_Button_Arrow")) or lab("›", "tdx-more")
+        arrow_hover = image_widget(ASSETS.ui("SmartUI_Button_Arrow_hover"))
+        ab.set_center_widget(arrow)
+        if arrow_hover:  # 3DxWare's dark arrow while hovered
+            ab.pack_start(arrow_hover, True, False, 0)
+            arrow_hover.set_no_show_all(True)
+            btn.connect("state-flags-changed", lambda b, _old, a=arrow, h=arrow_hover: (
+                lambda hov: (h.set_visible(hov), a.set_visible(not hov)))(
+                bool(b.get_state_flags() & Gtk.StateFlags.PRELIGHT)) and None)
+        btn.add(ab)
+        btn.connect("clicked", lambda b, v=v2dk, d=default: self.popup(b, v, d))
+        row.pack_start(btn, False, False, 0)
+        self.rows[v2dk] = (btn, l, icon, default, text)
+        return row
 
     @staticmethod
     def set_row_icon(slot, icon):
@@ -2840,11 +2726,467 @@ class MouseButtonsPanel(Panel):
         self.picker = ActionPicker(self, widget, v2dk, default)
         self.picker.popup()
 
+
+def radial_menu_ids(*confs):
+    """{ID: name} of the user's radial menus (radial_ID_name lines)."""
+    out = {}
+    for f in confs:
+        if not f:
+            continue
+        for k in f.keys_with_prefix("radial_"):
+            if k.endswith("_name"):
+                out[k[7:-5]] = f.get(k)
+    return out
+
+
+def radial_menu_order(mid):
+    return (int(mid[1:]) if mid[1:].isdigit() else 1 << 30, mid)
+
+
+def picker_with_menus(menus, new_link=True):
+    """PICKER with the user's radial menus under Radial Menus (and the
+    working New Radial Menu link)."""
+    out = []
+    for name, items in PICKER:
+        if name == "Radial Menus":
+            items = [it for it in items if "link" not in it]
+            items += [_i(menus[m] or m, "HIDMouse_RadialMenu.png", "action:radial:" + m)
+                      for m in sorted(menus, key=radial_menu_order)]
+            if new_link:
+                items.append({"link": "New Radial Menu", "new_radial": True})
+        out.append((name, items))
+    return out
+
+
+class RadialMenuEditor(BindingRows, Panel):
+    """3DxWare's Radial Menu Editor: a name, 4 or 8 sections, and each
+    section's function, set like a CadMouse button's (type a shortcut, or the
+    arrow's picker). Saved as radial_<ID>_* lines where the button that
+    opened it keeps its settings, and given to that button (radial:<ID>);
+    tdx-radial shows it."""
+    title = "Radial Menu Editor"
+    subtitle = "Radial Menu Editor"
+    size = (772, 368)
+    header_h = 91
+    ROW_Y, ROW_STEP = 146, 34
+    SIZES = {4: 368, 8: 368 + 4 * 34}
+
+    def header(self):
+        super().header()
+        self.title_btn.set_sensitive(False)
+
+    def build(self):
+        ctx = getattr(self.app, "radial_edit", None) or {}
+        self.target = ctx.get("panel")          # the Buttons window
+        self.target_key = ctx.get("v2dk")
+        self.menu_id = ctx.get("menu")
+        self.values = {}
+        self.hot = None
+        self.rows = {}
+        self.capturing = None
+        # the menu's picture, with 3DxWare's pencil (choosing one: not on Linux yet)
+        pic = Gtk.Fixed()
+        frame = drawing(62, 62, lambda _w, cr: draw_radial_tile(cr))
+        pic.put(frame, 0, 0)
+        img = image_widget(ASSETS.icon("HIDMouse_RadialMenu.png"), 32)
+        if img:
+            pic.put(img, 15, 15)
+        pen = drawing(20, 20, lambda _w, cr: draw_pencil(cr))
+        pen.set_tooltip_text("Choosing a picture: " + NOT_LINUX)
+        pic.put(pen, 47, 47)
+        self.put(pic, 31, 118)
+        self.put(lab("Radial Menu Name", "tdx-section"), 101, 114)
+        self.name = Gtk.Entry()
+        self.name.set_placeholder_text("Enter your radial menu name")
+        self.name.set_size_request(230, 28)
+        self.name.get_style_context().add_class("tdx-italic-hint")
+        self.name.connect("changed", lambda *_: self.update_save())
+        self.put(self.name, 101, 140)
+        self.section("Layout", 31, 331, 218)
+        self.four = self.put(Gtk.RadioButton.new_with_label(None, "4 Sections"), 31, 227)
+        self.eight = self.put(Gtk.RadioButton.new_with_label_from_widget(self.four, "8 Sections"),
+                              31, 251)
+        self.four.connect("toggled", self.guard(lambda b: self.set_layout(4 if b.get_active() else 8)))
+        self.section("Radial Menu Configurations", 361, 741, 136)
+        self.diagram = drawing(112, 112, lambda _w, cr: self.draw_diagram(cr))
+        self.put(self.diagram, 360, 140)
+        self.caps = []
+        for i in range(8):
+            key = str(i + 1)
+            cap = drawing(40, 28, draw_keycap, key)
+            self.put(cap, 496, self.ROW_Y + self.ROW_STEP * i)
+            row = self.make_row(key, "Section " + key, 195)
+            for w in (self.rows[key][0], self.rows[key][4]):
+                w.connect("enter-notify-event", lambda *_a, k=key: self.set_hot(k))
+                w.connect("leave-notify-event", lambda *_a, k=key: self.set_hot(None, k))
+            self.put(row, 546, self.ROW_Y + self.ROW_STEP * i)
+            self.caps.append((cap, row))
+        self.save_btn = self.put(flat_button("Save", 92), 538, 322)
+        self.save_btn.connect("clicked", lambda *_: self.save())
+        self.close = self.put(flat_button("Cancel", 101), 641, 322)
+        self.n = 4
+        if self.menu_id:
+            self.load(self.menu_id)
+        self.box.connect("map", lambda *_: self.on_map())
+
+    def on_map(self):
+        self.set_layout(self.n, force=True)
+        top = self.box.get_toplevel()
+        if isinstance(top, Gtk.Window):  # the name's hint shows, as in 3DxWare
+            top.set_focus(None)
+
+    # ---- where it is kept: with the button's settings
+    def conf(self):
+        return self.target.conf() if self.target else self.store.base
+
+    def load(self, mid):
+        f = self.conf()
+        get = lambda k: f.get("radial_%s_%s" % (mid, k)) or self.store.base.get(
+            "radial_%s_%s" % (mid, k))
+        self.name.set_text(get("name") or "")
+        self.n = 8 if (get("layout") or "4").strip() == "8" else 4
+        for i in range(1, 9):
+            v = get(str(i))
+            if v:
+                self.values[str(i)] = v
+
+    def set_layout(self, n, force=False):
+        if n == self.n and not force:
+            return
+        self.n = n
+        self.updating = True
+        (self.four if n == 4 else self.eight).set_active(True)
+        self.updating = False
+        for i, (cap, row) in enumerate(self.caps):
+            cap.set_visible(i < n)
+            row.set_visible(i < n)
+        h = self.SIZES[n]
+        self.size = (self.size[0], h)
+        self.box.set_size_request(*self.size)
+        self.bg.set_size_request(*self.size)
+        self.fix.move(self.save_btn, 538, h - 46)
+        self.fix.move(self.close, 641, h - 46)
+        top = self.box.get_toplevel()
+        if isinstance(top, Gtk.Window):
+            top.resize(*self.size)
+        self.bg.queue_draw()
+        self.diagram.queue_draw()
+
+    def set_hot(self, key, leaving=None):
+        if leaving is not None and self.hot != leaving:
+            return False
+        self.hot = key
+        self.diagram.queue_draw()
+        return False
+
+    def draw_diagram(self, cr):
+        n, cx, cy, r, ri = self.n, 56, 56, 55, 16
+        hot = int(self.hot) - 1 if self.hot else (
+            int(self.capturing) - 1 if self.capturing else None)
+        for i in range(n):
+            a0 = math.radians(-90 - 180 / n + 360 / n * i)
+            cr.move_to(cx + ri * math.cos(a0), cy + ri * math.sin(a0))
+            cr.arc(cx, cy, r, a0, a0 + 2 * math.pi / n)
+            cr.arc_negative(cx, cy, ri, a0 + 2 * math.pi / n, a0)
+            cr.close_path()
+            v = 0xb4 if i == hot else 0xdc
+            cr.set_source_rgb(v / 255, v / 255, v / 255)
+            cr.fill_preserve()
+            cr.set_source_rgb(1, 1, 1)
+            cr.set_line_width(2)
+            cr.stroke()
+            am = math.radians(-90 + 360 / n * i)
+            rm = (r + ri) / 2 + (2 if n == 4 else 4)
+            cr.set_source_rgb(0.2, 0.2, 0.2)
+            cr.select_font_face("sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.set_font_size(10)
+            t = str(i + 1)
+            ext = cr.text_extents(t)
+            cr.move_to(cx + rm * math.cos(am) - ext.width / 2 - ext.x_bearing,
+                       cy + rm * math.sin(am) + ext.height / 2)
+            cr.show_text(t)
+
+    # ---- the sections (BindingRows)
+    def picker_sections(self):
+        """3DxWare's list for a section: no radial menus in a radial menu, and
+        no mouse functions (not from a menu on Linux yet)."""
+        out = []
+        for name, items in PICKER:
+            if name == "Radial Menus":
+                continue
+            if name == "Mouse":
+                items = [dict(it, value=None) if "value" in it else it for it in items]
+            out.append((name, items))
+        return out
+
+    def current_item(self, key):
+        v = self.values.get(key)
+        if not v:
+            return None
+        for _sec, it in picker_items(self.picker_sections()):
+            iv = it.get("value")
+            if iv == v or (iv and iv.startswith("keys:") and v.startswith("keys:") and
+                           chord_names(iv[5:]) == chord_names(v[5:])):
+                return it
+        return None
+
+    def describe(self, key):
+        """(label, icon file, icon path) of a section's function."""
+        v = self.values.get(key)
+        if not v:
+            return "", None, None
+        it = self.current_item(key)
+        if it:
+            return it["label"], it.get("icon"), ASSETS.icon(it["icon"]) if it.get("icon") else None
+        if v.startswith("keys:"):
+            return shortcut_label(chord_names(v[5:])), "Keyboard.png", ASSETS.icon("Keyboard.png")
+        if v.startswith("action:"):
+            return ACTION_LABEL.get(v[7:], v[7:]), None, None
+        return v, None, None
+
+    def refresh(self):
+        if not hasattr(self, "rows"):
+            return
+        self.refresh_header()
+        for key, (_btn, l, slot, _d, tb) in self.rows.items():
+            if key == self.capturing:
+                continue
+            text, _f, icon = self.describe(key)
+            l.set_text(text)
+            l.get_style_context().remove_class("tdx-placeholder")
+            tb.set_tooltip_text("Click and type a shortcut")
+            self.set_row_icon(slot, icon)
+        self.update_save()
+        if hasattr(self, "diagram"):
+            self.diagram.queue_draw()
+
+    def refresh_header(self):
+        super().refresh_header()
+        self.title_btn.set_sensitive(False)
+
+    def update_save(self):
+        if hasattr(self, "save_btn"):
+            self.save_btn.set_sensitive(bool(self.name.get_text().strip()))
+
+    def pick(self, key, value):
+        self.values[key] = value
+        self.refresh()
+
+    def assign(self, key, chord, action=None):
+        if action:
+            self.values[key] = "action:" + action
+        elif chord:
+            self.values[key] = "keys:" + "+".join(chord_names(chord))
+        else:
+            self.values.pop(key, None)
+        self.refresh()
+
+    def capture(self, key, default):
+        dlg = KeyCaptureDialog(self.box.get_toplevel(), default)
+        if dlg.run() == Gtk.ResponseType.OK and dlg.keys:
+            self.assign(key, chord_value(dlg.keys))
+        dlg.destroy()
+
+    def save(self):
+        name = self.name.get_text().strip()
+        if not name:
+            return
+        f = self.conf()
+        mid = self.menu_id
+        if not mid:
+            used = radial_menu_ids(self.store.base, self.store.profile)
+            n = 1
+            while "r%d" % n in used:
+                n += 1
+            mid = "r%d" % n
+        pre = "radial_%s_" % mid
+        f.set(pre + "name", name)
+        f.set(pre + "layout", str(self.n))
+        for i in range(1, 9):
+            key = str(i)
+            label, icon, _p = self.describe(key)
+            v = self.values.get(key) if i <= self.n else None
+            for suffix, val in (("", v), ("_label", label if v else None),
+                                ("_icon", icon if v else None)):
+                if val:
+                    f.set(pre + key + suffix, val)
+                else:
+                    f.remove(pre + key + suffix)
+        self.store.changed()
+        if self.target and self.target_key:  # the button that asked for it shows it
+            self.target.assign(self.target_key, None, action="radial:" + mid)
+            self.target.refresh()
+        self.menu_id = mid
+        top = self.box.get_toplevel()
+        if isinstance(top, Gtk.Window):
+            top.destroy()
+
+
+def draw_radial_tile(cr):
+    cr.rectangle(0.5, 0.5, 61, 61)
+    cr.set_source_rgb(1, 1, 1)
+    cr.fill_preserve()
+    cr.set_source_rgb(0.8, 0.8, 0.8)
+    cr.set_line_width(1)
+    cr.stroke()
+
+
+def draw_pencil(cr):
+    cr.arc(10, 10, 9.5, 0, 2 * math.pi)
+    cr.set_source_rgb(0.45, 0.45, 0.45)
+    cr.fill()
+    cr.set_source_rgb(1, 1, 1)
+    cr.set_line_width(2)
+    cr.move_to(6, 14)
+    cr.line_to(13.5, 6.5)
+    cr.stroke()
+    cr.move_to(5, 15)
+    cr.line_to(5.6, 12.6)
+    cr.line_to(7.4, 14.4)
+    cr.close_path()
+    cr.fill()
+
+
+class MouseButtonsPanel(BindingRows, Panel):
+    """3DxWare's Buttons window for a CadMouse. Mouse functions are done by
+    the mouse itself (tdxd sends it the button map); a keystroke button
+    reports apart and tdxd sends the keys. "Application Specific Settings":
+    the shown application's profile gets its own CadMouse buttons; off, it
+    uses the global ones (tdxd.conf)."""
+    title = "Buttons"
+    subtitle = "Buttons"
+    size = (552, 407)
+    header_h = 91
+
+    def build(self):
+        self.photo = self.put(DevicePhoto(self.app, self.app.current_device), 352, 36)
+        self.app_switch = self.put(SlideSwitch("Application Specific Settings"), 31, 133)
+        self.app_switch.connect("toggled", self.guard(self.on_app_specific))
+        self.rows = {}
+        self.capturing = None
+        for v2dk, cap, default, x, y in MOUSE_BUTTONS:
+            capw = image_widget(ASSETS.ui(cap)) or drawing(40, 28, draw_keycap,
+                                                           v2dk[5:].title()[:5])
+            self.put(capw, x, y)
+            w = 187 if x < 100 else 190
+            self.put(self.make_row(v2dk, default, w), x + 51, y)
+        self.swap = self.put(Gtk.CheckButton(label="Swap Middle / Right Mouse Buttons"), 31, 292)
+        self.swap.connect("toggled", self.guard(
+            lambda b: self.set_value("mouse_swap_buttons", "yes" if b.get_active() else "no")))
+        osd = self.put(Gtk.CheckButton(label="Always show On-Screen Display"), 31, 314)
+        osd.set_sensitive(False)
+        osd.set_tooltip_text("3DxWare's on-screen display: not on Linux")
+        self.close = self.put(flat_button("Close", 94), 426, 362)
+
+    # ---- where the CadMouse buttons are kept
+    def specific(self):
+        """True when the shown profile has its own CadMouse buttons."""
+        p = self.store.profile
+        return bool(p) and any(p.has(k) for k in MOUSE_PROFILE_KEYS)
+
+    def conf(self):
+        return self.store.profile if self.specific() else self.store.base
+
+    def value(self, key):
+        return self.conf().get(key)
+
+    def set_value(self, key, value):
+        f = self.conf()
+        if value is None:
+            f.remove(key)
+        else:
+            f.set(key, value)
+        self.store.changed()
+
+    def on_app_specific(self, sw):
+        p = self.store.profile
+        if not p:
+            return
+        if sw.get_active():  # start from the global buttons
+            for k in MOUSE_PROFILE_KEYS:
+                v = self.store.base.get(k)
+                p.set(k, v if v is not None else
+                      ("no" if k == "mouse_swap_buttons" else "none"))
+        else:
+            for k in MOUSE_PROFILE_KEYS:
+                p.remove(k)
+        self.store.changed()
+
+    def refresh_header(self):
+        super().refresh_header()
+        if self.store.profile and not self.specific():
+            self.title_label.set_text(self.title_label.get_text() + " - Global Settings")
+
+    # ---- the buttons
+    def binding(self, v2dk):
+        """('default', None) | ('action', name) | ('mouse', BTN_*) | ('keys', [names])"""
+        act = (self.value("action_" + v2dk) or "").strip().lower()
+        if act and act != "none":
+            return "action", act
+        v = self.value("key_" + v2dk)
+        names = chord_names(v)
+        if not names:
+            return "default", None
+        if len(names) == 1 and names[0].startswith("BTN_"):
+            return "mouse", names[0]
+        return "keys", names
+
+    def current_item(self, v2dk):
+        """The picker entry that is the button's function now, or None."""
+        kind, val = self.binding(v2dk)
+        if kind == "default":
+            d = MOUSE_DEFAULT[v2dk]
+            # the radial-menu button's default: Common Tools (tdx-radial)
+            kind, val = ("mouse", d) if d else ("action", "commontools")
+        for _sec, it in picker_items(self.picker_sections()):
+            if picker_value_matches(it["value"], kind, val):
+                return it
+        return None
+
+    def describe(self, v2dk, default):
+        kind, val = self.binding(v2dk)
+        it = self.current_item(v2dk)
+        if it:
+            return it["label"], ASSETS.icon(it["icon"]) if it.get("icon") else None, None
+        if kind == "action":
+            return ACTION_LABEL.get(val, val), None, None
+        if kind == "mouse":
+            return val, None, None
+        return shortcut_label(val), ASSETS.icon("Keyboard.png"), None
+
+    def refresh(self):
+        self.updating = True
+        self.refresh_header()
+        self.photo.update()
+        self.app_switch.set_active(self.specific())
+        self.app_switch.set_sensitive(self.store.profile is not None)
+        self.app_switch.set_tooltip_text(
+            None if self.store.profile else
+            "Choose an application in the title to give it its own buttons")
+        for v2dk, (_btn, l, slot, default, tb) in self.rows.items():
+            if v2dk == self.capturing:
+                continue
+            text, icon, tip = self.describe(v2dk, default)
+            l.set_text(text)
+            l.get_style_context().remove_class("tdx-placeholder")
+            tb.set_tooltip_text(tip or "Click and type a shortcut")
+            self.set_row_icon(slot, icon)
+        self.swap.set_active(parse_bool(self.value("mouse_swap_buttons") or "no"))
+        self.updating = False
+
     def capture(self, v2dk, default):
         dlg = KeyCaptureDialog(self.box.get_toplevel(), default)
         if dlg.run() == Gtk.ResponseType.OK and dlg.keys:
             self.assign(v2dk, chord_value(dlg.keys))
         dlg.destroy()
+
+    # ---- the user's radial menus (Radial Menu Editor)
+    def picker_sections(self):
+        return picker_with_menus(radial_menu_ids(self.store.base, self.store.profile))
+
+    def new_radial(self, v2dk):
+        self.app.radial_edit = {"panel": self, "v2dk": v2dk, "menu": None}
+        self.app.window(RadialMenuEditor)
 
     def pick(self, v2dk, value):
         """A picker entry chosen: its value (see PICKER)."""

@@ -1357,8 +1357,34 @@ static void test_receiver(void)
 	      !strcmp(tdx_action_name(TDX_ACT_COMMONTOOLS), "commontools") &&
 	      tdx_rcv_mouse_action(&mc, cmw, 4) == TDX_ACT_COMMONTOOLS && map[4] == 45 &&
 	      (vend & 0x10));
+	CHECK(tdx_key_from_name("KEY_SHIFT") == KEY_LEFTSHIFT && tdx_key_from_name("ctrl") == KEY_LEFTCTRL &&
+	      tdx_key_from_name("KEY_ALT") == KEY_LEFTALT && tdx_key_from_name("KEY_SHIFTX") < 0);
 	CHECK(tdx_action_from_name("numpad") == TDX_ACT_NUMPAD &&
 	      !strcmp(tdx_action_name(TDX_ACT_NUMPAD), "numpad"));
+	{
+		char p[] = "/tmp/tdx-test-cm4.conf";
+		FILE *f = fopen(p, "w");
+		fputs("action_V2DK_BACKWARD = radial:r1\nradial_r1_name = My tools\n"
+		      "radial_r1_layout = 8\nradial_r1_1 = keys:LEFTCTRL+Z\nradial_r1_name = Mine\n"
+		      "action_V2DK_WHEEL = radial:bad-id\n", f);
+		fclose(f);
+		CHECK(tdx_config_load(&mc, p) == 0);
+		unlink(p);
+	}
+	/* a user radial menu: the button's action keeps the menu ID; its lines stay
+	 * as written (a later one overrides) for tdx-radial */
+	int rm = -1;
+	for (int i = 0; i < mc.nactions; i++)
+		if (!strcmp(mc.actions[i].v3dk, "V2DK_BACKWARD"))
+			rm = i;
+	int nm = 0, named = 0;
+	for (int i = 0; i < mc.nradial; i++) {
+		nm += !strncmp(mc.radial[i].key, "radial_r1_", 10);
+		named |= !strcmp(mc.radial[i].key, "radial_r1_name") && !strcmp(mc.radial[i].val, "Mine");
+	}
+	CHECK(rm >= 0 && mc.actions[rm].action == TDX_ACT_RADIAL && !strcmp(mc.actions[rm].menu, "r1") &&
+	      tdx_rcv_mouse_action(&mc, cmw, 5) == TDX_ACT_RADIAL && nm == 3 && named &&
+	      tdx_action_from_name("radial:bad-id") < 0 && tdx_action_from_name("radial") < 0);
 	tdx_config_defaults(&mc);
 	tdx_rcv_mouse_map(&mc, cmw, map);
 	tdx_rcv_mouse_config(rep, 7200, 125, 0, map);

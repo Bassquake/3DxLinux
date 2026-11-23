@@ -11,6 +11,9 @@
  *   tdxctl app-buttons PID [V3DK NAME]...
  *                              the keys application PID handles itself, with its
  *                              names for the LCD (none: give them back to tdxd)
+ *   tdxctl keys KEY_A+KEY_B    type a key combination (the radial menu's, the NumPad's)
+ *   tdxctl action NAME         do a button function: speed_up, settings, numpad ...
+ *   tdxctl radial ID           a radial menu of your own, as tdx-radial reads it
  *   tdxctl -s SOCKET ...       use another control socket (default /run/tdxd.sock)
  */
 #define _GNU_SOURCE
@@ -29,6 +32,7 @@ static int usage(void)
 	fputs("usage: tdxctl [-s SOCKET] status | profiles | focus APP [PID] | calibrate | reload\n"
 	      "       tdxctl [-s SOCKET] buttons | app-keys | app-buttons PID [V3DK NAME]...\n"
 	      "       tdxctl [-s SOCKET] pair [mouse|spacemouse|spacemousepro] | pair-stop | unpair SLOT\n"
+	      "       tdxctl [-s SOCKET] keys KEY_A+KEY_B | action NAME | radial ID\n"
 	      "       tdxctl -V\n", stderr);
 	return 2;
 }
@@ -51,9 +55,11 @@ int main(int argc, char **argv)
 	if (strcmp(cmd, "status") && strcmp(cmd, "profiles") && strcmp(cmd, "focus") &&
 	    strcmp(cmd, "calibrate") && strcmp(cmd, "reload") && strcmp(cmd, "buttons") &&
 	    strcmp(cmd, "app-buttons") && strcmp(cmd, "app-keys") && strcmp(cmd, "pair") &&
-	    strcmp(cmd, "pair-stop") && strcmp(cmd, "unpair"))
+	    strcmp(cmd, "pair-stop") && strcmp(cmd, "unpair") && strcmp(cmd, "keys") &&
+	    strcmp(cmd, "action") && strcmp(cmd, "radial"))
 		return usage();
-	if ((!strcmp(cmd, "focus") || !strcmp(cmd, "app-buttons") || !strcmp(cmd, "unpair")) &&
+	if ((!strcmp(cmd, "focus") || !strcmp(cmd, "app-buttons") || !strcmp(cmd, "unpair") ||
+	     !strcmp(cmd, "keys") || !strcmp(cmd, "action") || !strcmp(cmd, "radial")) &&
 	    ai + 1 >= argc)
 		return usage();
 

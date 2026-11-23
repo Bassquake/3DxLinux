@@ -55,6 +55,11 @@ the focus; on Wayland it needs gtk-layer-shell, which the packages recommend).
 Drag its title to move it and the dots to resize it; the gear has 3DxWare's
 options. A button can show and hide it: `action_V2DK_FORWARD = numpad`.
 
+Radial menus of your own: **New Radial Menu** in a button's picker opens 3DxWare's
+Radial Menu Editor (a name, 4 or 8 sections, each set like a button: type a
+shortcut, or pick a function). Saved as `radial_<ID>_*` lines with the button's
+settings, and given to that button (`action_V2DK_BACKWARD = radial:r1`).
+
 **Add device** on the receiver's page pairs a CadMouse (or a SpaceMouse
 Wireless, untested) as 3DxWare's pairing program does: the receiver goes into
 pairing mode for 55 seconds while you switch the device off and on. The

@@ -453,7 +453,7 @@ def gui_tests(d, tdxd):
     btns = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.Button)]
     check(len(btns) == 3 and not btns[0].get_sensitive() and btns[1].get_sensitive() and
           btns[1].get_style_context().has_class("tdx-pick-current") and
-          not btns[2].get_sensitive(), "Radial Menus: Common Macros greyed, Common Tools, New")
+          btns[2].get_sensitive(), "Radial Menus: Common Macros greyed, Common Tools, New")
     pk.search.set_text("volume")
     btns = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.Button)]
     check(len(btns) == 2 and all(b.get_sensitive() for b in btns), "search: Volume Down / Up")
@@ -514,6 +514,50 @@ def gui_tests(d, tdxd):
     check(not mbtn.capturing and fwd[1].get_text() == "SHIFT+C" and
           app.store.base.get("key_V2DK_FORWARD") == "KEY_LEFTSHIFT+KEY_C",
           "shortcut: Escape leaves it as it was")
+    # ---- 3DxWare's Radial Menu Editor: New Radial Menu in the picker
+    pk = ts.ActionPicker(mbtn, mbtn.rows["V2DK_BACKWARD"][0], "V2DK_BACKWARD", "Back")
+    link = [it for name, items in pk.sections if name == "Radial Menus" for it in items
+            if it.get("link")]
+    check(link and link[0].get("new_radial"), "picker: New Radial Menu works")
+    pk.choose(link[0])
+    ed = [p for p in app.panels if isinstance(p, ts.RadialMenuEditor)][0]
+    check(ed.target is mbtn and ed.target_key == "V2DK_BACKWARD" and
+          not ed.save_btn.get_sensitive() and
+          "Radial Menus" not in [n for n, _ in ed.picker_sections()] and
+          not any(it.get("value") for n, items in ed.picker_sections() if n == "Mouse"
+                  for it in items),
+          "editor: opened for the button; no radial menus or mouse functions in its picker")
+    ed.name.set_text("My tools")
+    ed.pick("1", "keys:LEFTCTRL+Z")
+    ed.pick("2", "action:speed_up")
+    ed.assign("3", "KEY_LEFTSHIFT+KEY_C")
+    ed.set_layout(8)
+    ed.pick("8", "action:settings")
+    check(ed.save_btn.get_sensitive() and ed.rows["1"][1].get_text() == "Undo" and
+          ed.rows["3"][1].get_text() == "SHIFT+C" and ed.size[1] == ed.SIZES[8],
+          "editor: sections set (picker, shortcut), 8 sections")
+    ed.save()
+    b = app.store.base
+    check(b.get("radial_r1_name") == "My tools" and b.get("radial_r1_layout") == "8" and
+          b.get("radial_r1_1") == "keys:LEFTCTRL+Z" and b.get("radial_r1_1_label") == "Undo" and
+          b.get("radial_r1_1_icon") == "Macro_Undo.png" and b.get("radial_r1_3") == "keys:LEFTSHIFT+C"
+          and b.get("radial_r1_8") == "action:settings" and not b.has("radial_r1_4") and
+          b.get("action_V2DK_BACKWARD") == "radial:r1" and
+          mbtn.rows["V2DK_BACKWARD"][1].get_text() == "My tools",
+          "editor: saved as radial_r1_*, and the button shows it")
+    names = [it["label"] for name, items in mbtn.picker_sections() if name == "Radial Menus"
+             for it in items if "label" in it]
+    check(names == ["Common Macros", "Common Tools", "My tools"] and
+          mbtn.current_item("V2DK_BACKWARD")["value"] == "action:radial:r1",
+          "picker: the new menu under Radial Menus, the button's current")
+    ed2_ctx = {"panel": mbtn, "v2dk": "V2DK_BACKWARD", "menu": "r1"}
+    app.radial_edit = ed2_ctx
+    ed2 = ts.RadialMenuEditor(app)
+    check(ed2.name.get_text() == "My tools" and ed2.n == 8 and ed2.values["2"] == "action:speed_up",
+          "editor: an existing menu loads")
+    app.panels.remove(ed2)
+    for k in b.keys_with_prefix("radial_"):
+        b.remove(k)
     for k in ts.MOUSE_PROFILE_KEYS:
         app.store.base.remove(k)
     app.store.changed()
@@ -801,6 +845,20 @@ def radial_tests(d):
     m2.done = "x"
     m2.on_release(None, Ev(1, cx + 300, cy))
     check(m2.done is None, "radial: a click outside closes it")
+    check([rd.slice_at(0, -50, 8), rd.slice_at(50, -50, 8), rd.slice_at(50, 0, 8),
+           rd.slice_at(-50, -50, 8), rd.slice_at(-1, -50, 8)] == [0, 1, 2, 7, 0],
+          "radial: 8 slices, clockwise from the top")
+    check(rd.slice_action("keys:LEFTCTRL+SHIFT+Z") == ("keys", "KEY_LEFTCTRL+KEY_SHIFT+KEY_Z") and
+          rd.slice_action("keys:V, F") == ("keys", "KEY_V,KEY_F") and
+          rd.slice_action("action:settings") == ("run", "tdx-settings") and
+          rd.slice_action("action:numpad") == ("numpad", "tdx-numpad") and
+          rd.slice_action("action:speed_up") == ("action", "speed_up") and
+          rd.slice_action("BTN_LEFT") is None and rd.slice_action("") is None,
+          "radial: a user menu's sections")
+    check(rd.load_menu(os.path.join(d, "none.sock"), "r1") is None, "radial: no tdxd, no menu")
+    m8 = rd.RadialMenu(os.path.join(d, "none.sock"), [("A", "", ("keys", "KEY_A"))] * 8)
+    check(m8.radius == rd.RADIUS_8, "radial: 8 sections, a bigger menu")
+    m8.destroy()
     check(rd.tdxd_request(os.path.join(d, "none.sock"), "keys KEY_Z").startswith("error"),
           "radial: no tdxd, an error, no crash")
     m.destroy()

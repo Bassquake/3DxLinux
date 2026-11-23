@@ -148,6 +148,8 @@ static void on_sig(int s) { if (s == SIGHUP) g_reload = 1; else g_quit = 1; }
 static void open_settings(void);
 static void open_radial(void);
 static void open_numpad(void);
+static void open_menu(const char *menu);
+static const char *button_menu(const char *v3dk);
 static int device_rezero(struct dev_ctx *d);
 
 static long long now_ms(void)
@@ -629,6 +631,8 @@ static void rcv_mouse_buttons(struct rcv_ctx *r, uint8_t bits)
 				open_radial();
 			else if (act == TDX_ACT_NUMPAD)
 				open_numpad();
+			else if (act == TDX_ACT_RADIAL)
+				open_menu(button_menu(def->buttons[i].v3dk));
 			else if (act == TDX_ACT_CALIBRATE)
 				for (int k = 0; k < ndev; k++)
 					device_rezero(&devs[k]);
@@ -834,10 +838,12 @@ static const char settings_script[] =
  * while it is open closes it. Started from a desktop's own terminal (tdxd
  * with a DISPLAY, as when testing), it runs there; tdx-radial itself closes
  * an open one then. */
-static const char toggle_script[] = /* $1: tdx-radial or tdx-numpad (its unit too) */
+static const char toggle_script[] = /* $1: tdx-radial or tdx-numpad (its unit too);
+				     * $TDX_MENU: a user radial menu's ID */
 	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n"
 	"if [ -z \"$s\" ]; then\n"
-	"  [ -n \"$DISPLAY$WAYLAND_DISPLAY\" ] && exec \"$1\" -s \"$TDX_SOCK\"\n"
+	"  [ -n \"$DISPLAY$WAYLAND_DISPLAY\" ] && "
+	"exec \"$1\" -s \"$TDX_SOCK\" ${TDX_MENU:+--menu \"$TDX_MENU\"}\n"
 	"  exit 0\n"
 	"fi\n"
 	"u=$(loginctl show-session \"$s\" -p Name --value 2>/dev/null)\n"
@@ -846,9 +852,9 @@ static const char toggle_script[] = /* $1: tdx-radial or tdx-numpad (its unit to
 	"  exec systemctl --user --machine=\"$u@\" stop \"$1\"\n"
 	"fi\n"
 	"exec systemd-run --user --machine=\"$u@\" --unit=\"$1\" --collect --quiet "
-	"\"$1\" -s \"$TDX_SOCK\"\n";
+	"\"$1\" -s \"$TDX_SOCK\" ${TDX_MENU:+--menu \"$TDX_MENU\"}\n";
 
-static void session_run(const char *script, const char *arg)
+static void session_run(const char *script, const char *arg, const char *menu)
 {
 	pid_t pid = fork();
 	if (pid < 0)
@@ -864,6 +870,10 @@ static void session_run(const char *script, const char *arg)
 					dup2(nul, 2);
 			}
 			setenv("TDX_SOCK", cfg.control_socket, 1); /* tdx-radial's Undo/Redo */
+			if (menu && *menu)
+				setenv("TDX_MENU", menu, 1);
+			else
+				unsetenv("TDX_MENU");
 			execl("/bin/sh", "sh", "-c", script, "sh", arg, (char *)NULL);
 			_exit(127);
 		}
@@ -874,19 +884,36 @@ static void session_run(const char *script, const char *arg)
 
 static void open_radial(void)
 {
-	session_run(toggle_script, "tdx-radial");
+	session_run(toggle_script, "tdx-radial", NULL);
 	LOG(1, "radial menu: asked the active session to show Common Tools\n");
+}
+
+/* A radial menu of the user's own (radial:ID): tdx-radial --menu ID */
+static void open_menu(const char *menu)
+{
+	if (!menu || !*menu)
+		return;
+	session_run(toggle_script, "tdx-radial", menu);
+	LOG(1, "radial menu: asked the active session to show %s\n", menu);
+}
+
+static const char *button_menu(const char *v3dk)
+{
+	for (int i = 0; v3dk && i < cfg.nactions; i++)
+		if (!strcasecmp(cfg.actions[i].v3dk, v3dk))
+			return cfg.actions[i].menu;
+	return NULL;
 }
 
 static void open_numpad(void)
 {
-	session_run(toggle_script, "tdx-numpad");
+	session_run(toggle_script, "tdx-numpad", NULL);
 	LOG(1, "Virtual NumPad: asked the active session to show or hide it\n");
 }
 
 static void open_settings(void)
 {
-	session_run(settings_script, "");
+	session_run(settings_script, "", NULL);
 	LOG(1, "MENU: asked the active session to open tdx-settings\n");
 }
 
@@ -1251,6 +1278,52 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 			tdx_uinput_keys(ui, &km, 1);
 			snprintf(reply, len, "ok %d keys\n", n);
 		}
+	} else if (!strcmp(verb, "radial")) {
+		/* a user radial menu for tdx-radial: its radial_ID_* lines as
+		 * "name<TAB>value" (name without radial_ID_) */
+		char *id = strtok_r(NULL, " \t", &save);
+		size_t o = 0;
+		char pre[40];
+		snprintf(pre, sizeof pre, "radial_%s_", id ? id : "");
+		for (int i = 0; id && i < cfg.nradial && o < len; i++)
+			if (!strncmp(cfg.radial[i].key, pre, strlen(pre)))
+				o += (size_t)snprintf(reply + o, len - o, "%s\t%s\n",
+						      cfg.radial[i].key + strlen(pre), cfg.radial[i].val);
+		if (!o)
+			snprintf(reply, len, "error: no radial menu %s\n", id ? id : "");
+	} else if (!strcmp(verb, "action")) {
+		/* a radial menu slice's driver function: "action speed_up" */
+		int uid = tdx_ctl_peer_uid();
+		char *name = strtok_r(NULL, " \t", &save);
+		int act = name ? tdx_action_from_name(name) : -1;
+		if (uid != 0 && uid != session_uid)
+			snprintf(reply, len, "error: not allowed\n");
+		else if (act <= 0)
+			snprintf(reply, len, "error: unknown action %s\n", name ? name : "");
+		else {
+			if (act == TDX_ACT_SETTINGS)
+				open_settings();
+			else if (act == TDX_ACT_COMMONTOOLS)
+				open_radial();
+			else if (act == TDX_ACT_NUMPAD)
+				open_numpad();
+			else if (act == TDX_ACT_RADIAL)
+				open_menu(name + 7);
+			else if (act == TDX_ACT_CALIBRATE)
+				for (int k = 0; k < ndev; k++)
+					device_rezero(&devs[k]);
+			else if (tdx_apply_action(&cfg, act)) {
+				LOG(0, "radial menu: %s: speed %.2f, pan/zoom %s, rotation %s, dominant %s\n",
+				    tdx_action_name(act), cfg.sensitivity,
+				    cfg.disable_translation ? "off" : "on",
+				    cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off");
+				if (act == TDX_ACT_SPEED_UP || act == TDX_ACT_SPEED_DOWN)
+					info_slider = (int)(cfg.sensitivity * 100 + 0.5);
+				info_until = now_ms() + 3000;
+				lcdcfg_dirty = 1;
+			}
+			snprintf(reply, len, "ok %s\n", name);
+		}
 	} else if (!strcmp(verb, "calibrate")) {
 		size_t o = 0;
 		if (!ndev)
@@ -1485,6 +1558,8 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 				open_radial();
 			else if (act == TDX_ACT_NUMPAD)
 				open_numpad();
+			else if (act == TDX_ACT_RADIAL)
+				open_menu(button_menu(v3dk));
 			continue;
 		}
 		const struct tdx_keymap *km = tdx_keymap_for(&cfg, d->node.def, i);
