@@ -146,7 +146,88 @@ MOUSE_KEYS = ["mouse_dpi", "mouse_polling_rate", "mouse_smart_scrolling"]
 MOUSE_DPI_STEPS = [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800,
                    2200, 2600, 3000, 3600, 4200, 5200, 6400, 7200]
 MOUSE_RATES = [125, 250, 500, 1000]
-DESKTOP_MOUSE = "Set this in your desktop's mouse settings"
+DESKTOP_MOUSE = ("Set this in your desktop's mouse settings (here it works with KDE "
+                 "Plasma on Wayland)")
+MOUSE_LINES = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20]  # lines per wheel notch (Windows: 3)
+
+
+class KwinMice:
+    """A CadMouse's pointer settings in KDE Plasma (Wayland), through KWin's
+    input devices on D-Bus (/org/kde/KWin/InputDevice/eventN), as System
+    Settings > Mouse changes them; KWin applies them at once and keeps them.
+    3DxWare's "Enable acceleration" is Windows' pointer precision setting:
+    here the CadMouse's acceleration profile, adaptive (on) or flat (off).
+    Its wheel "Lines" is KWin's scroll factor (1.0 = Windows' 3 lines).
+    Elsewhere (GNOME, X11 ...) nothing is found and the panel greys them out."""
+    BUS, MGR = "org.kde.KWin", "/org/kde/KWin/InputDevice"
+    DEV = "org.kde.KWin.InputDevice"
+
+    def __init__(self):
+        self.bus = None
+
+    def _call(self, path, method, args, reply):
+        if self.bus is None:
+            try:
+                self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            except GLib.Error:
+                self.bus = False
+        if not self.bus:
+            raise GLib.Error("no session bus")
+        return self.bus.call_sync(self.BUS, path, "org.freedesktop.DBus.Properties", method,
+                                  args, reply, Gio.DBusCallFlags.NONE, 800, None)
+
+    def get(self, path, iface, prop):
+        return self._call(path, "Get", GLib.Variant("(ss)", (iface, prop)),
+                          GLib.VariantType("(v)")).unpack()[0]
+
+    def put(self, path, prop, value):
+        self._call(path, "Set", GLib.Variant("(ssv)", (self.DEV, prop, value)), None)
+
+    def devices(self):
+        """KWin's object paths of the CadMouse pointers (256f:c650-c66f: the
+        mice themselves and the Universal Receivers' mouse interface)."""
+        try:
+            names = self.get(self.MGR, "org.kde.KWin.InputDeviceManager", "devicesSysNames")
+        except GLib.Error:
+            return []
+        out = []
+        for n in names:
+            path = "%s/%s" % (self.MGR, n)
+            try:
+                if (self.get(path, self.DEV, "vendor") == 0x256F and
+                        0xC650 <= self.get(path, self.DEV, "product") <= 0xC66F and
+                        self.get(path, self.DEV, "pointer")):
+                    out.append(path)
+            except GLib.Error:
+                continue
+        return out
+
+    def acceleration(self, paths):
+        try:
+            return bool(self.get(paths[0], self.DEV, "pointerAccelerationProfileAdaptive"))
+        except GLib.Error:
+            return None
+
+    def set_acceleration(self, paths, on):
+        for p in paths:
+            try:
+                self.put(p, "pointerAccelerationProfileAdaptive", GLib.Variant("b", on))
+                self.put(p, "pointerAccelerationProfileFlat", GLib.Variant("b", not on))
+            except GLib.Error:
+                pass
+
+    def lines(self, paths):
+        try:
+            return max(1, int(round(self.get(paths[0], self.DEV, "scrollFactor") * 3)))
+        except GLib.Error:
+            return None
+
+    def set_lines(self, paths, n):
+        for p in paths:
+            try:
+                self.put(p, "scrollFactor", GLib.Variant("d", n / 3.0))
+            except GLib.Error:
+                pass
 DAEMON_ONLY = {"mouse_dpi", "mouse_polling_rate", "mouse_smart_scrolling",
                "uinput", "spnav", "spnav_socket", "control_socket", "profile_dir", "lcd",
                "lcd_bmp_dir", "verbose"}
@@ -1834,8 +1915,8 @@ def mouse_dpi(store):
 class MouseAdvancedPanel(Panel):
     """3DxWare's Advanced Settings for a CadMouse. Polling Rate and Smart
     Scrolling are sent to the mouse by tdxd; acceleration and the wheel's
-    lines per notch belong to the desktop on Linux (Windows' own settings in
-    3DxWare), so they are shown but greyed."""
+    lines per notch are Windows' own settings in 3DxWare, here the desktop's:
+    set through KWin on KDE Plasma (KwinMice), greyed elsewhere."""
     title = "Advanced Settings"
     subtitle = "Advanced Settings"
     size = (682, 516)
@@ -1855,7 +1936,9 @@ class MouseAdvancedPanel(Panel):
     def build(self):
         self.photo = self.put(DevicePhoto(self.app, self.app.current_device), 462, 30)
         self.section("Mouse Motion", 30, 242, 136)
-        accel = self.put(Gtk.CheckButton(label="Enable acceleration"), 37, 143)
+        self.accel = self.put(Gtk.CheckButton(label="Enable acceleration"), 37, 143)
+        self.accel.connect("toggled", self.guard(
+            lambda b: self.app.kwin.set_acceleration(self.kde, b.get_active())))
         self.section("Polling Rate (wired mode)", 30, 242, 232)
         self.rates = {}
         first = None
@@ -1867,15 +1950,22 @@ class MouseAdvancedPanel(Panel):
                                              self.store.set("mouse_polling_rate", str(hz))))
             self.rates[hz] = rb
         self.section("Mouse Wheel Speed", 270, 456, 136)
-        lines = self.put(Gtk.RadioButton.new_with_label(None, "Lines"), 277, 143)
-        spin = self.put(flat_button("3", 64, 25), 348, 139)
-        spin.get_child().set_xalign(0.15)
-        page = self.put(Gtk.RadioButton.new_with_label_from_widget(lines,
+        self.lines_radio = self.put(Gtk.RadioButton.new_with_label(None, "Lines"), 277, 143)
+        self.lines_btn = self.put(flat_button("", 64, 25), 348, 139)
+        lb = Gtk.Box()
+        self.lines_label = lab("3")
+        lb.pack_start(self.lines_label, True, True, 4)
+        lb.pack_end(image_widget(ASSETS.ui("SmartUI_Button_Arrow")) or lab("›", "tdx-more"),
+                    False, False, 2)
+        self.lines_btn.remove(self.lines_btn.get_child())
+        self.lines_btn.add(lb)
+        self.lines_btn.connect("clicked", self.lines_menu)
+        page = self.put(Gtk.RadioButton.new_with_label_from_widget(self.lines_radio,
                                                                    "One page / one screen"),
                         277, 167)
-        for w in (accel, lines, spin, page):
-            w.set_sensitive(False)
-            w.set_tooltip_text(DESKTOP_MOUSE)
+        page.set_sensitive(False)
+        page.set_tooltip_text("Not a setting KDE has")
+        self.kde = []  # KWin's paths for the CadMouse, when on KDE Plasma
         self.section("Smart Scrolling", 270, 456, 232)
         self.smart = self.put(Gtk.CheckButton(label="Enable"), 277, 239)
         self.smart.set_tooltip_text("The mouse's inertial wheel: a quick flick keeps scrolling")
@@ -1897,11 +1987,36 @@ class MouseAdvancedPanel(Panel):
             rate = 1000
         self.rates.get(rate, self.rates[1000]).set_active(True)
         self.smart.set_active(self.store.get_bool("mouse_smart_scrolling", True))
+        self.kde = self.app.kwin.devices()
+        on = bool(self.kde)
+        for w in (self.accel, self.lines_radio, self.lines_btn):
+            w.set_sensitive(on)
+            w.set_tooltip_text(None if on else DESKTOP_MOUSE)
+        if on:
+            self.accel.set_active(bool(self.app.kwin.acceleration(self.kde)))
+            self.lines_label.set_text(str(self.app.kwin.lines(self.kde) or 3))
+            self.lines_radio.set_active(True)
         self.updating = False
+
+    def lines_menu(self, widget):
+        menu = Gtk.Menu()
+        for n in MOUSE_LINES:
+            mi = Gtk.MenuItem(label=str(n))
+            mi.connect("activate", lambda _m, n=n: self.set_lines(n))
+            menu.append(mi)
+        menu.show_all()
+        menu.popup_at_widget(widget, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+
+    def set_lines(self, n):
+        self.app.kwin.set_lines(self.kde, n)
+        self.lines_label.set_text(str(n))
 
     def on_restore(self, _b):
         for k in ("mouse_polling_rate", "mouse_smart_scrolling"):  # Speed is the main page's
             self.store.base.remove(k)
+        if self.kde:  # Windows' defaults: acceleration on, 3 lines
+            self.app.kwin.set_acceleration(self.kde, True)
+            self.app.kwin.set_lines(self.kde, 3)
         self.store.changed()
         self.msg.set_text("Restored")
 
@@ -3126,6 +3241,7 @@ class App:
         self.tdxd_profile = self.status.get("profile")
         self.last_app_keys = (None, {})
         self.selected = None  # key of the device chosen in the device chooser
+        self.kwin = KwinMice()  # the CadMouse's acceleration / wheel lines on KDE
 
     def current_device(self):
         """The device the main window shows: the one chosen in the device

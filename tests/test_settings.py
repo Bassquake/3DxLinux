@@ -359,7 +359,38 @@ def gui_tests(d, tdxd):
     check(app.store.base.get("mouse_dpi") == "400" and not app.store.profile.has("mouse_dpi"),
           "mouse_dpi always in the base file")
     app.store.select(None)
+    class FakeKwin:  # KWin on KDE Plasma: one CadMouse pointer
+        def __init__(self):
+            self.accel, self.factor = True, 1.0
+
+        def devices(self):
+            return ["/org/kde/KWin/InputDevice/event7"]
+
+        def acceleration(self, paths):
+            return self.accel
+
+        def set_acceleration(self, paths, on):
+            self.accel = on
+
+        def lines(self, paths):
+            return round(self.factor * 3)
+
+        def set_lines(self, paths, n):
+            self.factor = n / 3.0
+
+    real_kwin = app.kwin
+    madv0 = ts.MouseAdvancedPanel(app)  # no KDE: greyed
+    check(not madv0.accel.get_sensitive() and not madv0.lines_btn.get_sensitive(),
+          "acceleration / wheel lines greyed without KDE")
+    app.panels.remove(madv0)
+    app.kwin = FakeKwin()
     madv = ts.MouseAdvancedPanel(app)
+    check(madv.accel.get_sensitive() and madv.accel.get_active() and
+          madv.lines_label.get_text() == "3", "KDE: acceleration and lines from KWin")
+    madv.accel.set_active(False)
+    madv.set_lines(6)
+    check(app.kwin.accel is False and abs(app.kwin.factor - 2.0) < 1e-9 and
+          madv.lines_label.get_text() == "6", "KDE: acceleration off, 6 lines (scroll factor 2)")
     check(madv.title_label.get_text() == "CadMouse Compact Wireless" and
           madv.rates[1000].get_active() and madv.smart.get_active(), "CadMouse Advanced: defaults")
     madv.rates[250].set_active(True)
@@ -367,11 +398,14 @@ def gui_tests(d, tdxd):
     check(app.store.base.get("mouse_polling_rate") == "250" and
           app.store.base.get("mouse_smart_scrolling") == "no", "Polling Rate / Smart Scrolling")
     madv.on_restore(None)
+    check(app.kwin.accel is True and abs(app.kwin.factor - 1.0) < 1e-9,
+          "Restore Defaults: acceleration on, 3 lines")
     check(not app.store.base.has("mouse_polling_rate") and
           not app.store.base.has("mouse_smart_scrolling") and madv.rates[1000].get_active()
           and madv.smart.get_active() and app.store.base.get("mouse_dpi") == "400",
           "CadMouse Restore Defaults (Speed stays: it is the main page's)")
     app.panels.remove(madv)
+    app.kwin = real_kwin
     # ---- CadMouse Buttons
     mbtn = ts.MouseButtonsPanel(app)
     check(mbtn.rows["V2DK_RADIALMENU"][1].get_text() == "Common Tools" and

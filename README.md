@@ -39,7 +39,9 @@ device chooser. The CadMouse itself keeps working as an ordinary mouse.
 Its Speed (DPI), Polling Rate and Smart Scrolling are sent to the mouse, as
 3DxWare does (`mouse_dpi`, `mouse_polling_rate`, `mouse_smart_scrolling` in
 `/etc/tdxd.conf`). Pointer acceleration and the wheel's lines per notch are your
-desktop's mouse settings. Its Buttons (radial-menu, wheel, middle, forward and
+desktop's mouse settings (3DxWare changes Windows' own): on KDE Plasma (Wayland)
+the CadMouse's Advanced Settings sets them for the CadMouse through KWin, as
+System Settings does; elsewhere they are greyed out. Its Buttons (radial-menu, wheel, middle, forward and
 back) can be a mouse function, done by the mouse itself, or a keystroke, which
 `tdxd` sends; per application too (`key_V2DK_FORWARD = KEY_LEFTCTRL+KEY_Z`,
 `key_V2DK_WHEEL = BTN_MIDDLE`, `mouse_swap_buttons = yes`). 3DxWare's radial
