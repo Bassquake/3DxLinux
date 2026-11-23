@@ -499,3 +499,4 @@ CadMouse Compact Wireless (c658) paired to it.
 | Add device on Kubuntu 26.04 (`3DxLinux.0.3.4+61+gcc36764`) | **Pass:** after `tdxctl unpair 4`, Add device → CadMouse and switching the mouse off and on: "successfully paired", and the CadMouse works again. |
 | Receiver Advanced Settings (WSLg) | **Pass:** "Currently paired devices (1/5)" with the CadMouse tile (PID: Y1224194699, as 3DxWare shows it); the ✕ on hover removed it (0/5), and Add device from that window paired it back. |
 | CadMouse Buttons: Application Specific Settings | **Pass** with `3DxLinux.0.3.4+64+gd7144be`: a tick box like Swap Middle / Right instead of the switch. |
+| Header icon (WSLg) | **Pass:** the application icon in the title row raised 3 px, level with the title's capitals (was about 4 px low). |

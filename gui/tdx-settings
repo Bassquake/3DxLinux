@@ -1401,7 +1401,7 @@ class Panel:
         if self.subtitle is not None:
             self.put(lab(self.subtitle, "tdx-sub"), 34, 37)
         self.icon_slot = Gtk.Box()
-        self.put(self.icon_slot, 30, ty + 3)
+        self.put(self.icon_slot, 30, ty)  # level with the title's capitals
         self.title_btn = Gtk.Button()
         self.title_btn.get_style_context().add_class("tdx-title-btn")
         self.title_btn.set_can_focus(False)
