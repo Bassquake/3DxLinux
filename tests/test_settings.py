@@ -556,6 +556,30 @@ def gui_tests(d, tdxd):
     check(ed2.name.get_text() == "My tools" and ed2.n == 8 and ed2.values["2"] == "action:speed_up",
           "editor: an existing menu loads")
     app.panels.remove(ed2)
+    pk = ts.ActionPicker(mbtn, mbtn.rows["V2DK_BACKWARD"][0], "V2DK_BACKWARD", "Back")
+    pk.toggle("Radial Menus")
+    rows = [w for w in pk.list.get_children() if isinstance(w, ts.Gtk.Button)]
+    mine = [w for w in rows if w.get_style_context().has_class("tdx-pick-current")]
+    tools = [c for c in mine[0].get_child().get_children() if isinstance(c, ts.Gtk.Box)
+             and len(c.get_children()) == 2 and all(isinstance(e, ts.Gtk.EventBox)
+                                                    for e in c.get_children())] if mine else []
+    check(len(mine) == 1 and tools and not tools[0].get_visible(),
+          "picker: the button's own menu current, its pencil and x hidden")
+    mine[0].set_state_flags(ts.Gtk.StateFlags.PRELIGHT, False)
+    check(tools[0].get_visible(), "picker: pencil and x shown on hover")
+    pk.close()
+    mbtn.edit_radial("r1")
+    ed3 = [p for p in app.panels if isinstance(p, ts.RadialMenuEditor)][-1]
+    check(ed3.menu_id == "r1" and ed3.target_key is None and ed3.name.get_text() == "My tools",
+          "pencil: the menu in the editor")
+    ed3.name.set_text("Renamed")
+    ed3.save()
+    check(b.get("radial_r1_name") == "Renamed" and b.get("action_V2DK_BACKWARD") == "radial:r1",
+          "editor: an edited menu saved in place")
+    mbtn.delete_radial("r1", ask=False)
+    check(not b.keys_with_prefix("radial_r1_") and not b.has("action_V2DK_BACKWARD") and
+          mbtn.rows["V2DK_BACKWARD"][1].get_text() == "Backward Mouse Button",
+          "x: the menu deleted, its button back to its own function")
     for k in b.keys_with_prefix("radial_"):
         b.remove(k)
     for k in ts.MOUSE_PROFILE_KEYS:

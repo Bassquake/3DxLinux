@@ -2475,9 +2475,14 @@ class ActionPicker:
         return True
 
     # ---- the list
+    def is_current(self, it):
+        c = self.current
+        return c is not None and (it is c or (bool(it.get("value")) and
+                                             it.get("value") == c.get("value")))
+
     def holds_current(self, items):
         for it in items:
-            if it is self.current:
+            if self.is_current(it):
                 return True
             if "folder" in it and self.holds_current(it["items"]):
                 return True
@@ -2544,8 +2549,35 @@ class ActionPicker:
             hb.pack_start(icon, False, False, 0)
             hb.pack_start(lab(it["label"]), False, False, 0)
             ok = bool(it.get("value"))
-            if it is self.current:
+            if self.is_current(it):
                 b.get_style_context().add_class("tdx-pick-current")
+            if it.get("menu"):  # the user's own: edit and delete, shown on hover
+                tools = Gtk.Box(spacing=6)
+                tools.set_no_show_all(True)
+                for kind, tip, fn in (("edit", "Edit this radial menu", self.edit_menu),
+                                      ("delete", "Delete this radial menu", self.delete_menu)):
+                    eb = Gtk.EventBox()
+                    eb.set_visible_window(False)
+                    eb.set_tooltip_text(tip)
+                    eb.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
+                                  Gdk.EventMask.BUTTON_RELEASE_MASK |
+                                  Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+                    da = drawing(14, 14, lambda _w, cr, k=kind, e=eb: draw_menu_tool(
+                        cr, k, bool(e.get_state_flags() & Gtk.StateFlags.PRELIGHT)))
+                    eb.add(da)
+                    eb.connect("enter-notify-event", lambda w, _e: w.set_state_flags(
+                        Gtk.StateFlags.PRELIGHT, False) or w.queue_draw() or False)
+                    eb.connect("leave-notify-event", lambda w, _e: w.unset_state_flags(
+                        Gtk.StateFlags.PRELIGHT) or w.queue_draw() or False)
+                    eb.connect("button-press-event", lambda *_a: True)  # not the row's click
+                    eb.connect("button-release-event",
+                               lambda *_a, f=fn, m=it["menu"]: f(m) or True)
+                    da.show()
+                    eb.show()
+                    tools.pack_start(eb, False, False, 0)
+                hb.pack_end(tools, False, False, 6)
+                b.connect("state-flags-changed", lambda w, _o, t=tools: t.set_visible(
+                    bool(w.get_state_flags() & Gtk.StateFlags.PRELIGHT)))
         b.add(hb)
         b.set_sensitive(ok)
         if not ok:
@@ -2589,6 +2621,14 @@ class ActionPicker:
     def toggle(self, key):
         self.open ^= {key}
         self.fill()
+
+    def edit_menu(self, mid):
+        self.close()
+        self.panel.edit_radial(mid)
+
+    def delete_menu(self, mid):
+        self.close()
+        self.panel.delete_radial(mid)
 
     def choose(self, it):
         self.close()
@@ -2750,8 +2790,8 @@ def picker_with_menus(menus, new_link=True):
     for name, items in PICKER:
         if name == "Radial Menus":
             items = [it for it in items if "link" not in it]
-            items += [_i(menus[m] or m, "HIDMouse_RadialMenu.png", "action:radial:" + m)
-                      for m in sorted(menus, key=radial_menu_order)]
+            items += [dict(_i(menus[m] or m, "HIDMouse_RadialMenu.png", "action:radial:" + m),
+                           menu=m) for m in sorted(menus, key=radial_menu_order)]
             if new_link:
                 items.append({"link": "New Radial Menu", "new_radial": True})
         out.append((name, items))
@@ -2837,6 +2877,12 @@ class RadialMenuEditor(BindingRows, Panel):
 
     # ---- where it is kept: with the button's settings
     def conf(self):
+        """Where the menu is kept: where it already is (editing), else with
+        the button's settings."""
+        if self.menu_id:
+            for f in (self.store.profile, self.store.base):
+                if f and f.has("radial_%s_name" % self.menu_id):
+                    return f
         return self.target.conf() if self.target else self.store.base
 
     def load(self, mid):
@@ -3022,6 +3068,29 @@ class RadialMenuEditor(BindingRows, Panel):
             top.destroy()
 
 
+def draw_menu_tool(cr, kind, hot):
+    """3DxWare's pencil and x on a radial menu in the picker: grey, black hovered."""
+    v = 0.1 if hot else 0.55
+    cr.set_source_rgb(v, v, v)
+    if kind == "edit":
+        cr.set_line_width(2.2)
+        cr.move_to(4, 10.5)
+        cr.line_to(11, 3.5)
+        cr.stroke()
+        cr.move_to(2.5, 12)
+        cr.line_to(3.2, 9.3)
+        cr.line_to(5.2, 11.3)
+        cr.close_path()
+        cr.fill()
+    else:
+        cr.set_line_width(1.8)
+        cr.move_to(3, 3)
+        cr.line_to(11, 11)
+        cr.move_to(11, 3)
+        cr.line_to(3, 11)
+        cr.stroke()
+
+
 def draw_radial_tile(cr):
     cr.rectangle(0.5, 0.5, 61, 61)
     cr.set_source_rgb(1, 1, 1)
@@ -3187,6 +3256,29 @@ class MouseButtonsPanel(BindingRows, Panel):
     def new_radial(self, v2dk):
         self.app.radial_edit = {"panel": self, "v2dk": v2dk, "menu": None}
         self.app.window(RadialMenuEditor)
+
+    def edit_radial(self, mid):
+        """The pencil: the menu in the editor (no button changes)."""
+        self.app.radial_edit = {"panel": self, "v2dk": None, "menu": mid}
+        self.app.window(RadialMenuEditor)
+
+    def delete_radial(self, mid, ask=True):
+        """The x: the menu's lines go; buttons that showed it get their default."""
+        name = radial_menu_ids(self.store.base, self.store.profile).get(mid) or mid
+        if ask and not confirm(self.box.get_toplevel(), "Delete the radial menu %s?" % name,
+                               "Buttons that show it go back to their own function.",
+                               "Delete"):
+            return
+        for f in (self.store.base, self.store.profile):
+            if not f:
+                continue
+            for k in f.keys_with_prefix("radial_%s_" % mid):
+                f.remove(k)
+            for k in f.keys_with_prefix("action_"):
+                if (f.get(k) or "").strip().lower() == "radial:" + mid.lower():
+                    f.remove(k)
+        self.store.changed()
+        self.refresh()
 
     def pick(self, v2dk, value):
         """A picker entry chosen: its value (see PICKER)."""
