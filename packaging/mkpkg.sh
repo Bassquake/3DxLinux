@@ -224,7 +224,7 @@ Architecture: $DEB_ARCH
 Maintainer: tdxd project <$HOMEPAGE/issues>
 Installed-Size: $(du -sk --exclude=DEBIAN "$R" | cut -f1)
 Depends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, pkexec | policykit-1
-Recommends: p7zip-full, librsvg2-common
+Recommends: p7zip-full, librsvg2-common, gir1.2-gtklayershell-0.1
 Suggests: xdg-utils, x11-utils
 Conflicts: spacenavd
 Section: utils
@@ -263,7 +263,7 @@ Summary: $SUMMARY
 License: MIT
 URL: $HOMEPAGE
 Requires: python3, python3-gobject, python3-cairo, gtk3, polkit
-Recommends: p7zip, librsvg2
+Recommends: p7zip, librsvg2, gtk-layer-shell
 Suggests: xdg-utils, xprop
 Conflicts: spacenavd
 AutoReqProv: no

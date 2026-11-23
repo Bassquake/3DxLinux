@@ -31,6 +31,11 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango, PangoCairo  # noqa: E402
+try:  # Wayland: an overlay layer, which the compositor shows without its own animation
+    gi.require_version("GtkLayerShell", "0.1")
+    from gi.repository import GtkLayerShell  # noqa: E402
+except (ValueError, ImportError):
+    GtkLayerShell = None
 
 APP_VERSION = "dev"
 
@@ -58,6 +63,7 @@ TEXT_OFF = (0xa0 / 255,) * 3
 ICON = 22
 FONT = "Sans 8.5"
 FADE_IN_MS = 150
+SCALE_FROM = 0.3      # the menu grows from 30 % at the pointer as it fades in
 
 
 def asset_dirs():
@@ -150,10 +156,28 @@ def menu_opacity(dist):
     return max(0.15, 1.0 - (dist - RADIUS) / (RADIUS * 1.5) * 0.85)
 
 
+def window_kind():
+    """How the menu's window is made, so that no compositor animates it in
+    (KWin scales a new window in from its centre: from the middle of the
+    screen, for a full-screen one): "layer" a Wayland overlay layer
+    (gtk-layer-shell), "popup" an X11 override-redirect window, else
+    "fullscreen" (Wayland without gtk-layer-shell)."""
+    disp = Gdk.Display.get_default()
+    if "X11" in type(disp).__name__:
+        return "popup"
+    if GtkLayerShell and (not hasattr(GtkLayerShell, "is_supported") or
+                          GtkLayerShell.is_supported()):
+        return "layer"
+    return "fullscreen"
+
+
 class RadialMenu(Gtk.Window):
-    def __init__(self, sock, items=COMMON_TOOLS):
-        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+    def __init__(self, sock, items=COMMON_TOOLS, kind=None):
+        self.kind = kind or window_kind()
+        super().__init__(type=Gtk.WindowType.POPUP if self.kind == "popup"
+                         else Gtk.WindowType.TOPLEVEL)
         self.sock, self.items = sock, items
+        self.anim = None
         self.at = None           # the pointer when the menu opened
         self.pointer = None
         self.hover = None        # a slice 0..3, "close", or None
@@ -181,7 +205,28 @@ class RadialMenu(Gtk.Window):
         self.connect("button-press-event", self.on_press)
         self.connect("button-release-event", self.on_release)
         self.connect("key-press-event", self.on_key)
-        self.fullscreen()
+        if self.kind == "layer":
+            GtkLayerShell.init_for_window(self)
+            GtkLayerShell.set_namespace(self, "tdx-radial")
+            GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
+            for edge in (GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT,
+                         GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM):
+                GtkLayerShell.set_anchor(self, edge, True)
+            GtkLayerShell.set_exclusive_zone(self, -1)
+            if hasattr(GtkLayerShell, "set_keyboard_mode"):
+                GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
+            else:
+                GtkLayerShell.set_keyboard_interactivity(self, True)
+        elif self.kind == "popup":
+            # the monitor the pointer is on, whole
+            disp = Gdk.Display.get_default()
+            _s, x, y = disp.get_default_seat().get_pointer().get_position()
+            g = (disp.get_monitor_at_point(x, y) or disp.get_monitor(0)).get_geometry()
+            self.move(g.x, g.y)
+            self.set_default_size(g.width, g.height)
+            self.set_size_request(g.width, g.height)
+        else:
+            self.fullscreen()
 
     @staticmethod
     def load_icon(name):
@@ -195,17 +240,22 @@ class RadialMenu(Gtk.Window):
     def on_map(self, *_):
         # X11 knows the pointer now; Wayland tells it when it enters the window
         disp = Gdk.Display.get_default()
-        if self.center is None and "X11" in type(disp).__name__:
+        if self.kind == "popup":
             seat = disp.get_default_seat()
-            if seat and seat.get_pointer():
-                _w, x, y, _m = self.get_window().get_device_position(seat.get_pointer())
-                if x or y:  # (0, 0): not on this display yet (WSLg); wait for it to enter
-                    self.place(x, y)
-        GLib.timeout_add(16, self.fade_in)
+            # an override-redirect window gets no focus: take the keyboard and
+            # pointer (Escape, and clicks outside the menu)
+            seat.grab(self.get_window(), Gdk.SeatCapabilities.ALL, True, None, None, None,
+                      None)
+            _w, x, y, _m = self.get_window().get_device_position(seat.get_pointer())
+            if x or y:  # (0, 0): not on this display yet (WSLg); wait for it to enter
+                self.place(x, y)
         return False
 
     def place(self, x, y):
+        """The menu opens here: it grows from the pointer as it fades in."""
         self.at = (x, y)
+        if self.anim is None:
+            self.anim = GLib.timeout_add(16, self.fade_in)
         self.queue_draw()
 
     @property
@@ -306,6 +356,13 @@ class RadialMenu(Gtk.Window):
         if self.pointer:
             alpha *= menu_opacity(math.hypot(self.pointer[0] - cx, self.pointer[1] - cy))
         cr.push_group()
+        # growing from the pointer while it fades in (ease out)
+        t = 1 - (1 - min(self.fade, 1.0)) ** 3
+        grow = SCALE_FROM + (1 - SCALE_FROM) * t
+        px, py = self.at
+        cr.translate(px, py)
+        cr.scale(grow, grow)
+        cr.translate(-px, -py)
         self.draw_menu(cr, cx, cy)
         cr.pop_group_to_source()
         cr.paint_with_alpha(alpha)
