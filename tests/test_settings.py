@@ -563,10 +563,11 @@ def gui_tests(d, tdxd):
     tools = [c for c in mine[0].get_child().get_children() if isinstance(c, ts.Gtk.Box)
              and len(c.get_children()) == 2 and all(isinstance(e, ts.Gtk.EventBox)
                                                     for e in c.get_children())] if mine else []
-    check(len(mine) == 1 and tools and not tools[0].get_visible(),
-          "picker: the button's own menu current, its pencil and x hidden")
+    check(len(mine) == 1 and tools and tools[0].get_visible(),
+          "picker: the button's own menu current, with room for its pencil and x")
     mine[0].set_state_flags(ts.Gtk.StateFlags.PRELIGHT, False)
-    check(tools[0].get_visible(), "picker: pencil and x shown on hover")
+    mine[0].unset_state_flags(ts.Gtk.StateFlags.PRELIGHT)
+    check(tools[0].get_visible(), "picker: hover changes no layout (no hover loop)")
     pk.close()
     mbtn.edit_radial("r1")
     ed3 = [p for p in app.panels if isinstance(p, ts.RadialMenuEditor)][-1]

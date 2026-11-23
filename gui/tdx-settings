@@ -2551,9 +2551,11 @@ class ActionPicker:
             ok = bool(it.get("value"))
             if self.is_current(it):
                 b.get_style_context().add_class("tdx-pick-current")
-            if it.get("menu"):  # the user's own: edit and delete, shown on hover
+            if it.get("menu"):  # the user's own: edit and delete, drawn on hover
+                # (always there, only painted: showing them would change the row
+                # under the pointer, and its hover state, again and again)
                 tools = Gtk.Box(spacing=6)
-                tools.set_no_show_all(True)
+                hovered = lambda w: bool(w.get_state_flags() & Gtk.StateFlags.PRELIGHT)
                 for kind, tip, fn in (("edit", "Edit this radial menu", self.edit_menu),
                                       ("delete", "Delete this radial menu", self.delete_menu)):
                     eb = Gtk.EventBox()
@@ -2562,8 +2564,8 @@ class ActionPicker:
                     eb.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
                                   Gdk.EventMask.BUTTON_RELEASE_MASK |
                                   Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
-                    da = drawing(14, 14, lambda _w, cr, k=kind, e=eb: draw_menu_tool(
-                        cr, k, bool(e.get_state_flags() & Gtk.StateFlags.PRELIGHT)))
+                    da = drawing(14, 14, lambda _w, cr, k=kind, e=eb, row=b: (
+                        hovered(row) or hovered(e)) and draw_menu_tool(cr, k, hovered(e)))
                     eb.add(da)
                     eb.connect("enter-notify-event", lambda w, _e: w.set_state_flags(
                         Gtk.StateFlags.PRELIGHT, False) or w.queue_draw() or False)
@@ -2576,8 +2578,7 @@ class ActionPicker:
                     eb.show()
                     tools.pack_start(eb, False, False, 0)
                 hb.pack_end(tools, False, False, 6)
-                b.connect("state-flags-changed", lambda w, _o, t=tools: t.set_visible(
-                    bool(w.get_state_flags() & Gtk.StateFlags.PRELIGHT)))
+                b.connect("state-flags-changed", lambda _w, _o, t=tools: t.queue_draw())
         b.add(hb)
         b.set_sensitive(ok)
         if not ok:
