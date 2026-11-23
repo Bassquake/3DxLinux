@@ -159,11 +159,11 @@ install: all
 	test -e $(DESTDIR)/etc/tdxd.conf || install -Dm644 packaging/tdxd.conf $(DESTDIR)/etc/tdxd.conf
 
 # Prebuilt package for testing on another machine:
-#   make dist                 -> build/dist/tdxd-<version>-linux-<arch>.tar.gz (static)
+#   make dist                 -> build/dist/3DxLinux-<version>-linux-<arch>.tar.gz (static)
 #   make dist ARCH=arm64
 # Release assets for both architectures plus SHA256SUMS:
 #   make release VERSION=0.1.0
-DIST    := build/dist/tdxd-$(VERSION)-linux-$(ARCH)
+DIST    := build/dist/3DxLinux-$(VERSION)-linux-$(ARCH)
 STRIP   ?= $(if $(CROSS_COMPILE),$(CROSS_COMPILE)strip,strip)
 STAGE   := $(or $(TMPDIR),/tmp)/tdxd-dist-$(ARCH)
 
@@ -216,11 +216,11 @@ packages: dist
 release:
 	$(MAKE) packages ARCH=x86_64 VERSION=$(VERSION)
 	$(MAKE) packages ARCH=arm64 VERSION=$(VERSION)
-	cd build/dist && sha256sum tdxd-$(VERSION)-linux-x86_64.tar.gz \
-	   tdxd-$(VERSION)-linux-arm64.tar.gz \
+	cd build/dist && sha256sum 3DxLinux-$(VERSION)-linux-x86_64.tar.gz \
+	   3DxLinux-$(VERSION)-linux-arm64.tar.gz \
 	   3DxLinux.$(VERSION)-1.amd64.deb 3DxLinux.$(VERSION)-1.arm64.deb \
-	   3DxLinux.$(VERSION)-1.x86_64.rpm 3DxLinux.$(VERSION)-1.aarch64.rpm > tdxd-$(VERSION)-SHA256SUMS
-	@cat build/dist/tdxd-$(VERSION)-SHA256SUMS
+	   3DxLinux.$(VERSION)-1.x86_64.rpm 3DxLinux.$(VERSION)-1.aarch64.rpm > 3DxLinux-$(VERSION)-SHA256SUMS
+	@cat build/dist/3DxLinux-$(VERSION)-SHA256SUMS
 
 clean:
 	rm -rf build

@@ -137,7 +137,7 @@ the service, the config and an install script. Use `make dist ARCH=arm64` for
 arm64.
 
 ```bash
-tar xzf tdxd-*-linux-x86_64.tar.gz && cd tdxd-*-linux-x86_64
+tar xzf 3DxLinux-*-linux-x86_64.tar.gz && cd 3DxLinux-*-linux-x86_64
 ```
 
 ```bash
