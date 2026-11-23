@@ -2557,8 +2557,14 @@ class ActionPicker:
                                       else "SmartUI_Button_ArrowDown"))
         hb.pack_end(chev or lab("^" if opened else "v", "tdx-more"), False, False, 4)
         eb.add(hb)
-        eb.add_events(Gdk.EventMask.BUTTON_RELEASE_MASK)
+        eb.add_events(Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK |
+                      Gdk.EventMask.LEAVE_NOTIFY_MASK)
         eb.connect("button-release-event", lambda *_: self.toggle(key) or True)
+        # hover: grey and bold, as 3DxWare's section headings
+        eb.connect("enter-notify-event", lambda w, _e: w.set_state_flags(
+            Gtk.StateFlags.PRELIGHT, False) and False)
+        eb.connect("leave-notify-event", lambda w, e: e.detail != Gdk.NotifyType.INFERIOR and
+                   w.unset_state_flags(Gtk.StateFlags.PRELIGHT) and False)
         return eb
 
     def rule(self, depth=0):
