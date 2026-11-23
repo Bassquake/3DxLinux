@@ -1357,6 +1357,8 @@ static void test_receiver(void)
 	      !strcmp(tdx_action_name(TDX_ACT_COMMONTOOLS), "commontools") &&
 	      tdx_rcv_mouse_action(&mc, cmw, 4) == TDX_ACT_COMMONTOOLS && map[4] == 45 &&
 	      (vend & 0x10));
+	CHECK(tdx_action_from_name("numpad") == TDX_ACT_NUMPAD &&
+	      !strcmp(tdx_action_name(TDX_ACT_NUMPAD), "numpad"));
 	tdx_config_defaults(&mc);
 	tdx_rcv_mouse_map(&mc, cmw, map);
 	tdx_rcv_mouse_config(rep, 7200, 125, 0, map);

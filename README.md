@@ -46,8 +46,14 @@ back) can be a mouse function, done by the mouse itself, or a keystroke, which
 `tdxd` sends; per application too (`key_V2DK_FORWARD = KEY_LEFTCTRL+KEY_Z`,
 `key_V2DK_WHEEL = BTN_MIDDLE`, `mouse_swap_buttons = yes`). The radial-menu
 button opens 3DxWare's Common Tools radial menu at the pointer (`tdx-radial`):
-Undo, Redo and Properties… (Virtual NumPad is not on Linux yet). Any button can
-open it too: `action_V2DK_FORWARD = commontools`.
+Undo, Redo, Properties… and the Virtual NumPad. Any button can open it too:
+`action_V2DK_FORWARD = commontools`.
+
+The Virtual NumPad (`tdx-numpad`, 3DxWare's 3DxNumpad) is a number pad on the
+screen: its keys are typed into the window with the text cursor (it never takes
+the focus; on Wayland it needs gtk-layer-shell, which the packages recommend).
+Drag its title to move it and the dots to resize it; the gear has 3DxWare's
+options. A button can show and hide it: `action_V2DK_FORWARD = numpad`.
 
 **Add device** on the receiver's page pairs a CadMouse (or a SpaceMouse
 Wireless, untested) as 3DxWare's pairing program does: the receiver goes into

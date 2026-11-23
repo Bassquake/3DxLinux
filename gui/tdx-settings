@@ -88,6 +88,7 @@ ACTIONS = [
     ("calibrate", "Calibrate"),
     ("settings", "Open Settings"),
     ("commontools", "Common Tools"),
+    ("numpad", "Virtual NumPad"),
 ]
 ACTION_LABEL = dict(ACTIONS)
 
@@ -2094,7 +2095,7 @@ PICKER = [
     ("3Dconnexion", [
         _i("Properties...", "Driver_ShowDriverGUI.png", "action:settings"),
         _i("Buttons...", "Driver_ShowDriverGUI_Buttons_KB.png", "action:settings"),
-        _i("Virtual NumPad", "Driver_Toggle_3DxNumPad.png"),
+        _i("Virtual NumPad", "Driver_Toggle_3DxNumPad.png", "action:numpad"),
         _i("Virtual LCD"),
         _i("Decrease Speed", None, "action:speed_down"),
         _i("Increase Speed", None, "action:speed_up"),

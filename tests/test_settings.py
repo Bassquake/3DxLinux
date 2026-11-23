@@ -490,7 +490,7 @@ def gui_tests(d, tdxd):
           "picker: Common Tools on any button, the radial button's default")
     mbtn.pick("V2DK_FORWARD", "BTN_EXTRA")
     greyed = [it["label"] for _s, it in ts.picker_items() if not it["value"]]
-    check("Virtual NumPad" in greyed and "Double-Click Left" in greyed and
+    check("Virtual LCD" in greyed and "Virtual NumPad" not in greyed and "Double-Click Left" in greyed and
           "Undo" not in greyed, "picker: Windows-only entries greyed")
 
     def key(code, keyval, state=0, modifier=False):
@@ -774,8 +774,9 @@ def radial_tests(d):
     check(rd.menu_opacity(100) == 1 and rd.menu_opacity(10000) == 0.15 and
           0.15 < rd.menu_opacity(200) < 1, "radial: fades away from the menu, to 0.15")
     check([it[0] for it in rd.COMMON_TOOLS] == ["Virtual\nNumPad", "Redo", "Properties...", "Undo"]
-          and rd.COMMON_TOOLS[0][2] is None and rd.COMMON_TOOLS[3][2] == ("keys", "KEY_LEFTCTRL+KEY_Z"),
-          "radial: Common Tools as Base.xml's Base_MenuRM1, Virtual NumPad greyed")
+          and rd.COMMON_TOOLS[0][2] == ("numpad", "tdx-numpad") and
+          rd.COMMON_TOOLS[3][2] == ("keys", "KEY_LEFTCTRL+KEY_Z"),
+          "radial: Common Tools as Base.xml's Base_MenuRM1")
 
     class Ev:
         def __init__(self, button, x, y):
@@ -785,11 +786,12 @@ def radial_tests(d):
     m.place(400, 300)
     cx, cy = m.center
     check(m.hit(cx, cy) == "close" and m.hit(cx, cy - 80) == 0 and m.hit(cx - 80, cy) == 3 and
-          m.hit(cx + rd.RADIUS + 20, cy) is None and not m.enabled(0) and m.enabled(3),
+          m.hit(cx + rd.RADIUS + 20, cy) is None and m.enabled(0) and m.enabled(3),
           "radial: what is under the pointer")
     m.on_press(None, Ev(1, cx, cy - 80))
     m.on_release(None, Ev(1, cx, cy - 80))
-    check(m.done is None, "radial: the greyed Virtual NumPad does nothing")
+    check(m.done == ("numpad", "tdx-numpad"), "radial: Virtual NumPad chosen")
+    m.done = None
     m.on_press(None, Ev(1, cx - 80, cy))
     m.on_release(None, Ev(1, cx - 80, cy))
     check(m.done == ("keys", "KEY_LEFTCTRL+KEY_Z"), "radial: Undo chosen")
@@ -805,6 +807,35 @@ def radial_tests(d):
     m2.destroy()
 
 
+def numpad_tests(d):
+    """tdx-numpad: 3DxWare's Virtual NumPad."""
+    ld = importlib.machinery.SourceFileLoader("tdx_numpad", os.path.join(ROOT, "gui", "tdx-numpad"))
+    sp = importlib.util.spec_from_loader("tdx_numpad", ld)
+    npd = importlib.util.module_from_spec(sp)
+    ld.exec_module(npd)
+    rects = npd.key_rects()
+    check(len(rects) == 18 and [k[1] for k in npd.KEYS[:4]] ==
+          ["KEY_KP7", "KEY_KP8", "KEY_KP9", "KEY_KPSLASH"] and npd.KEYS[16][1] == "KEY_BACKSPACE"
+          and abs(rects[16][2] - (rects[0][2] * 2 + npd.GAP)) < 0.01,
+          "numpad: 3DxNumpad's keys, Backspace and Enter two wide")
+    p = dict(npd.DEFAULTS)
+    mon = (0, 0, 1920, 1080)
+    check(npd.initial_place(p, (500, 400), mon, (220, 340), False) == (390, 230, False) and
+          npd.initial_place(p, (500, 400), mon, (220, 340), True)[2] is True and
+          npd.initial_place(dict(p, move_pointer=False), (500, 400), mon, (220, 340), False)[:2]
+          == (524, 287) and
+          npd.initial_place(dict(p, next_to_cursor=False, move_pointer=False, x=10, y=20),
+                            (500, 400), mon, (220, 340), False) == (10, 20, False) and
+          npd.initial_place(p, (1900, 1070), mon, (220, 340), False)[:2] == (1700, 740),
+          "numpad: where it opens (under the pointer on Wayland, beside it, last place, on screen)")
+    os.environ["XDG_CONFIG_HOME"] = os.path.join(d, "cfg")
+    npd.save_prefs(dict(p, auto_hide=False, x=33, y=44, scale=9))
+    q = npd.load_prefs()
+    check(q["auto_hide"] is False and (q["x"], q["y"]) == (33, 44) and q["scale"] == npd.SCALE_MAX,
+          "numpad: options, place and size kept")
+    del os.environ["XDG_CONFIG_HOME"]
+
+
 def main():
     tdxd = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build",
                                                               os.uname().machine, "tdxd")
@@ -812,6 +843,7 @@ def main():
         conf_file_tests(d)
         gui_tests(d, tdxd)
         radial_tests(d)
+        numpad_tests(d)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

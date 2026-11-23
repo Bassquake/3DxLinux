@@ -48,6 +48,10 @@ static int open_keyboard(const struct tdx_device_def *dev, const struct tdx_conf
 		return -1;
 	ioctl(fd, UI_SET_EVBIT, EV_KEY);
 	ioctl(fd, UI_SET_EVBIT, EV_SYN);
+	/* the Num Lock LED: the desktop keeps it as its Num Lock state, so the
+	 * Virtual NumPad's keypad keys can type digits whatever it is */
+	ioctl(fd, UI_SET_EVBIT, EV_LED);
+	ioctl(fd, UI_SET_LEDBIT, LED_NUML);
 	for (int i = 0; i < cfg->nkeymap; i++)
 		for (int k = 0; k < TDX_MAX_KEYS && cfg->keymap[i].keys[k]; k++)
 			if (cfg->keymap[i].keys[k] < BTN_MISC || cfg->keymap[i].keys[k] >= KEY_OK)
@@ -78,6 +82,7 @@ int tdx_uinput_open(struct tdx_uinput *u, const struct tdx_device_def *dev,
 		    const struct tdx_config *cfg)
 {
 	u->kfd = -1;
+	u->numlock = -1;
 	u->fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
 	if (u->fd < 0)
 		return -errno;
@@ -181,7 +186,17 @@ int tdx_uinput_open_keys(struct tdx_uinput *u, const struct tdx_device_def *dev,
 	u->fd = -1;
 	u->nbuttons = 0;
 	u->kfd = open_keyboard(dev, cfg);
+	u->numlock = -1;
 	return u->kfd < 0 ? -1 : 0;
+}
+
+int tdx_uinput_numlock(struct tdx_uinput *u)
+{
+	struct input_event ev;
+	while (u->kfd >= 0 && read(u->kfd, &ev, sizeof ev) == (ssize_t)sizeof ev)
+		if (ev.type == EV_LED && ev.code == LED_NUML)
+			u->numlock = ev.value != 0;
+	return u->numlock;
 }
 
 void tdx_uinput_close(struct tdx_uinput *u)

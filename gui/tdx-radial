@@ -6,7 +6,7 @@ button does by default); a second press closes it. The menu opens centred on
 the pointer, as 3DxWare's: four slices round a close button, as in Base.xml's
 Base_MenuRM1:
 
-    top     Virtual NumPad  (Driver_Toggle_3DxNumPad: not on Linux yet, greyed)
+    top     Virtual NumPad  (Driver_Toggle_3DxNumPad: tdx-numpad, next to the menu)
     right   Redo            (Macro_Redo)
     bottom  Properties...   (Driver_ShowDriverGUI: 3Dconnexion Settings)
     left    Undo            (Macro_Undo)
@@ -42,7 +42,7 @@ APP_VERSION = "dev"
 # Base_MenuRM1 (Common Tools), MenuButton_1..4 clockwise from the top:
 # (label, icon, what it does)
 COMMON_TOOLS = [
-    ("Virtual\nNumPad", "Driver_Toggle_3DxNumPad.png", None),  # not on Linux yet
+    ("Virtual\nNumPad", "Driver_Toggle_3DxNumPad.png", ("numpad", "tdx-numpad")),
     ("Redo", "Macro_Redo.png", ("keys", "KEY_LEFTCTRL+KEY_LEFTSHIFT+KEY_Z")),
     ("Properties...", "Driver_ShowDriverGUI.png", ("run", "tdx-settings")),
     ("Undo", "Macro_Undo.png", ("keys", "KEY_LEFTCTRL+KEY_Z")),
@@ -122,22 +122,24 @@ def tdxd_request(sock, line):
         s.close()
 
 
-def run_detached(prog):
-    """Start @prog so that it outlives the menu. tdxd runs the menu as a systemd
+def run_detached(argv):
+    """Start @argv so that it outlives the menu. tdxd runs the menu as a systemd
     user unit, and systemd stops everything in it when the menu exits: so the
-    program gets a unit of its own (tdx-settings: the one the MENU button uses,
-    so a second one isn't started). Without a user manager (WSL), a new session."""
-    unit = "tdx-settings-menu" if prog == "tdx-settings" else prog + "-radial"
+    program gets a unit of its own, the one tdxd uses for it (tdx-settings-menu
+    as the MENU button's, tdx-numpad), so a second one isn't started. Without a
+    user manager (WSL), a new session."""
+    prog = argv[0]
+    unit = "tdx-settings-menu" if prog == "tdx-settings" else prog
     try:
-        r = subprocess.run(["systemd-run", "--user", "--unit=" + unit, "--collect", "--quiet",
-                            prog], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        r = subprocess.run(["systemd-run", "--user", "--unit=" + unit, "--collect", "--quiet"]
+                           + argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=5)
         if r.returncode == 0:
             return
     except (OSError, subprocess.TimeoutExpired):
         pass
     try:
-        subprocess.Popen([prog], start_new_session=True,
+        subprocess.Popen(argv, start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     except OSError as e:
         print("tdx-radial: %s: %s" % (prog, e), file=sys.stderr)
@@ -178,6 +180,7 @@ class RadialMenu(Gtk.Window):
                          else Gtk.WindowType.TOPLEVEL)
         self.sock, self.items = sock, items
         self.anim = None
+        self.origin = (0, 0)
         self.at = None           # the pointer when the menu opened
         self.pointer = None
         self.hover = None        # a slice 0..3, "close", or None
@@ -223,6 +226,7 @@ class RadialMenu(Gtk.Window):
             _s, x, y = disp.get_default_seat().get_pointer().get_position()
             g = (disp.get_monitor_at_point(x, y) or disp.get_monitor(0)).get_geometry()
             self.move(g.x, g.y)
+            self.origin = (g.x, g.y)  # the pointer in screen coordinates, for tdx-numpad
             self.set_default_size(g.width, g.height)
             self.set_size_request(g.width, g.height)
         else:
@@ -340,7 +344,11 @@ class RadialMenu(Gtk.Window):
             if not out.startswith("ok"):
                 print("tdx-radial: " + out.strip(), file=sys.stderr)
         elif a and a[0] == "run":
-            run_detached(a[1])
+            run_detached([a[1]])
+        elif a and a[0] == "numpad":  # next to where the menu opened
+            x, y = self.at if self.at else (0, 0)
+            run_detached([a[1], "-s", self.sock, "--at",
+                          "%d,%d" % (x + self.origin[0], y + self.origin[1])])
         Gtk.main_quit()
         return False
 

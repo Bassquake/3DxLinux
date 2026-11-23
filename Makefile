@@ -132,6 +132,7 @@ install: all
 	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-tray | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-tray
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-radial | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-radial
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-numpad | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-numpad
 	install -Dm755 packaging/tdx-focus-kwin $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-focus-kwin
 	install -Dm755 tools/extract_3dxware_ui.py $(DESTDIR)$(PREFIX)/bin/tdx-extract-3dxware-ui
 	install -Dm755 $(BUILD)/tdx-lcdmgr $(DESTDIR)$(PREFIX)/bin/tdx-lcdmgr
@@ -179,6 +180,7 @@ dist:
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings > $(DIST)/bin/tdx-settings
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-tray > $(DIST)/bin/tdx-tray
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-radial > $(DIST)/bin/tdx-radial
+	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-numpad > $(DIST)/bin/tdx-numpad
 	cp gui/tdx-settings-helper packaging/tdx-focus-kwin $(DIST)/lib/
 	cp tools/extract_3dxware_ui.py $(DIST)/bin/tdx-extract-3dxware-ui
 	cp $(BUILD)/tdx-lcdmgr $(BUILD)/tdx-lcd-demo $(DIST)/bin/

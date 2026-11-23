@@ -147,6 +147,7 @@ static int nkey_union;
 static void on_sig(int s) { if (s == SIGHUP) g_reload = 1; else g_quit = 1; }
 static void open_settings(void);
 static void open_radial(void);
+static void open_numpad(void);
 static int device_rezero(struct dev_ctx *d);
 
 static long long now_ms(void)
@@ -626,6 +627,8 @@ static void rcv_mouse_buttons(struct rcv_ctx *r, uint8_t bits)
 				open_settings();
 			else if (act == TDX_ACT_COMMONTOOLS)
 				open_radial();
+			else if (act == TDX_ACT_NUMPAD)
+				open_numpad();
 			else if (act == TDX_ACT_CALIBRATE)
 				for (int k = 0; k < ndev; k++)
 					device_rezero(&devs[k]);
@@ -831,21 +834,21 @@ static const char settings_script[] =
  * while it is open closes it. Started from a desktop's own terminal (tdxd
  * with a DISPLAY, as when testing), it runs there; tdx-radial itself closes
  * an open one then. */
-static const char radial_script[] =
+static const char toggle_script[] = /* $1: tdx-radial or tdx-numpad (its unit too) */
 	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n"
 	"if [ -z \"$s\" ]; then\n"
-	"  [ -n \"$DISPLAY$WAYLAND_DISPLAY\" ] && exec tdx-radial -s \"$TDX_SOCK\"\n"
+	"  [ -n \"$DISPLAY$WAYLAND_DISPLAY\" ] && exec \"$1\" -s \"$TDX_SOCK\"\n"
 	"  exit 0\n"
 	"fi\n"
 	"u=$(loginctl show-session \"$s\" -p Name --value 2>/dev/null)\n"
 	"[ -n \"$u\" ] && [ \"$u\" != root ] || exit 0\n"
-	"if systemctl --user --machine=\"$u@\" is-active --quiet tdx-radial-menu; then\n"
-	"  exec systemctl --user --machine=\"$u@\" stop tdx-radial-menu\n"
+	"if systemctl --user --machine=\"$u@\" is-active --quiet \"$1\"; then\n"
+	"  exec systemctl --user --machine=\"$u@\" stop \"$1\"\n"
 	"fi\n"
-	"exec systemd-run --user --machine=\"$u@\" --unit=tdx-radial-menu --collect --quiet "
-	"tdx-radial -s \"$TDX_SOCK\"\n";
+	"exec systemd-run --user --machine=\"$u@\" --unit=\"$1\" --collect --quiet "
+	"\"$1\" -s \"$TDX_SOCK\"\n";
 
-static void session_run(const char *script)
+static void session_run(const char *script, const char *arg)
 {
 	pid_t pid = fork();
 	if (pid < 0)
@@ -861,7 +864,7 @@ static void session_run(const char *script)
 					dup2(nul, 2);
 			}
 			setenv("TDX_SOCK", cfg.control_socket, 1); /* tdx-radial's Undo/Redo */
-			execl("/bin/sh", "sh", "-c", script, (char *)NULL);
+			execl("/bin/sh", "sh", "-c", script, "sh", arg, (char *)NULL);
 			_exit(127);
 		}
 		_exit(0);
@@ -871,13 +874,19 @@ static void session_run(const char *script)
 
 static void open_radial(void)
 {
-	session_run(radial_script);
+	session_run(toggle_script, "tdx-radial");
 	LOG(1, "radial menu: asked the active session to show Common Tools\n");
+}
+
+static void open_numpad(void)
+{
+	session_run(toggle_script, "tdx-numpad");
+	LOG(1, "Virtual NumPad: asked the active session to show or hide it\n");
 }
 
 static void open_settings(void)
 {
-	session_run(settings_script);
+	session_run(settings_script, "");
 	LOG(1, "MENU: asked the active session to open tdx-settings\n");
 }
 
@@ -1223,6 +1232,22 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		else if (!ui)
 			snprintf(reply, len, "error: no keyboard device\n");
 		else {
+			/* the Virtual NumPad's keypad digits: with Num Lock off they
+			 * would move the cursor, so it goes on for them and back off
+			 * (3DxWare sends VK_NUMPAD0.. which ignore Num Lock) */
+			int digits = 0;
+			for (int k = 0; k < n; k++)
+				digits |= (km.keys[k] >= KEY_KP7 && km.keys[k] <= KEY_KP0 &&
+					   km.keys[k] != KEY_KPMINUS && km.keys[k] != KEY_KPPLUS) ||
+					  km.keys[k] == KEY_KPDOT;
+			if (digits && tdx_uinput_numlock(ui) == 0 && n + 2 <= TDX_MAX_KEYS) {
+				memmove(km.keys + 1, km.keys, sizeof km.keys[0] * (size_t)n);
+				km.keys[0] = km.keys[n + 1] = KEY_NUMLOCK;
+				for (int k = 1; k <= n; k++)
+					km.step[k] = 1;
+				km.step[n + 1] = 2;
+				km.keys[n + 2] = 0;
+			}
 			tdx_uinput_keys(ui, &km, 1);
 			snprintf(reply, len, "ok %d keys\n", n);
 		}
@@ -1458,6 +1483,8 @@ static void handle_buttons(struct dev_ctx *d, const uint8_t prev[TDX_MAX_BUTTONS
 				open_settings();
 			else if (act == TDX_ACT_COMMONTOOLS)
 				open_radial();
+			else if (act == TDX_ACT_NUMPAD)
+				open_numpad();
 			continue;
 		}
 		const struct tdx_keymap *km = tdx_keymap_for(&cfg, d->node.def, i);

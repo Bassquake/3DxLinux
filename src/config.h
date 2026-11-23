@@ -38,6 +38,7 @@ enum tdx_action {
 	TDX_ACT_COMMONTOOLS,  /* "Common Tools" (Base_RadialMenu_CommonTools): 3DxWare's
 			       * radial menu, shown by tdx-radial; a CadMouse's radial
 			       * button does it by default */
+	TDX_ACT_NUMPAD,       /* "Virtual NumPad" (Driver_Toggle_3DxNumPad): tdx-numpad */
 	TDX_ACT_COUNT
 };
 #define TDX_MAX_ACTIONS 64
