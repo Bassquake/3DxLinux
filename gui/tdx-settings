@@ -1173,7 +1173,7 @@ window.tdx-frameless, window.tdx-frameless decoration {
   min-height: 0; }
 .tdx button.tdx-link label { color: #9a9a9a; }
 .tdx button.tdx-link:hover label { color: #0078d7; }
-.tdx-picker { background-color: #ffffff; border: 1px solid #c8c8c8;
+.tdx-picker, window.tdx-picker { background-color: #ffffff; border: 1px solid #c8c8c8;
   border-radius: 0; padding: 0; }
 .tdx-picker entry { min-height: 26px; }
 .tdx-picker button.tdx-pick-item { background: none; border: none; border-radius: 0;
@@ -2220,10 +2220,22 @@ class ActionPicker:
         self.panel, self.v2dk, self.default = panel, v2dk, default
         self.current = panel.current_item(v2dk)
         self.open = set()
-        pop = self.pop = Gtk.Popover.new(widget)
-        pop.set_position(Gtk.PositionType.RIGHT)
+        # a pop-up window, as GTK's menus are, not a Gtk.Popover: a popover
+        # stays inside its window, and the list must reach past the Buttons
+        # window's edge (X11: a popup window; Wayland: an xdg popup)
+        self.widget = widget
+        pop = self.pop = Gtk.Window(type=Gtk.WindowType.POPUP)
+        pop.set_type_hint(Gdk.WindowTypeHint.DROPDOWN_MENU)
+        top = widget.get_toplevel()
+        if isinstance(top, Gtk.Window):
+            pop.set_transient_for(top)
+        pop.set_attached_to(widget)
         for c in ("tdx", "tdx-picker"):
             pop.get_style_context().add_class(c)
+        pop.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        pop.connect("button-press-event", self.on_press)
+        pop.connect("key-press-event", self.on_key)
+        pop.connect("grab-broken-event", lambda *_: self.close() or False)
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.search = Gtk.Entry()
         self.search.set_margin_start(10)
@@ -2268,8 +2280,57 @@ class ActionPicker:
         outer.show_all()
 
     def popup(self):
-        self.pop.popup()
+        """Beside the button's row, to its right (flipped left at the screen's
+        edge), with the input grabbed as a menu does: a click anywhere else
+        or Esc closes it."""
+        w = self.widget
+        top = w.get_toplevel()
+        self.pop.realize()
+        gw = self.pop.get_window()
+        coords = w.translate_coordinates(top, 0, 0) if isinstance(top, Gtk.Window) else None
+        if gw and coords:
+            rect = Gdk.Rectangle()
+            rect.x, rect.y = coords
+            rect.width, rect.height = w.get_allocated_width(), w.get_allocated_height()
+            gw.move_to_rect(rect, Gdk.Gravity.NORTH_EAST, Gdk.Gravity.NORTH_WEST,
+                            Gdk.AnchorHints.FLIP_X | Gdk.AnchorHints.SLIDE_Y |
+                            Gdk.AnchorHints.RESIZE_Y, 10, -24)
+        self.pop.show_all()
+        self.pop.grab_add()
+        seat = Gdk.Display.get_default().get_default_seat()
+        if gw and seat:
+            seat.grab(gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
         self.search.grab_focus()
+
+    def inside(self, ev):
+        gw = self.pop.get_window()
+        if not gw:
+            return False
+        _ok, ox, oy = gw.get_origin()
+        return (ox <= ev.x_root < ox + gw.get_width() and
+                oy <= ev.y_root < oy + gw.get_height())
+
+    def on_press(self, _w, ev):
+        if not self.inside(ev):  # a click elsewhere: close, as a menu does
+            self.close()
+            return True
+        return False
+
+    def on_key(self, _w, ev):
+        if ev.keyval == Gdk.KEY_Escape:
+            self.close()
+            return True
+        return False
+
+    def close(self):
+        if getattr(self, "closed", False):
+            return
+        self.closed = True
+        self.pop.grab_remove()
+        seat = Gdk.Display.get_default().get_default_seat()
+        if seat:
+            seat.ungrab()
+        self.pop.destroy()
 
     # ---- resizing by the grip
     def grip_press(self, _w, ev):
@@ -2280,6 +2341,7 @@ class ActionPicker:
         y0, h0 = getattr(self, "drag", (ev.y_root, self.H_DEFAULT))
         h = int(max(self.H_MIN, min(self.H_MAX, h0 + ev.y_root - y0)))
         self.sw.set_size_request(self.W, h)
+        self.pop.resize(1, 1)  # shrink as well as grow with the list
         self.panel.app.picker_height = h
         return True
 
@@ -2395,7 +2457,7 @@ class ActionPicker:
         self.fill()
 
     def choose(self, it):
-        self.pop.popdown()
+        self.close()
         if it.get("custom"):
             self.panel.capture(self.v2dk, self.default)
         else:

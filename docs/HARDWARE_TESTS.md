@@ -504,3 +504,4 @@ CadMouse Compact Wireless (c658) paired to it.
 | CadMouse Advanced Settings label (`3DxLinux.0.3.4+69+ge279646`) | **Pass:** the greyed wheel mode reads "One page / one screen (Windows only)". |
 | Device unplugged with windows open (Kubuntu 26.04, `3DxLinux.0.3.4+71+gdde8a86`) | **Pass:** the open windows close and the main window shows what is left. |
 | CadMouse Buttons: Application Specific Settings (`3DxLinux.0.3.4+75+g9c7ec97`) | **Pass:** 3DxWare's slider switch (dark grey off, blue on), replacing the tick box. |
+| CadMouse Buttons: 3DxWare's action picker (WSLg, demo status) | **Pass:** search, folder sections, the current function highlighted, the grip; after a first try it was clipped inside the Buttons window (a Gtk.Popover), now a pop-up window that reaches past it. |
