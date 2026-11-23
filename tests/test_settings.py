@@ -528,6 +528,43 @@ def gui_tests(d, tdxd):
     check(main.mode == "3d" and main.speed.get_sensitive() and main.lcd_button.get_visible(),
           "receiver unplugged: the SpacePilot again")
 
+    # ---- a device unplugged: the other windows close, back to the main window
+    two = ("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+           "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n"
+           "receiver Universal Receiver [256f:c652] firmware 1.06\n"
+           "paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery 50 "
+           "charging no seen 2 active yes serial Y1224194699\n")
+    with open(Args.status_file, "w") as f:
+        f.write(two)
+    app.follow_tick()
+    app.window(ts.ButtonsPanel)
+    app.window(ts.ReceiverAdvancedPanel)
+    check(len(app.windows) == 2, "two windows open")
+    with open(Args.status_file, "w") as f:  # the receiver unplugged
+        f.write(two.split("receiver ")[0])
+    app.follow_tick()
+    check(not app.windows and main.mode == "3d", "receiver unplugged: windows closed, main window")
+    with open(Args.status_file, "w") as f:
+        f.write(two)
+    app.follow_tick()
+    app.window(ts.AddDevicePanel)
+    addw = [p for p in app.panels if isinstance(p, ts.AddDevicePanel)][0]
+    addw.page = "pairing"  # pairing: the receiver drops off USB for a moment
+    with open(Args.status_file, "w") as f:
+        f.write(two.split("receiver ")[0])
+    app.follow_tick()
+    check(ts.AddDevicePanel in app.windows, "while pairing the Add device window stays open")
+    addw.page = "done"
+    with open(Args.status_file, "w") as f:  # a device plugged in: nothing closes
+        f.write(two)
+    app.follow_tick()
+    check(ts.AddDevicePanel in app.windows, "a device plugged in closes nothing")
+    app.windows[ts.AddDevicePanel].destroy()
+    with open(Args.status_file, "w") as f:
+        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+                "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")
+    app.follow_tick()
+
     # ---- More: 3DxWare's menu
     menu = app.build_more_menu()
     items = menu.get_children()

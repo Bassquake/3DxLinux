@@ -3379,6 +3379,10 @@ class App:
         st = self.daemon.status()
         if self.device_key(st) != self.device_key(self.status):
             # a device plugged in or out, or tdxd started / stopped
+            gone = ({e["key"] for e in device_entries(self.status)} -
+                    {e["key"] for e in device_entries(st)})
+            if gone and not self.device_change_expected():
+                self.close_panels()  # back to the main window, as 3DxWare
             self.status = st
             for p in self.panels:
                 p.refresh()
@@ -3468,6 +3472,27 @@ class App:
         w.set_resizable(False)
         w.add(panel.box)
         return w
+
+    def device_change_expected(self):
+        """A device going away that the panel asked for: while pairing the
+        receiver drops off USB for a moment, and removing a device takes it
+        out of the list. Those windows stay open to show the result."""
+        for p in self.panels:
+            if isinstance(p, AddDevicePanel) and p.page == "pairing":
+                return True
+            if isinstance(p, ReceiverAdvancedPanel) and p.removing is not None:
+                return True
+        return False
+
+    def close_panels(self):
+        """A device was unplugged: close every window but the main one (and
+        the device chooser), so the main window shows what is left."""
+        for w in list(self.windows.values()):
+            w.destroy()
+        pop = getattr(self.main, "popover", None) if self.main else None
+        if pop:
+            pop.popdown()
+        self.selected = None
 
     def window(self, cls):
         if cls in self.windows:
