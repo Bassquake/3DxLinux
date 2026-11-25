@@ -158,6 +158,8 @@ class Dock(Gtk.Window):
         self.connect("button-press-event", self.on_press)
         self.connect("button-release-event", self.on_release)
         self.connect("leave-notify-event", lambda *_: self.set_hover(None))
+        self.set_has_tooltip(True)
+        self.connect("query-tooltip", self.on_tooltip)
         mon = self.monitor()
         place = load_place()
         if place:
@@ -263,7 +265,7 @@ class Dock(Gtk.Window):
             cr.paint()
         for x, gi, i in self.cells():
             cr.rectangle(x, PAD, CELL_W, H - 2 * PAD)
-            cr.set_source_rgb(*(CELL_HOVER if self.hover == "buttons" else CELL))
+            cr.set_source_rgb(*(CELL_HOVER if self.hover == (gi, i) else CELL))
             cr.fill()
             pb = self.pbs[gi][i] if getattr(self, "pbs", None) else None
             if pb:
@@ -272,16 +274,35 @@ class Dock(Gtk.Window):
                 cr.paint()
         return False
 
+    def cell_at(self, x):
+        """("app", None) or (group, index) under x."""
+        if x < APP_W:
+            return ("app", None)
+        for cx, gi, i in self.cells():
+            if cx <= x < cx + CELL_W:
+                return (gi, i)
+        return None
+
     def set_hover(self, h):
         if h != self.hover:
             self.hover = h
-            tip = None
-            if h == "buttons":
-                tip = "  ·  ".join(l for g in self.faces for l, _i in g) + \
-                    "\nClick: the Buttons window. Drag: move it."
-            self.set_tooltip_text(tip)
             self.queue_draw()
+            self.trigger_tooltip_query()
         return False
+
+    def on_tooltip(self, _w, x, _y, _kb, tip):
+        """As 3DxWare's: each button its function's name (the app: its name)."""
+        c = self.cell_at(x)
+        if not c:
+            return False
+        if c[0] == "app":
+            if not self.app:
+                return False
+            tip.set_text(self.app)
+        else:
+            gi, i = c
+            tip.set_text(self.faces[gi][i][0])
+        return True
 
     # ---- moving it, and its click
     def on_motion(self, _w, ev):
@@ -297,7 +318,7 @@ class Dock(Gtk.Window):
                 else:
                     self.press = (x0, y0, True)
             return True
-        self.set_hover("buttons" if ev.x >= APP_W else "app")
+        self.set_hover(self.cell_at(ev.x))
         return True
 
     def on_press(self, _w, ev):

@@ -994,6 +994,9 @@ def osd_tests(d):
     labels = [[l for l, _i in g] for g in dock.faces]
     check(not dock.off and labels == [["Middle Mouse Function"], ["Backward Mouse Button", "Undo"]],
           "osd: the middle, back and forward buttons' functions, as set")
+    x_fwd = [cx for cx, g, i in dock.cells() if (g, i) == (1, 1)][0]
+    check(dock.cell_at(5) == ("app", None) and dock.cell_at(x_fwd + 3) == (1, 1) and
+          dock.faces[1][1][0] == "Undo", "osd: each cell its own (tooltip: its function)")
     with open(conf, "a") as f:
         f.write("mouse_osd = no\n")
     dock.update()
