@@ -965,6 +965,46 @@ def own_settings_tests(d):
           "own settings: Reset removes yours, /etc stays")
 
 
+def osd_tests(d):
+    """tdx-osd: 3DxWare's On-Screen Display (MouseBar) for a CadMouse."""
+    ld = importlib.machinery.SourceFileLoader("tdx_osd", os.path.join(ROOT, "gui", "tdx-osd"))
+    sp = importlib.util.spec_from_loader("tdx_osd", ld)
+    osd = importlib.util.module_from_spec(sp)
+    ld.exec_module(osd)
+    conf = os.path.join(d, "osd.conf")
+    with open(conf, "w") as f:
+        f.write("mouse_osd = yes\nkey_V2DK_FORWARD = KEY_LEFTCTRL+KEY_Z\n")
+
+    class Fake:
+        def __init__(self, *_a):
+            pass
+
+        def status(self):
+            return {"running": True, "profile": "default", "app": "gimp", "devices": [],
+                    "receivers": [{"paired": [{"active": True}]}]}
+
+    real = osd.ts.Daemon
+    osd.ts.Daemon = Fake
+    os.environ["XDG_CONFIG_HOME"] = os.path.join(d, "osd-cfg")
+
+    class Args:
+        config, socket = conf, os.path.join(d, "none.sock")
+    dock = osd.Dock(Args)
+    dock.update()
+    labels = [[l for l, _i in g] for g in dock.faces]
+    check(not dock.off and labels == [["Middle Mouse Function"], ["Backward Mouse Button", "Undo"]],
+          "osd: the middle, back and forward buttons' functions, as set")
+    with open(conf, "a") as f:
+        f.write("mouse_osd = no\n")
+    dock.update()
+    check(dock.off, "osd: unticked, the dock goes")
+    osd.save_place(12, 34)
+    check(osd.load_place() == (12, 34), "osd: its place kept")
+    dock.destroy()
+    osd.ts.Daemon = real
+    del os.environ["XDG_CONFIG_HOME"]
+
+
 def icon_tests(d):
     """A radial menu's icon: Select your icon, and where it is shown."""
     check(ts.icon_file(None) is None and ts.icon_file(os.path.join(d, "none.png")) is None and
@@ -1005,6 +1045,7 @@ def main():
         numpad_tests(d)
         icon_tests(d)
         own_settings_tests(d)
+        osd_tests(d)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

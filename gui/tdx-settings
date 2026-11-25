@@ -232,7 +232,7 @@ class KwinMice:
                 self.put(p, "scrollFactor", GLib.Variant("d", n / 3.0))
             except GLib.Error:
                 pass
-DAEMON_ONLY = {"mouse_dpi", "mouse_polling_rate", "mouse_smart_scrolling",
+DAEMON_ONLY = {"mouse_dpi", "mouse_polling_rate", "mouse_smart_scrolling", "mouse_osd",
                "uinput", "spnav", "spnav_socket", "control_socket", "profile_dir", "lcd",
                "lcd_bmp_dir", "verbose"}
 BRIGHTNESS = [("Low", 30), ("Medium", 60), ("High", 90)]
@@ -2944,6 +2944,28 @@ def icon_file(spec):
     return ASSETS.icon(spec)
 
 
+def start_osd(sock=None):
+    """tdx-osd, the On-Screen Display, in a unit of its own (it ends itself
+    when "Always show On-Screen Display" is unticked)."""
+    prog = find_program("tdx-osd") or shutil.which("tdx-osd")
+    if not prog:
+        return
+    argv = [prog] + (["-s", sock] if sock else [])
+    try:
+        r = subprocess.run(["systemd-run", "--user", "--unit=tdx-osd", "--collect", "--quiet"] +
+                           argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=5)
+        if r.returncode == 0:
+            return
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
 def custom_icon_dir():
     base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
     return os.path.join(base, "tdxd", "radial-icons")
@@ -3642,9 +3664,11 @@ class MouseButtonsPanel(BindingRows, Panel):
         self.swap = self.put(Gtk.CheckButton(label="Swap Middle / Right Mouse Buttons"), 31, 292)
         self.swap.connect("toggled", self.guard(
             lambda b: self.set_value("mouse_swap_buttons", "yes" if b.get_active() else "no")))
-        osd = self.put(Gtk.CheckButton(label="Always show On-Screen Display"), 31, 314)
-        osd.set_sensitive(False)
-        osd.set_tooltip_text("3DxWare's on-screen display: not on Linux")
+        # 3DxWare's On-Screen Display (3DxVirtualLCD's MouseBar): tdx-osd's dock
+        self.osd = self.put(Gtk.CheckButton(label="Always show On-Screen Display"), 31, 314)
+        self.osd.set_tooltip_text("A small dock with the application and the middle, back and "
+                                  "forward buttons' functions; drag it anywhere")
+        self.osd.connect("toggled", self.guard(self.on_osd))
         self.close = self.put(flat_button("Close", 94), 426, 362)
 
     # ---- where the CadMouse buttons are kept
@@ -3741,7 +3765,15 @@ class MouseButtonsPanel(BindingRows, Panel):
             tb.set_tooltip_text(tip or "Click and type a shortcut")
             self.set_row_icon(slot, icon)
         self.swap.set_active(parse_bool(self.value("mouse_swap_buttons") or "no"))
+        self.osd.set_active(parse_bool(self.store.base.get("mouse_osd") or "no"))
         self.updating = False
+
+    def on_osd(self, b):
+        """For every application (as 3DxWare's AlwaysOn): the dock comes now."""
+        self.store.base.set("mouse_osd", "yes" if b.get_active() else "no")
+        self.store.changed()
+        if b.get_active():
+            start_osd(self.app.daemon.socket)
 
     def capture(self, v2dk, default):
         dlg = KeyCaptureDialog(self.box.get_toplevel(), default)
@@ -5346,6 +5378,11 @@ class App:
         bring_back()  # after the tray's Quit
         if getattr(self.args, "show_about", False):  # back from importing the 3DxWare look
             GLib.idle_add(lambda: self.show_about() or False)
+        if getattr(self.args, "buttons", False):  # from the On-Screen Display: the CadMouse's
+            mice = [e for e in device_entries(self.status) if e["kind"] == "paired"]
+            if mice:
+                self.selected = mice[0]["key"]
+            GLib.idle_add(lambda: self.show_buttons() or False)
         Gtk.main()
 
     # ---- --snapshot
@@ -5389,6 +5426,8 @@ def main():
     ap.add_argument("--status-file", help=argparse.SUPPRESS)  # canned `tdxctl status` (tests)
     ap.add_argument("--no-save", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--show-about", action="store_true", help=argparse.SUPPRESS)  # after an import
+    ap.add_argument("--buttons", action="store_true",
+                    help="open the Buttons window too (the On-Screen Display's click)")
     ap.add_argument("-V", "--version", action="version", version="tdx-settings " + APP_VERSION)
     args = ap.parse_args()
     ASSETS = Assets(args.assets) if not args.no_assets else Assets("/nonexistent")

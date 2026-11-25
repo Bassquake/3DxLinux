@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""tdx-osd: 3DxWare's On-Screen Display for a CadMouse (3DxVirtualLCD's
+MouseBar) on Linux.
+
+A small dock that stays on the screen while "Always show On-Screen Display"
+is ticked in the CadMouse's Buttons window (mouse_osd = yes): the focused
+application's icon, then the function of the middle button, and of the back
+and forward buttons, as their icons in the Buttons window - they change with
+your settings and with the application's profile. Drag it anywhere (its place
+is kept in ~/.config/tdxd/osd.json); a click opens the Buttons window.
+
+Like the NumPad it never takes the keyboard focus (Wayland: a gtk-layer-shell
+surface). The tray starts it at login and the Buttons window when you tick the
+box; it ends itself when the box is unticked. 3DxWare also lights a button
+while it is pressed; the CadMouse does its mouse functions itself, so tdxd
+doesn't see those presses and the dock doesn't light them.
+"""
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+
+
+def load_settings_module():
+    """3Dconnexion Settings (tdx-settings): its Buttons window's icons and the
+    way it reads your settings, so the dock shows what the window shows."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    for p in (os.path.join(here, "tdx-settings"), shutil.which("tdx-settings") or ""):
+        if p and os.path.isfile(p):
+            ld = importlib.machinery.SourceFileLoader("tdx_settings", p)
+            spec = importlib.util.spec_from_loader("tdx_settings", ld)
+            mod = importlib.util.module_from_spec(spec)
+            ld.exec_module(mod)
+            return mod
+    raise SystemExit("tdx-osd: tdx-settings not found")
+
+
+ts = load_settings_module()
+Gtk, Gdk, GLib, GdkPixbuf = ts.Gtk, ts.Gdk, ts.GLib, ts.GdkPixbuf
+try:
+    ts.gi.require_version("GtkLayerShell", "0.1")
+    from gi.repository import GtkLayerShell  # noqa: E402
+except (ValueError, ImportError):
+    GtkLayerShell = None
+
+APP_VERSION = "dev"
+
+# 3DxVirtualLCD's MouseBar: the application, then V2DK_MIDDLE | V2DK_BACKWARD,
+# V2DK_FORWARD (measured at 100 %: a 170 x 32 bar)
+GROUPS = [["V2DK_MIDDLE"], ["V2DK_BACKWARD", "V2DK_FORWARD"]]
+H, PAD, APP_W, CELL_W, GAP, ICON = 32, 2, 34, 44, 3, 20
+BAR = (0x3e / 255,) * 3
+CELL = (0xe6 / 255,) * 3
+CELL_HOVER = (0xf4 / 255,) * 3
+POLL_MS = 1500
+
+
+def osd_path():
+    return os.path.join(ts.user_settings_dir(), "osd.json")
+
+
+def load_place():
+    try:
+        with open(osd_path()) as f:
+            d = json.load(f)
+        return int(d["x"]), int(d["y"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def save_place(x, y):
+    try:
+        os.makedirs(os.path.dirname(osd_path()), exist_ok=True)
+        with open(osd_path(), "w") as f:
+            json.dump({"x": x, "y": y}, f)
+    except OSError:
+        pass
+
+
+def pidfile():
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
+                        "tdx-osd-%d.pid" % os.getuid())
+
+
+def running():
+    try:
+        with open(pidfile()) as f:
+            pid = int(f.read().strip())
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return b"tdx-osd" in f.read() and pid != os.getpid()
+    except (OSError, ValueError):
+        return False
+
+
+class Faces:
+    """What the Buttons window shows for a CadMouse button (its functions,
+    borrowed from MouseButtonsPanel), for the profile tdxd uses now."""
+    specific = ts.MouseButtonsPanel.specific
+    conf = ts.MouseButtonsPanel.conf
+    value = ts.MouseButtonsPanel.value
+    binding = ts.MouseButtonsPanel.binding
+    current_item = ts.MouseButtonsPanel.current_item
+    picker_sections = ts.MouseButtonsPanel.picker_sections
+    describe = ts.MouseButtonsPanel.describe
+
+    def __init__(self, store):
+        self.store = store
+
+    def face(self, v2dk):
+        default = next((d for k, _c, d, _x, _y in ts.MOUSE_BUTTONS if k == v2dk), v2dk)
+        label, icon, _tip = self.describe(v2dk, default)
+        return label, icon
+
+
+def osd_on(store):
+    return ts.parse_bool(store.base.get("mouse_osd") or "no")
+
+
+class Dock(Gtk.Window):
+    def __init__(self, args):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.args = args
+        self.daemon = ts.Daemon(args.socket)
+        self.store = None
+        self.app = None
+        self.faces = []
+        self.hover = None
+        self.press = None
+        self.width = APP_W + sum(len(g) * CELL_W for g in GROUPS) + GAP * (len(GROUPS) - 1) + PAD
+        disp = Gdk.Display.get_default()
+        self.x11 = "X11" in type(disp).__name__
+        self.layer = not self.x11 and GtkLayerShell is not None and (
+            not hasattr(GtkLayerShell, "is_supported") or GtkLayerShell.is_supported())
+        self.set_title("On-Screen Display")
+        self.set_decorated(False)
+        self.set_app_paintable(True)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_accept_focus(False)
+        self.set_focus_on_map(False)
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        visual = self.get_screen().get_rgba_visual()
+        if visual:
+            self.set_visual(visual)
+        self.set_size_request(self.width, H)
+        self.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_PRESS_MASK |
+                        Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.connect("draw", self.on_draw)
+        self.connect("motion-notify-event", self.on_motion)
+        self.connect("button-press-event", self.on_press)
+        self.connect("button-release-event", self.on_release)
+        self.connect("leave-notify-event", lambda *_: self.set_hover(None))
+        mon = self.monitor()
+        place = load_place()
+        if place:
+            self.px, self.py = place
+        else:  # bottom right, above a panel, as 3DxWare's beside the taskbar
+            self.px, self.py = mon[2] - self.width - 160, mon[3] - H - 60
+        self.px = min(max(0, self.px), max(0, mon[2] - self.width))
+        self.py = min(max(0, self.py), max(0, mon[3] - H))
+        if self.layer:
+            GtkLayerShell.init_for_window(self)
+            GtkLayerShell.set_namespace(self, "tdx-osd")
+            GtkLayerShell.set_layer(self, GtkLayerShell.Layer.TOP)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
+            if hasattr(GtkLayerShell, "set_keyboard_mode"):
+                GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
+            else:
+                GtkLayerShell.set_keyboard_interactivity(self, False)
+        self.off = False
+        self.place()
+
+    @staticmethod
+    def monitor():
+        disp = Gdk.Display.get_default()
+        m = disp.get_primary_monitor() or disp.get_monitor(0)
+        if not m:
+            return (0, 0, 1920, 1080)
+        g = m.get_geometry()
+        return (g.x, g.y, g.width, g.height)
+
+    def place(self):
+        if self.layer:
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, max(0, self.px))
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, max(0, self.py))
+        else:
+            self.move(self.px, self.py)
+
+    # ---- what it shows
+    def update(self):
+        """Your settings (the box ticked?), the application, its profile."""
+        st = self.daemon.status()
+        if self.store is None:
+            conf = self.args.config
+            self.store = ts.Store(conf, None, None if ts.writable(conf) else ts.user_settings_dir())
+        else:
+            self.store.base.reload()
+        if not osd_on(self.store):
+            if Gtk.main_level():
+                Gtk.main_quit()  # unticked: gone (the box starts it again)
+            self.off = True
+            return False
+        prof = st.get("profile")
+        names = self.store.profile_names()
+        self.store.select(prof if prof and prof != "default" and prof in names else None)
+        app = st.get("app") if st.get("app") not in (None, "-") else None
+        faces = [[Faces(self.store).face(k) for k in g] for g in GROUPS]
+        paired = any(p.get("active") for r in st.get("receivers", []) for p in r.get("paired", []))
+        if (app, faces) != (self.app, self.faces):
+            self.app, self.faces = app, faces
+            self.app_pb = self.app_pixbuf(app)
+            self.pbs = [[self.pixbuf(icon) for _l, icon in g] for g in faces]
+            self.queue_draw()
+        self.set_visible(paired or not st.get("running"))
+        return True
+
+    @staticmethod
+    def pixbuf(path):
+        try:
+            return GdkPixbuf.Pixbuf.new_from_file_at_size(path, ICON, ICON) if path else None
+        except GLib.Error:
+            return None
+
+    def app_pixbuf(self, app):
+        theme = Gtk.IconTheme.get_default()
+        for n in ([app.lower(), app] if app else []):
+            try:
+                if theme.has_icon(n):
+                    return theme.load_icon(n, ICON, 0)
+            except GLib.Error:
+                pass
+        return self.pixbuf(ts.ASSETS.ui("Install_3dxicon"))
+
+    # ---- drawing
+    def cells(self):
+        """(x, group, index) of each button's cell."""
+        out, x = [], APP_W
+        for gi, g in enumerate(GROUPS):
+            for i in range(len(g)):
+                out.append((x, gi, i))
+                x += CELL_W
+            x += GAP
+        return out
+
+    def on_draw(self, _w, cr):
+        cr.set_operator(0)
+        cr.paint()
+        cr.set_operator(2)
+        cr.rectangle(0, 0, self.width, H)
+        cr.set_source_rgb(*BAR)
+        cr.fill()
+        if getattr(self, "app_pb", None):
+            Gdk.cairo_set_source_pixbuf(cr, self.app_pb, (APP_W - ICON) / 2, (H - ICON) / 2)
+            cr.paint()
+        for x, gi, i in self.cells():
+            cr.rectangle(x, PAD, CELL_W, H - 2 * PAD)
+            cr.set_source_rgb(*(CELL_HOVER if self.hover == "buttons" else CELL))
+            cr.fill()
+            pb = self.pbs[gi][i] if getattr(self, "pbs", None) else None
+            if pb:
+                Gdk.cairo_set_source_pixbuf(cr, pb, x + (CELL_W - pb.get_width()) / 2,
+                                            (H - pb.get_height()) / 2)
+                cr.paint()
+        return False
+
+    def set_hover(self, h):
+        if h != self.hover:
+            self.hover = h
+            tip = None
+            if h == "buttons":
+                tip = "  ·  ".join(l for g in self.faces for l, _i in g) + \
+                    "\nClick: the Buttons window. Drag: move it."
+            self.set_tooltip_text(tip)
+            self.queue_draw()
+        return False
+
+    # ---- moving it, and its click
+    def on_motion(self, _w, ev):
+        if self.press:
+            x0, y0, moved = self.press
+            dx, dy = int(ev.x - x0), int(ev.y - y0)
+            if moved or abs(dx) + abs(dy) > 4:
+                self.px += dx
+                self.py += dy
+                self.place()
+                if not self.layer:
+                    self.press = (ev.x, ev.y, True)
+                else:
+                    self.press = (x0, y0, True)
+            return True
+        self.set_hover("buttons" if ev.x >= APP_W else "app")
+        return True
+
+    def on_press(self, _w, ev):
+        if ev.button == 1:
+            self.press = (ev.x, ev.y, False)
+        return True
+
+    def on_release(self, _w, ev):
+        if ev.button != 1 or not self.press:
+            return True
+        moved = self.press[2]
+        self.press = None
+        if moved:
+            save_place(self.px, self.py)
+        else:
+            self.open_buttons()
+        return True
+
+    def open_buttons(self):
+        prog = ts.find_program("tdx-settings") or shutil.which("tdx-settings")
+        if prog:
+            subprocess.Popen([prog, "--buttons"], start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+
+
+def start_detached(sock=None):
+    """Start the dock in a unit of its own (the tray's or the panel's unit ends
+    with them), else in a new session. For tdx-tray and tdx-settings."""
+    prog = shutil.which("tdx-osd") or os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                   "tdx-osd")
+    argv = [prog] + (["-s", sock] if sock else [])
+    try:
+        r = subprocess.run(["systemd-run", "--user", "--unit=tdx-osd", "--collect", "--quiet"] +
+                           argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=5)
+        if r.returncode == 0:
+            return
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser(description="3DxWare's On-Screen Display for a CadMouse")
+    ap.add_argument("-c", "--config", default="/etc/tdxd.conf", help="base configuration file")
+    ap.add_argument("-s", "--socket", default="/run/tdxd.sock", help="tdxd control socket")
+    ap.add_argument("-V", "--version", action="version", version="tdx-osd " + APP_VERSION)
+    args = ap.parse_args()
+    if running():
+        return 0
+    try:
+        with open(pidfile(), "w") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+    ts.install_css(ts.ASSETS)
+    dock = Dock(args)
+    dock.show_all()
+    dock.update()
+    if dock.off:  # "Always show On-Screen Display" isn't ticked
+        return 0
+    GLib.timeout_add(POLL_MS, dock.update)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
+    dock.connect("destroy", lambda *_: Gtk.main_quit())
+    try:
+        Gtk.main()
+    finally:
+        try:
+            with open(pidfile()) as f:
+                if f.read().strip() == str(os.getpid()):
+                    os.unlink(pidfile())
+        except OSError:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

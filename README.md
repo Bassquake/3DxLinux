@@ -55,6 +55,11 @@ the focus; on Wayland it needs gtk-layer-shell, which the packages recommend).
 Drag its title to move it and the dots to resize it; the gear has 3DxWare's
 options. A button can show and hide it: `action_V2DK_FORWARD = numpad`.
 
+**Always show On-Screen Display** (Buttons window) shows 3DxWare's dock for the
+CadMouse (`tdx-osd`, `mouse_osd = yes`): the application's icon and the middle,
+back and forward buttons' functions, as set. Drag it anywhere; a click opens the
+Buttons window.
+
 Radial menus of your own: **New Radial Menu** in a button's picker opens 3DxWare's
 Radial Menu Editor (a name, 4 or 8 sections, each set like a button: type a
 shortcut, or pick a function). Saved as `radial_<ID>_*` lines with the button's

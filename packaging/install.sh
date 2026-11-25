@@ -15,7 +15,7 @@ if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
 	rm -rf "$PREFIX/share/tdxd/freecad"
 	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
-	      "$PREFIX/bin/tdx-tray" "$PREFIX/bin/tdx-radial" "$PREFIX/bin/tdx-numpad" /etc/systemd/user/tdx-tray.service \
+	      "$PREFIX/bin/tdx-tray" "$PREFIX/bin/tdx-radial" "$PREFIX/bin/tdx-numpad" "$PREFIX/bin/tdx-osd" /etc/systemd/user/tdx-tray.service \
 	      "$PREFIX/share/metainfo/io.github.bassquake.tdxd.metainfo.xml" \
 	      "$PREFIX/bin/tdx-freecad-addon" \
 	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
@@ -49,6 +49,7 @@ install -Dm755 bin/tdx-focus "$PREFIX/bin/tdx-focus"
 install -Dm755 bin/tdx-tray "$PREFIX/bin/tdx-tray"   # the 3Dconnexion icon in the system tray
 install -Dm755 bin/tdx-radial "$PREFIX/bin/tdx-radial"   # the Common Tools radial menu
 install -Dm755 bin/tdx-numpad "$PREFIX/bin/tdx-numpad"   # the Virtual NumPad
+install -Dm755 bin/tdx-osd "$PREFIX/bin/tdx-osd"   # the CadMouse On-Screen Display
 # AppStream: the name (3DxLinux), developer and licence software centres show
 sed -e "s/@VERSION@/$(cut -d" " -f1 VERSION | sed s/^v//)/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/" \
 	io.github.bassquake.tdxd.metainfo.xml | install -Dm644 /dev/stdin "$PREFIX/share/metainfo/io.github.bassquake.tdxd.metainfo.xml"
