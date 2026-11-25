@@ -3170,21 +3170,24 @@ class RadialMenuEditor(BindingRows, Panel):
         self.hot = None
         self.rows = {}
         self.capturing = None
-        # the menu's picture: grey on hover, click it (or its pencil) to choose one
+        # the menu's picture and its pencil, each lit on its own under the
+        # pointer (the tile grey, the pencil dark); a click on either chooses one
         self.image = None
-        self.tile_hot = False
+        self.tile_hot = None  # "tile", "pencil" or None
         tile = Gtk.EventBox()
         tile.set_visible_window(False)
         tile.set_above_child(True)  # the picture has a window of its own: clicks come here
         self.tile_box = tile
         tile.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK |
-                        Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+                        Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK |
+                        Gdk.EventMask.POINTER_MOTION_MASK)
         self.tile = drawing(68, 68, lambda _w, cr: draw_radial_tile(
             cr, self.tile_hot, icon_file(self.image) or ASSETS.icon("HIDMouse_RadialMenu.png")))
         tile.add(self.tile)
         tile.set_tooltip_text("Choose the menu's icon")
-        tile.connect("enter-notify-event", lambda *_: self.hover_tile(True))
-        tile.connect("leave-notify-event", lambda *_: self.hover_tile(False))
+        tile.connect("enter-notify-event", lambda _w, ev: self.hover_tile(self.tile_part(ev.x, ev.y)))
+        tile.connect("motion-notify-event", lambda _w, ev: self.hover_tile(self.tile_part(ev.x, ev.y)))
+        tile.connect("leave-notify-event", lambda *_: self.hover_tile(None))
         tile.connect("button-press-event", lambda *_: True)
         tile.connect("button-release-event", lambda _w, ev: ev.button == 1 and
                      self.choose_icon() or True)
@@ -3273,9 +3276,17 @@ class RadialMenuEditor(BindingRows, Panel):
         self.bg.queue_draw()
         self.diagram.queue_draw()
 
-    def hover_tile(self, on):
-        self.tile_hot = on
-        self.tile.queue_draw()
+    @staticmethod
+    def tile_part(x, y):
+        """The pencil (its round button, bottom right) or the tile under (x, y)."""
+        if (x - 56) ** 2 + (y - 56) ** 2 <= 11 ** 2:
+            return "pencil"
+        return "tile" if 0 <= x <= 62 and 0 <= y <= 62 else None
+
+    def hover_tile(self, part):
+        if part != self.tile_hot:
+            self.tile_hot = part
+            self.tile.queue_draw()
         return False
 
     def choose_icon(self):
@@ -3463,9 +3474,10 @@ def draw_menu_tool(cr, kind, hot):
         cr.stroke()
 
 
-def draw_radial_tile(cr, hot=False, icon=None):
+def draw_radial_tile(cr, hot=None, icon=None):
+    """@hot: "tile" (grey) or "pencil" (the dark pencil) under the pointer."""
     cr.rectangle(0.5, 0.5, 61, 61)
-    v = 0xdc / 255 if hot else 1
+    v = 0xdc / 255 if hot == "tile" else 1
     cr.set_source_rgb(v, v, v)
     cr.fill_preserve()
     cr.set_source_rgb(0.8, 0.8, 0.8)
@@ -3478,7 +3490,7 @@ def draw_radial_tile(cr, hot=False, icon=None):
             cr.paint()
         except GLib.Error:
             pass
-    pen = ASSETS.surface(ASSETS.ui("icon_pencil_hover" if hot else "icon_pencil"))
+    pen = ASSETS.surface(ASSETS.ui("icon_pencil_hover" if hot == "pencil" else "icon_pencil"))
     if pen:
         cr.set_source_surface(pen, 46, 46)
         cr.paint()
