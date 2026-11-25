@@ -201,6 +201,46 @@ static int config_load(struct tdx_config *c, const char *path, int profile);
 int tdx_config_load(struct tdx_config *c, const char *path) { return config_load(c, path, 0); }
 int tdx_config_load_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 1); }
 int tdx_config_load_user_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 2); }
+int tdx_config_load_own_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 4); }
+
+/* modes: 0 the base (/etc), 1 a profile (/etc/tdxd.d), and the user's files:
+ * 2 an imported 3DxWare profile (keys only), 3 their own settings over the
+ * base, 4 their own profile */
+static int user_uid = -1;
+static char user_base[512];
+
+void tdx_config_set_user(int uid, const char *base)
+{
+	user_uid = uid;
+	snprintf(user_base, sizeof user_base, "%s", base ? base : "");
+}
+
+int tdx_config_load_user_base(struct tdx_config *c)
+{
+	if (!user_base[0])
+		return 0;
+	int rc = config_load(c, user_base, 3);
+	return rc == -ENOENT ? 0 : rc;
+}
+
+/* Never from a user's file: what is a path tdxd opens, or its own plumbing. */
+static int user_denied(const char *k)
+{
+	static const char *const keys[] = {"uinput", "spnav", "spnav_socket", "control_socket",
+					   "profile_dir", "lcd_cfg", "lcd_bmp_dir", "verbose", NULL};
+	for (int i = 0; keys[i]; i++)
+		if (!strcmp(k, keys[i]))
+			return 1;
+	return 0;
+}
+
+/* A user's picture for the LCD (lcd_image): a plain file of their own. */
+static int user_image_ok(const char *path)
+{
+	struct stat st;
+	return !lstat(path, &st) && S_ISREG(st.st_mode) &&
+	       (user_uid < 0 || st.st_uid == (uid_t)user_uid);
+}
 
 /* Names set by the file being read, so a profile that rebinds a key drops
  * only the names earlier files gave it (the base config's "Save" on key 3). */
@@ -241,13 +281,15 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 	static struct label_seen seen; /* config_load is not reentrant */
 	seen.n = 0;
 	FILE *f;
-	if (profile == 2) {
-		/* a profile from a user's own folder: no symlinks, only a plain file */
+	if (profile >= 2) {
+		/* a file from a user's own folder: no symlinks, only a plain file of
+		 * theirs (tdxd reads it as root) */
 		int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
 		struct stat st;
 		if (fd < 0)
 			return -errno;
-		if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size > 256 * 1024) {
+		if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size > 256 * 1024 ||
+		    (user_uid >= 0 && st.st_uid != (uid_t)user_uid)) {
 			close(fd);
 			return -EINVAL;
 		}
@@ -291,7 +333,15 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 				path, ln);
 			continue;
 		}
-		if (profile && daemon_only(k)) {
+		if (profile >= 2 && user_denied(k)) {
+			fprintf(stderr, "%s:%d: '%s' only in /etc/tdxd.conf; ignored\n", path, ln, k);
+			continue;
+		}
+		if (profile >= 2 && !strcmp(k, "lcd_image") && *v && !user_image_ok(v)) {
+			fprintf(stderr, "%s:%d: lcd_image: not a file of your own; ignored\n", path, ln);
+			continue;
+		}
+		if (profile && profile != 3 && daemon_only(k)) {
 			fprintf(stderr, "%s:%d: '%s' is daemon-wide; ignored in a profile\n", path, ln, k);
 			continue;
 		}

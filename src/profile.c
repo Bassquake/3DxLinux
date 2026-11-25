@@ -109,8 +109,11 @@ int tdx_config_compose(struct tdx_config *out, const char *base_path,
 {
 	tdx_config_defaults(out);
 	int rc = tdx_config_load(out, base_path);
+	tdx_config_load_user_base(out); /* the desktop user's own settings over it */
 	if (idx >= 0 && idx < ps->n)
-		(ps->p[idx].user ? tdx_config_load_user_profile : tdx_config_load_profile)(out, ps->p[idx].path);
+		(ps->p[idx].user == 2 ? tdx_config_load_own_profile :
+		 ps->p[idx].user ? tdx_config_load_user_profile : tdx_config_load_profile)(
+			out, ps->p[idx].path);
 	out->match[0] = 0;
 	return rc;
 }

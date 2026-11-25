@@ -129,6 +129,13 @@ int tdx_config_load_profile(struct tdx_config *c, const char *path);
 /* A profile imported into a user's own folder: a plain file (no symlink), and
  * only match, key_*, action_* and lcd_label_* are taken. */
 int tdx_config_load_user_profile(struct tdx_config *c, const char *path);
+/* The desktop user's own settings (tdx-settings saves them, no password):
+ * ~/.config/tdxd/tdxd.conf over /etc/tdxd.conf, and their own profiles. Read
+ * only if they are plain files of @uid's, and without the options that are
+ * paths or tdxd's own plumbing (uinput, sockets, folders ...). */
+void tdx_config_set_user(int uid, const char *user_base);
+int tdx_config_load_user_base(struct tdx_config *c);    /* 0 when there is none */
+int tdx_config_load_own_profile(struct tdx_config *c, const char *path);
 int tdx_key_from_name(const char *name);
 /* Number of 12-label pages configured (1..4). */
 int tdx_config_lcd_pages(const struct tdx_config *c);

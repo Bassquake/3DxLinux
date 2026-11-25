@@ -960,26 +960,39 @@ static void apply_effective(int idx)
 	active_profile = idx;
 }
 
-/* The desktop user (whoever runs tdx-focus): their own imported 3DxWare
- * profiles are read too. -1: none yet. */
+/* The desktop user (whoever runs tdx-focus or saves in tdx-settings): their
+ * own settings and imported 3DxWare profiles are read too. -1: none yet. */
 static int session_uid = -1;
 static int nown_profiles; /* how many of them are profile_dir's */
+static int nuser_profiles; /* the user's own (~/.config/tdxd/profiles) */
 
 /* Base config, profile list, and the union of all keys any profile can send. */
 static void load_all(void)
 {
+	struct passwd *pw = session_uid > 0 ? getpwuid((uid_t)session_uid) : NULL;
+	char ubase[512] = "";
+	if (pw && pw->pw_dir)
+		snprintf(ubase, sizeof ubase, "%s/.config/tdxd/tdxd.conf", pw->pw_dir);
+	tdx_config_set_user(pw ? session_uid : -1, ubase);
 	tdx_config_compose(&cfg, conf_path, &profiles, -1); /* profile_dir lives in the base */
-	int rc = tdx_profiles_scan(cfg.profile_dir, &profiles);
+	/* the user's own profiles first: theirs win over /etc/tdxd.d's of the same name */
+	profiles.n = 0;
+	if (pw && pw->pw_dir) {
+		char dir[512];
+		snprintf(dir, sizeof dir, "%s/.config/tdxd/profiles", pw->pw_dir);
+		tdx_profiles_add(dir, &profiles, 2);
+	}
+	nuser_profiles = profiles.n;
+	int rc = tdx_profiles_add(cfg.profile_dir, &profiles, 0);
 	if (rc)
 		fprintf(stderr, "tdxd: cannot read %s: %s\n", cfg.profile_dir, strerror(-rc));
-	nown_profiles = profiles.n;
+	nown_profiles = profiles.n - nuser_profiles;
 	/* then the profiles imported from 3DxWare's application configurations
 	 * (tdx-extract-3dxware-ui); the first folder with a match wins */
 	static const char *const imported[] = {"/usr/local/share/tdxd/3dxware-ui/profiles",
 					       "/usr/share/tdxd/3dxware-ui/profiles"};
 	for (size_t i = 0; i < sizeof imported / sizeof imported[0]; i++)
 		tdx_profiles_add(imported[i], &profiles, 0);
-	struct passwd *pw = session_uid > 0 ? getpwuid((uid_t)session_uid) : NULL;
 	if (pw && pw->pw_dir) {
 		char dir[512];
 		snprintf(dir, sizeof dir, "%s/.local/share/tdxd/3dxware-ui/profiles", pw->pw_dir);
@@ -1670,8 +1683,9 @@ int main(int argc, char **argv)
 	load_all();
 	if (nown_profiles)
 		LOG(0, "%d per-application profile(s) in %s\n", nown_profiles, cfg.profile_dir);
-	if (profiles.n > nown_profiles)
-		LOG(0, "%d imported from 3DxWare's application settings\n", profiles.n - nown_profiles);
+	if (profiles.n > nown_profiles + nuser_profiles)
+		LOG(0, "%d imported from 3DxWare's application settings\n",
+		    profiles.n - nown_profiles - nuser_profiles);
 
 	struct sigaction sa = {.sa_handler = on_sig};
 	sigaction(SIGINT, &sa, NULL);

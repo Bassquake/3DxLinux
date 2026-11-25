@@ -4,10 +4,12 @@
 
 The window layout follows the 3DxWare 10 control panel (main window,
 Advanced Settings, Buttons, LCD Manager, About), but everything it changes is
-plain tdxd configuration: /etc/tdxd.conf and the per-application overlays in
-/etc/tdxd.d/<name>.conf. Files are edited in place (comments are kept), then
-the daemon is told to reload (`tdxctl reload`). Files that are not writable by
-the user are written through `pkexec tdx-settings-helper`.
+plain tdxd configuration: your own ~/.config/tdxd/tdxd.conf over /etc/tdxd.conf,
+and your own per-application profiles (~/.config/tdxd/profiles) before those in
+/etc/tdxd.d, so no password is needed (tdxd reads them while you are at the
+screen). Files are edited in place (comments are kept), then the daemon is told
+to reload (`tdxctl reload`). With an /etc/tdxd.conf you can write (root), /etc
+is edited directly; `pkexec tdx-settings-helper` remains for files there.
 
 All artwork (device illustration, axis glyphs, key caps) is drawn here with
 cairo; no 3Dconnexion images are used.
@@ -360,26 +362,114 @@ class ConfFile:
         return "\n".join(self.lines) + "\n"
 
 
-class Store:
-    """The base config plus one per-application profile being edited."""
 
-    def __init__(self, base_path, profile_dir=None):
-        self.base = ConfFile(base_path)
-        self.profile_dir = profile_dir or self.base.get("profile_dir", "/etc/tdxd.d")
+def user_settings_dir():
+    """Your own settings, saved without a password (tdxd reads them over
+    /etc/tdxd.conf while you are at the screen)."""
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "tdxd")
+
+
+class LayeredConf:
+    """/etc/tdxd.conf with your ~/.config/tdxd/tdxd.conf over it, as tdxd reads
+    them: a value of yours wins; changes go to your file only (no password).
+    Removing a key /etc sets: "none" for a key or an action (no binding, not
+    /etc's); other options fall back to /etc's value (the admin's default)."""
+
+    def __init__(self, system, user):
+        self.system = system
+        self.user = user
+
+    # the file written is yours
+    path = property(lambda self: self.user.path)
+    lines = property(lambda self: self.user.lines,
+                     lambda self, v: setattr(self.user, "lines", v))
+    dirty = property(lambda self: self.user.dirty,
+                     lambda self, v: setattr(self.user, "dirty", v))
+    exists = property(lambda self: self.user.exists,
+                      lambda self, v: setattr(self.user, "exists", v))
+
+    def reload(self):
+        self.system.reload()
+        self.user.reload()
+
+    def items(self):
+        out = {}
+        for k, v in list(self.system.items()) + list(self.user.items()):
+            out[k] = v
+        return list(out.items())
+
+    def get(self, key, default=None):
+        if self.user.has(key):
+            return self.user.get(key, default)
+        return self.system.get(key, default)
+
+    def has(self, key):
+        return self.user.has(key) or self.system.has(key)
+
+    def keys_with_prefix(self, prefix):
+        out = []
+        for k in self.system.keys_with_prefix(prefix) + self.user.keys_with_prefix(prefix):
+            if not any(ConfFile._same(k, o) for o in out):
+                out.append(k)
+        return out
+
+    def set(self, key, value):
+        self.user.set(key, value)
+
+    def remove(self, key):
+        self.user.remove(key)
+        if self.system.has(key) and key.startswith(("key_", "action_")):
+            self.user.set(key, "none")
+
+    def text(self):
+        return self.user.text()
+
+    def merged_text(self):
+        """Both, as tdxd reads them (Export): /etc's, then yours over them."""
+        return self.system.text() + "\n# your own settings (%s)\n" % self.user.path + \
+            self.user.text()
+
+class Store:
+    """The base config plus one per-application profile being edited.
+
+    With @user_dir (you can't write /etc/tdxd.conf): your own settings, saved
+    without a password. The base is /etc/tdxd.conf with yours over it; profiles
+    are yours (~/.config/tdxd/profiles) before /etc/tdxd.d's, and changing one
+    of /etc's saves your own copy."""
+
+    def __init__(self, base_path, profile_dir=None, user_dir=None):
+        system = ConfFile(base_path)
+        self.user_dir = user_dir
+        self.base = LayeredConf(system, ConfFile(os.path.join(user_dir, "tdxd.conf"))) \
+            if user_dir else system
+        self.profile_dir = profile_dir or system.get("profile_dir", "/etc/tdxd.d")
+        self.own_dir = os.path.join(user_dir, "profiles") if user_dir else None
         self.profile = None  # ConfFile or None (= editing the base file)
         self.listeners = []
 
     # ---- profiles
     def profile_names(self):
-        try:
-            names = sorted(f[:-5] for f in os.listdir(self.profile_dir)
-                           if f.endswith(".conf") and not f.startswith("."))
-        except OSError:
-            names = []
-        return names
+        names = set()
+        for d in (self.own_dir, self.profile_dir):
+            try:
+                names |= {f[:-5] for f in os.listdir(d)
+                          if f.endswith(".conf") and not f.startswith(".")}
+            except (OSError, TypeError):
+                pass
+        return sorted(names)
 
     def profile_path(self, name):
+        """Where profile @name is saved: your own folder, or profile_dir."""
+        return os.path.join(self.own_dir or self.profile_dir, name + ".conf")
+
+    def system_profile_path(self, name):
         return os.path.join(self.profile_dir, name + ".conf")
+
+    def profile_source(self, name):
+        """The file profile @name is read from: yours, else /etc/tdxd.d's."""
+        p = self.profile_path(name)
+        return p if os.path.isfile(p) else self.system_profile_path(name)
 
     @staticmethod
     def import_dirs():
@@ -418,7 +508,8 @@ class Store:
         f = ConfFile(self.profile_path(name))
         f.imported_from = None
         if not f.exists:
-            src = self.imported_path(name)
+            sysp = self.system_profile_path(name)
+            src = sysp if self.own_dir and os.path.isfile(sysp) else self.imported_path(name)
             if src:
                 f.lines = ConfFile(src).lines[:]
                 f.imported_from = src
@@ -722,9 +813,10 @@ def export_settings(store, path):
     import zipfile
     names = store.profile_names()
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("tdxd.conf", store.base.text())
+        z.writestr("tdxd.conf", store.base.merged_text() if isinstance(store.base, LayeredConf)
+                   else store.base.text())
         for n in names:
-            with open(store.profile_path(n), encoding="utf-8", errors="replace") as f:
+            with open(store.profile_source(n), encoding="utf-8", errors="replace") as f:
                 z.writestr("tdxd.d/%s.conf" % n, f.read())
     return len(names)
 
@@ -790,6 +882,13 @@ def reset_settings(store):
     profiles (FreeCAD's) back to theirs, the others in profile_dir removed (the
     imported 3DxWare ones elsewhere stay). Errors (list)."""
     errors = []
+    if store.user_dir:  # your own settings: yours go, /etc's (the admin's) show again
+        for path in [store.base.path] + [store.profile_path(n) for n in store.profile_names()]:
+            if os.path.isfile(path):
+                err = remove_file(path)
+                if err:
+                    errors.append(err)
+        return errors
     src = shipped_default("tdxd.conf")
     if src:
         f = ConfFile(store.base.path)
@@ -4777,7 +4876,9 @@ def import_look(parent, app):
 class App:
     def __init__(self, args):
         self.args = args
-        self.store = Store(args.config, args.profile_dir)
+        # /etc/tdxd.conf isn't yours to write: your own settings, no password
+        self.store = Store(args.config, args.profile_dir,
+                           None if writable(args.config) else user_settings_dir())
         sock = args.socket or self.store.base.get("control_socket", "/run/tdxd.sock")
         self.daemon = Daemon(sock, args.status_file)
         self.status = self.daemon.status()

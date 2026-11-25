@@ -233,6 +233,12 @@ def log_sections(tdxctl=None):
          ("/etc/tdxd.conf", read("/etc/tdxd.conf"))]
     for p in sorted(glob.glob("/etc/tdxd.d/*.conf")):
         s.append((p, read(p)))
+    own = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+                       "tdxd")  # your own settings (tdx-settings, no password)
+    for p in [os.path.join(own, "tdxd.conf")] + sorted(glob.glob(os.path.join(own, "profiles",
+                                                                              "*.conf"))):
+        if os.path.isfile(p):
+            s.append((p, read(p)))
     imp = sorted(glob.glob(os.path.expanduser("~/.local/share/tdxd/3dxware-ui/profiles/*.conf")) +
                  glob.glob("/usr/local/share/tdxd/3dxware-ui/profiles/*.conf"))
     s.append(("Imported 3DxWare profiles", "%d: %s" % (

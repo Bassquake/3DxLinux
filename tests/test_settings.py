@@ -919,6 +919,52 @@ def numpad_tests(d):
     del os.environ["XDG_CONFIG_HOME"]
 
 
+def own_settings_tests(d):
+    """Your own settings (no password): /etc/tdxd.conf and /etc/tdxd.d are
+    only read; changes go to ~/.config/tdxd."""
+    etc = os.path.join(d, "own-etc")
+    pdir = os.path.join(etc, "tdxd.d")
+    os.makedirs(pdir)
+    base = os.path.join(etc, "tdxd.conf")
+    with open(base, "w") as f:
+        f.write("sensitivity = 1.5\nkey_V3DK_1 = KEY_F1\nprofile_dir = %s\n" % pdir)
+    with open(os.path.join(pdir, "blender.conf"), "w") as f:
+        f.write("match = blender\nkey_V3DK_FIT = KEY_HOME\n")
+    before = {p: open(p).read() for p in (base, os.path.join(pdir, "blender.conf"))}
+    mine = os.path.join(d, "own-home", "tdxd")
+    st = ts.Store(base, None, mine)
+    check(st.profile_dir == pdir and st.get("sensitivity") == "1.5" and
+          st.profile_names() == ["blender"], "own settings: /etc read through yours")
+    st.set("sensitivity", "2.5")
+    st.base.remove("key_V3DK_1")
+    check(st.get("sensitivity") == "2.5" and st.base.get("key_V3DK_1") == "none" and
+          st.base.path == os.path.join(mine, "tdxd.conf") and ts.write_file(st.base) is None,
+          "own settings: changes are yours (a key /etc binds: none)")
+    st.select("blender")
+    check(st.profile.path == os.path.join(mine, "profiles", "blender.conf") and
+          st.profile.imported_from == os.path.join(pdir, "blender.conf") and
+          st.profile.get("key_V3DK_FIT") == "KEY_HOME", "own settings: /etc's profile, your copy")
+    st.profile.set("key_V3DK_FIT", "KEY_END")
+    check(ts.write_file(st.profile) is None and
+          ts.ConfFile(os.path.join(mine, "profiles", "blender.conf")).get("key_V3DK_FIT") ==
+          "KEY_END", "own settings: your profile saved")
+    st.create_profile("gimp", "gimp")
+    check(ts.write_file(st.profile) is None and st.profile_names() == ["blender", "gimp"] and
+          not os.path.exists(os.path.join(pdir, "gimp.conf")), "own settings: a new profile is yours")
+    check(all(open(p).read() == t for p, t in before.items()), "own settings: /etc untouched")
+    zp = os.path.join(d, "own.zip")
+    ts.export_settings(st, zp)
+    b, profs = ts.read_settings_archive(zp)
+    c = ts.ConfFile(os.path.join(d, "merged.conf"))
+    c.lines = b.splitlines()
+    check(c.get("sensitivity") == "2.5" and "KEY_END" in profs["blender"] and "gimp" in profs,
+          "own settings: Export has what tdxd uses")
+    check(ts.reset_settings(st) == [] and not os.path.exists(os.path.join(mine, "tdxd.conf")) and
+          not os.listdir(os.path.join(mine, "profiles")) and
+          all(open(p).read() == t for p, t in before.items()),
+          "own settings: Reset removes yours, /etc stays")
+
+
 def icon_tests(d):
     """A radial menu's icon: Select your icon, and where it is shown."""
     check(ts.icon_file(None) is None and ts.icon_file(os.path.join(d, "none.png")) is None and
@@ -958,6 +1004,7 @@ def main():
         radial_tests(d)
         numpad_tests(d)
         icon_tests(d)
+        own_settings_tests(d)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

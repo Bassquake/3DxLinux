@@ -945,6 +945,51 @@ static void test_imported_profiles(void)
 	CHECK(!strcmp(t, "Arrange"));
 	CHECK(tdx_config_load_user_profile(&c, "test_user.d/3dx-link.conf") < 0); /* no symlinks */
 
+	/* the desktop user's own settings (no password): ~/.config/tdxd/tdxd.conf
+	 * over the base, their own profiles first; paths and plumbing not taken */
+	mkdir("test_own.d", 0755);
+	write_file("test_own_base.conf", "sensitivity = 2.5\ncontrol_socket = /tmp/evil.sock\n"
+					 "profile_dir = /root\nmouse_dpi = 2000\nkey_V3DK_1 = KEY_F7\n"
+					 "lcd_image = test_img_link.ppm\n");
+	write_file("test_own.d/blender.conf", "match = blender\nkey_V3DK_FIT = KEY_END\n"
+					      "uinput = no\ndeadzone = 7\n");
+	write_file("test_etc_base.conf", "sensitivity = 1.5\nmouse_dpi = 800\n");
+	write_file("test_own_img.ppm", "P6 1 1 255\n");
+	CHECK(symlink("test_own_img.ppm", "test_img_link.ppm") == 0);
+	tdx_config_set_user((int)getuid(), "test_own_base.conf");
+	ps.n = 0;
+	CHECK(tdx_profiles_add("test_own.d", &ps, 2) == 0 && ps.n == 1 && ps.p[0].user == 2);
+	CHECK(tdx_profiles_add("test_etc.d", &ps, 0) == 0 && ps.n == 1); /* the same name: yours */
+	tdx_config_compose(&c, "test_etc_base.conf", &ps, -1);
+	k = tdx_keymap_for(&c, spp, k1);
+	CHECK(c.sensitivity == 2.5 && c.mouse_dpi == 2000 && k && k->keys[0] == KEY_F7);
+	CHECK(strcmp(c.control_socket, "/tmp/evil.sock") && strcmp(c.profile_dir, "/root") &&
+	      strcmp(c.lcd_image, "test_img_link.ppm")); /* a link: not a file of yours */
+	write_file("test_own_base2.conf", "lcd_image = test_own_img.ppm\n");
+	tdx_config_set_user((int)getuid(), "test_own_base2.conf");
+	tdx_config_compose(&c, "test_etc_base.conf", &ps, -1);
+	CHECK(!strcmp(c.lcd_image, "test_own_img.ppm")); /* your own picture */
+	tdx_config_set_user((int)getuid(), "test_own_base.conf");
+	unlink("test_own_base2.conf");
+	tdx_config_compose(&c, "test_etc_base.conf", &ps, tdx_profile_match(&ps, "blender"));
+	CHECK(c.deadzone == 7 && c.enable_uinput && c.sensitivity == 2.5);
+	int ofit = -1;
+	for (int i = 0; i < spp->nbuttons; i++)
+		if (!strcmp(spp->buttons[i].v3dk, "V3DK_FIT"))
+			ofit = i;
+	k = tdx_keymap_for(&c, spp, ofit);
+	CHECK(k && k->keys[0] == KEY_END);
+	tdx_config_set_user((int)getuid() + 4242, "test_own_base.conf"); /* not theirs: not read */
+	tdx_config_compose(&c, "test_etc_base.conf", &ps, -1);
+	CHECK(c.sensitivity == 1.5 && c.mouse_dpi == 800);
+	tdx_config_set_user(-1, NULL);
+	unlink("test_own_base.conf");
+	unlink("test_etc_base.conf");
+	unlink("test_img_link.ppm");
+	unlink("test_own_img.ppm");
+	unlink("test_own.d/blender.conf");
+	rmdir("test_own.d");
+
 	/* key names: the base config names keys 1-10 by number; a profile's name for
 	 * a key wins, and a key it rebinds without a name loses the base's name */
 	write_file("test_base_lab.conf", "key_V3DK_3 = KEY_LEFTCTRL + KEY_S\nlcd_label_3 = Save\n"

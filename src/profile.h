@@ -25,7 +25,8 @@ struct tdx_profile {
 	char name[64];     /* file name without .conf */
 	char path[512];
 	char match[256];   /* from "match =", or the name */
-	int user;          /* from a user's own folder: tdx_config_load_user_profile */
+	int user;          /* 1: imported into a user's folder (tdx_config_load_user_profile);
+			    * 2: the user's own (~/.config/tdxd/profiles, ..._own_profile) */
 };
 
 struct tdx_profiles {

@@ -213,10 +213,17 @@ windows, layout and controls: the main window (device, Speed), **Advanced
 Settings**, **Buttons**, **LCD Manager** and **About** ("More ›"). It edits the
 same files as the table below and keeps their comments. As in 3DxWare, every
 change takes effect right away: the panel saves it and runs `tdxctl reload`.
-Files in `/etc` that you cannot write are saved through `pkexec
-tdx-settings-helper`: the system asks for your password at the first change and
-then remembers it for a few minutes. If you cancel the password prompt, the
-panel stops asking and saves when you close the window instead.
+Your settings are your own, as 3DxWare's are, and need no password: the panel
+saves them in `~/.config/tdxd/tdxd.conf` (over `/etc/tdxd.conf`, the
+system-wide defaults) and your profiles in `~/.config/tdxd/profiles/` (changing
+one of `/etc/tdxd.d`'s saves your own copy). tdxd reads them while you are the
+user at the screen. They are read only if they are plain files of yours, and
+the options that are paths or tdxd's own plumbing (`uinput`, `spnav*`,
+`control_socket`, `profile_dir`, `lcd_cfg`, `lcd_bmp_dir`, `verbose`) count
+only in `/etc/tdxd.conf`; an `lcd_image` must be a file of yours. **Reset all
+settings** removes your own files, so the system-wide defaults show again.
+(Run as root, or with an `/etc/tdxd.conf` you can write, the panel edits `/etc`
+directly.)
 The window title names the profile being edited; click it to switch between the
 defaults and the per-application profiles, or to create one for the focused
 application. With no device plugged in, the window shows 3DxWare's "No device
