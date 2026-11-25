@@ -149,6 +149,7 @@ static void open_settings(void);
 static void open_radial(void);
 static void open_numpad(void);
 static void open_menu(const char *menu);
+static struct tdx_uinput *keys_device(void);
 static const char *button_menu(const char *v3dk);
 static int device_rezero(struct dev_ctx *d);
 
@@ -882,8 +883,19 @@ static void session_run(const char *script, const char *arg, const char *menu)
 	waitpid(pid, NULL, 0);
 }
 
+/* The radial menu's and the NumPad's keys come from tdxd's keyboard device.
+ * Made on the first key, the desktop missed that key (a new keyboard's first
+ * key is lost, as with a CadMouse's keystroke button): so it is made when the
+ * menu or the NumPad opens, before anything in it is clicked. */
+static void keys_ready(void)
+{
+	if (!keys_device())
+		LOG(1, "no keyboard device yet for the radial menu's keys\n");
+}
+
 static void open_radial(void)
 {
+	keys_ready();
 	session_run(toggle_script, "tdx-radial", NULL);
 	LOG(1, "radial menu: asked the active session to show Common Tools\n");
 }
@@ -893,6 +905,7 @@ static void open_menu(const char *menu)
 {
 	if (!menu || !*menu)
 		return;
+	keys_ready();
 	session_run(toggle_script, "tdx-radial", menu);
 	LOG(1, "radial menu: asked the active session to show %s\n", menu);
 }
@@ -907,6 +920,7 @@ static const char *button_menu(const char *v3dk)
 
 static void open_numpad(void)
 {
+	keys_ready();
 	session_run(toggle_script, "tdx-numpad", NULL);
 	LOG(1, "Virtual NumPad: asked the active session to show or hide it\n");
 }
