@@ -3773,6 +3773,10 @@ class MouseButtonsPanel(BindingRows, Panel):
         self.store.base.set("mouse_osd", "yes" if b.get_active() else "no")
         self.store.changed()
         if b.get_active():
+            # saved first: the dock reads the box from the file, and would see it
+            # unticked and end itself (the panel saves a moment after a change)
+            if hasattr(self.app, "flush"):
+                self.app.flush()
             start_osd(self.app.daemon.socket)
 
     def capture(self, v2dk, default):
