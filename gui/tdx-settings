@@ -1288,10 +1288,6 @@ window.tdx-frameless, window.tdx-frameless decoration {
 .tdx box.tdx-mrow button.tdx-mrow-arrow:hover { background-color: #ffffff;
   border-color: #7a7a7a; }
 .tdx label.tdx-placeholder { font-style: italic; }
-.tdx button.tdx-support-link { background: none; border: none; box-shadow: none;
-  padding: 0; min-height: 0; -gtk-icon-effect: none; }
-.tdx button.tdx-support-link label { color: #8a8a8a; }
-.tdx button.tdx-support-link:hover label { color: #000000; }
 .tdx button.tdx-link { background: none; border: none; box-shadow: none; padding: 0;
   min-height: 0; }
 .tdx button.tdx-link label { color: #9a9a9a; }
@@ -4755,31 +4751,65 @@ class AboutPanel(Panel):
 
 def support_link(text, url, parent):
     """3DxWare's "In extended support" in About: grey, black with its icon
-    when hovered, a link to 3Dconnexion's page on discontinued devices."""
-    b = Gtk.Button()
-    b.set_relief(Gtk.ReliefStyle.NONE)
-    b.set_can_focus(False)
-    b.get_style_context().add_class("tdx-support-link")
-    hb = Gtk.Box(spacing=5)
-    grey = image_widget(ASSETS.ui("SmartUI_Icon_warning_grey") or ASSETS.ui("SmartUI_Alert_Icon_grey"))
-    black = image_widget(ASSETS.ui("SmartUI_Icon_warning_black"))
-    for ic in (grey, black):
-        if ic:
-            hb.pack_start(ic, False, False, 0)
-    if black:
-        black.set_no_show_all(True)
-    hb.pack_start(lab(text), False, False, 0)
-    b.add(hb)
-    if grey and black:
-        b.connect("state-flags-changed", lambda w, _o: (
-            lambda hot: (black.set_visible(hot), grey.set_visible(not hot)))(
-            bool(w.get_state_flags() & Gtk.StateFlags.PRELIGHT)) and None)
+    when hovered, a link to 3Dconnexion's page on discontinued devices.
+    Drawn in one area under an input window of its own (as the radial menu
+    editor's icon tile): nothing is shown or hidden on hover, and the pointer
+    can't miss it behind a child's window."""
+    grey = ASSETS.surface(ASSETS.ui("SmartUI_Icon_warning_grey") or
+                          ASSETS.ui("SmartUI_Alert_Icon_grey"))
+    black = ASSETS.surface(ASSETS.ui("SmartUI_Icon_warning_black")) or grey
+    eb = Gtk.EventBox()
+    eb.set_visible_window(False)
+    eb.set_above_child(True)
+    eb.hot = False
+    iw = 14 if grey else 0
+    gap = 5 if iw else 0
+
+    def draw(wd, cr):
+        lay = wd.create_pango_layout(text)  # the window's own font, as the line beside it
+        tw, th = lay.get_pixel_size()
+        h = wd.get_allocated_height()
+        icon = black if eb.hot else grey
+        if icon:
+            cr.set_source_surface(icon, 0, (h - icon.get_height()) / 2)
+            cr.paint()
+        v = 0.0 if eb.hot else 0x8a / 255
+        cr.set_source_rgb(v, v, v)
+        cr.move_to(iw + gap, (h - th) / 2)
+        PangoCairo.show_layout(cr, lay)
+
+    def measure(wd, *_):
+        tw, th = wd.create_pango_layout(text).get_pixel_size()
+        wd.set_size_request(iw + gap + tw + 2, max(th, 14) + 1)
+
+    da = Gtk.DrawingArea()
+    da.connect("draw", draw)
+    da.connect("style-updated", measure)
+    da.connect("realize", measure)
+    measure(da)
+    eb.add(da)
+
+    def hover(on):
+        eb.hot = on
+        da.queue_draw()
+        win = eb.get_window()
+        if win:
+            win.set_cursor(Gdk.Cursor.new_from_name(eb.get_display(), "pointer") if on and url
+                           else None)
+        return False
+
+    eb.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK |
+                  Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
+    eb.connect("enter-notify-event", lambda *_: hover(True))
+    eb.connect("leave-notify-event", lambda *_: hover(False))
+    eb.connect("button-press-event", lambda *_: True)  # not the window's drag
     if url:
-        b.set_tooltip_text(url)
-        b.connect("clicked", lambda *_: open_url(url, parent))
-    else:
-        b.set_sensitive(False)
-    return b
+        eb.set_tooltip_text(url)
+        eb.connect("button-release-event", lambda _w, ev: ev.button == 1 and
+                   open_url(url, parent) or True)
+    eb.open_url = lambda: open_url(url, parent)  # (tests)
+    eb.url = url
+    return eb
 
 
 def open_url(url, widget=None):
