@@ -223,7 +223,7 @@ build_deb() {
 Package: tdxd
 Version: $PV-1
 Architecture: $DEB_ARCH
-Maintainer: tdxd project <$HOMEPAGE/issues>
+Maintainer: 3DxLinux project <$HOMEPAGE/issues>
 Installed-Size: $(du -sk --exclude=DEBIAN "$R" | cut -f1)
 Depends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, pkexec | policykit-1
 Recommends: p7zip-full, librsvg2-common, gir1.2-gtklayershell-0.1
