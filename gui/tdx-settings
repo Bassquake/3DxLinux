@@ -5380,6 +5380,8 @@ class App:
         self.main.refresh()
         GLib.timeout_add(1000, self.follow_tick)
         bring_back()  # after the tray's Quit
+        if not getattr(self.args, "status_file", None):
+            start_osd(self.daemon.socket)  # the dock, if it is ticked (else it ends at once)
         if getattr(self.args, "show_about", False):  # back from importing the 3DxWare look
             GLib.idle_add(lambda: self.show_about() or False)
         if getattr(self.args, "buttons", False):  # from the On-Screen Display: the CadMouse's
@@ -5445,6 +5447,9 @@ def main():
     app = App(args)
     if single:
         single.connect("activate", lambda *_: app.present())
+        quit_action = Gio.SimpleAction.new("quit", None)  # the tray's Quit
+        quit_action.connect("activate", lambda *_: app.quit())
+        single.add_action(quit_action)
     app.run()
     return 0
 

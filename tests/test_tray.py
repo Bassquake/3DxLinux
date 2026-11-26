@@ -133,7 +133,7 @@ def main():
         f.write("#!/bin/sh\ntouch %s\n" % opened)
     os.chmod(fake_settings, 0o755)
     sysctl, state, sclog = fake_systemctl(d)
-    env = dict(os.environ, TDX_TRAY_SETTINGS=fake_settings, TDX_SYSTEMCTL=sysctl,
+    env = dict(os.environ, TDX_TRAY_SETTINGS=fake_settings, TDX_SYSTEMCTL=sysctl, TDX_TRAY_OSD="-",
                PATH=d + ":" + os.environ["PATH"])
     p = subprocess.Popen([sys.executable, os.path.join(ROOT, "gui", "tdx-tray")], env=env)
     ctx = GLib.MainContext.default()
@@ -202,8 +202,10 @@ def main():
             rc = p.wait(10)
         except subprocess.TimeoutExpired:
             rc = None
-        check(rc == 0 and "--user stop tdx-lcdmgr.service" in open(sclog).read(),
-              "Quit: LCD Manager stopped, tray exited (%s)" % rc)
+        stopped = open(sclog).read()
+        check(rc == 0 and "--user stop tdx-lcdmgr.service" in stopped and
+              "tdx-osd.service" in stopped and "tdx-numpad.service" in stopped,
+              "Quit: LCD Manager, On-Screen Display, NumPad stopped, tray exited (%s)" % rc)
     finally:
         if p.poll() is None:
             p.terminate()

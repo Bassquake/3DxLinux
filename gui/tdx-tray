@@ -22,6 +22,7 @@ import datetime
 import glob
 import os
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -444,14 +445,20 @@ class Tray:
                              GLib.Variant("(ui)", (self.revision, 0)))
 
     def quit(self):
-        """Quit the tray icon and the LCD Manager for this session; tdxd keeps
-        running, so the 3D mouse works and the LCD shows tdxd's key page. They
-        come back at the next login (unless Start with the Desktop is off)."""
+        """Quit everything of 3Dconnexion's on the screen for this session: the
+        tray icon, the LCD Manager, the On-Screen Display, the Virtual NumPad,
+        a radial menu and the settings panel. tdxd keeps running, so the 3D
+        mouse works and the LCD shows tdxd's key page (and tdx-focus, unseen,
+        so profiles still follow). Opening 3Dconnexion Settings brings them back,
+        and so does the next login (unless Start with the Desktop is off)."""
         try:
-            subprocess.run([systemctl(), "--user", "stop", "tdx-lcdmgr.service"],
+            subprocess.run([systemctl(), "--user", "stop"] + QUIT_UNITS,
                            capture_output=True, timeout=10)
         except (OSError, subprocess.TimeoutExpired):
             pass
+        for name in ("tdx-osd", "tdx-numpad", "tdx-radial"):  # started outside systemd
+            stop_by_pidfile(name)
+        quit_settings(self.bus)
         if self.loop:
             self.loop.quit()  # exit 0: systemd doesn't restart us
 
@@ -491,6 +498,39 @@ class Tray:
         if path:
             subprocess.Popen(["xdg-open", os.path.dirname(path)], start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# what Quit stops (the user units tdxd, the tray and the panel start them in)
+QUIT_UNITS = ["tdx-lcdmgr.service", "tdx-osd.service", "tdx-numpad.service",
+              "tdx-radial.service"]
+
+
+def stop_by_pidfile(name):
+    """End @name (tdx-osd, tdx-numpad, tdx-radial) by its pid file in the
+    session's runtime folder, if it is running there."""
+    path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
+                        "%s-%d.pid" % (name, os.getuid()))
+    try:
+        with open(path) as f:
+            pid = int(f.read().strip())
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            if name.encode() not in f.read():
+                return
+        os.kill(pid, signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+
+
+def quit_settings(bus):
+    """Close an open 3Dconnexion Settings (its "quit" action on the session bus)."""
+    if not bus:
+        return
+    try:
+        bus.call_sync("org.tdxd.Settings", "/org/tdxd/Settings", "org.gtk.Actions", "Activate",
+                      GLib.Variant("(sava{sv})", ("quit", [], {})), None,
+                      Gio.DBusCallFlags.NO_AUTO_START, 2000, None)
+    except GLib.Error:
+        pass  # not open
 
 
 def start_osd():
