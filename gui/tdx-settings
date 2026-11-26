@@ -1129,6 +1129,9 @@ FOOT_LINE = (0xD9 / 255.0, 0xD9 / 255.0, 0xD9 / 255.0)
 SECTION_LINE = (0xDC / 255.0, 0xDC / 255.0, 0xDC / 255.0)
 FOOTER_H = 61
 SUPPORT_TEXT = {"Discontinued": "In extended support", "Prerelease": "Prerelease"}
+# where 3DxWare's "In extended support" goes (its link in About)
+SUPPORT_URL = {"Discontinued":
+               "https://3dconnexion.com/uk/support/faq/3dconnexion-discontinued-devices/"}
 
 
 def asset_dirs():
@@ -1285,6 +1288,10 @@ window.tdx-frameless, window.tdx-frameless decoration {
 .tdx box.tdx-mrow button.tdx-mrow-arrow:hover { background-color: #ffffff;
   border-color: #7a7a7a; }
 .tdx label.tdx-placeholder { font-style: italic; }
+.tdx button.tdx-support-link { background: none; border: none; box-shadow: none;
+  padding: 0; min-height: 0; -gtk-icon-effect: none; }
+.tdx button.tdx-support-link label { color: #8a8a8a; }
+.tdx button.tdx-support-link:hover label { color: #000000; }
 .tdx button.tdx-link { background: none; border: none; box-shadow: none; padding: 0;
   min-height: 0; }
 .tdx button.tdx-link label { color: #9a9a9a; }
@@ -4738,14 +4745,51 @@ class AboutPanel(Panel):
             row.pack_start(lab("<span foreground='#555555'><b>%s</b> %s: %s</span>" % (
                 GLib.markup_escape_text(d["name"]), d["what"],
                 GLib.markup_escape_text(d["value"])), markup=True), False, False, 0)
-            sup = SUPPORT_TEXT.get(ASSETS.device(d.get("pid")).get("support"))
+            kind = ASSETS.device(d.get("pid")).get("support")
+            sup = SUPPORT_TEXT.get(kind)
             if sup:
-                ic = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
-                if ic:
-                    row.pack_start(ic, False, False, 0)
-                row.pack_start(lab(sup, "tdx-dim"), False, False, 0)
+                row.pack_start(support_link(sup, SUPPORT_URL.get(kind), self.box), False, False, 0)
             self.devbox.add(row)
         self.devbox.show_all()
+
+
+def support_link(text, url, parent):
+    """3DxWare's "In extended support" in About: grey, black with its icon
+    when hovered, a link to 3Dconnexion's page on discontinued devices."""
+    b = Gtk.Button()
+    b.set_relief(Gtk.ReliefStyle.NONE)
+    b.set_can_focus(False)
+    b.get_style_context().add_class("tdx-support-link")
+    hb = Gtk.Box(spacing=5)
+    grey = image_widget(ASSETS.ui("SmartUI_Icon_warning_grey") or ASSETS.ui("SmartUI_Alert_Icon_grey"))
+    black = image_widget(ASSETS.ui("SmartUI_Icon_warning_black"))
+    for ic in (grey, black):
+        if ic:
+            hb.pack_start(ic, False, False, 0)
+    if black:
+        black.set_no_show_all(True)
+    hb.pack_start(lab(text), False, False, 0)
+    b.add(hb)
+    if grey and black:
+        b.connect("state-flags-changed", lambda w, _o: (
+            lambda hot: (black.set_visible(hot), grey.set_visible(not hot)))(
+            bool(w.get_state_flags() & Gtk.StateFlags.PRELIGHT)) and None)
+    if url:
+        b.set_tooltip_text(url)
+        b.connect("clicked", lambda *_: open_url(url, parent))
+    else:
+        b.set_sensitive(False)
+    return b
+
+
+def open_url(url, widget=None):
+    top = widget.get_toplevel() if widget else None
+    try:
+        Gtk.show_uri_on_window(top if isinstance(top, Gtk.Window) else None, url,
+                               Gdk.CURRENT_TIME)
+    except GLib.Error:
+        subprocess.Popen(["xdg-open", url], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def about_devices(st):
@@ -5200,8 +5244,9 @@ class App:
     def close_panels(self):
         """A device was unplugged: close every window but the main one (and
         the device chooser), so the main window shows what is left."""
-        for w in list(self.windows.values()):
-            w.destroy()
+        for cls, w in list(self.windows.items()):
+            if cls is not AboutPanel:  # it lists the devices: it shows what is left
+                w.destroy()
         pop = getattr(self.main, "popover", None) if self.main else None
         if pop:
             pop.popdown()

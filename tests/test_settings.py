@@ -688,11 +688,26 @@ def gui_tests(d, tdxd):
     app.follow_tick()
     app.window(ts.ButtonsPanel)
     app.window(ts.ReceiverAdvancedPanel)
-    check(len(app.windows) == 2, "two windows open")
+    app.window(ts.AboutPanel)
+    about = [p for p in app.panels if isinstance(p, ts.AboutPanel)][-1]
+
+    def about_names():
+        out = []
+        for row in about.devbox.get_children():
+            kids = row.get_children() if isinstance(row, ts.Gtk.Box) else [row]
+            out += [k.get_text() for k in kids if isinstance(k, ts.Gtk.Label)]
+        return out
+    names = about_names()
+    check(len(app.windows) == 3 and len(names) == 3 and "CadMouse Compact Wireless" in names[0],
+          "three windows open; About lists the CadMouse, the receiver, the SpacePilot")
     with open(Args.status_file, "w") as f:  # the receiver unplugged
         f.write(two.split("receiver ")[0])
     app.follow_tick()
-    check(not app.windows and main.mode == "3d", "receiver unplugged: windows closed, main window")
+    names = about_names()
+    check(list(app.windows) == [ts.AboutPanel] and main.mode == "3d" and len(names) == 1 and
+          "SpacePilot PRO" in names[0],
+          "receiver unplugged: windows closed but About, which shows what is left")
+    app.windows[ts.AboutPanel].destroy()
     with open(Args.status_file, "w") as f:
         f.write(two)
     app.follow_tick()
