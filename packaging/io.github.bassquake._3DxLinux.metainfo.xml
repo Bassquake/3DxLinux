@@ -2,7 +2,7 @@
 <!-- AppStream data: how software centres (Discover, GNOME Software) name and
      describe the package. @VERSION@ and @DATE@ are filled in by mkpkg.sh. -->
 <component type="desktop-application">
-  <id>io.github.bassquake.tdxd</id>
+  <id>io.github.bassquake._3DxLinux</id>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <name>3DxLinux</name>
@@ -29,7 +29,7 @@
       3DxLinux is an independent driver, not a 3Dconnexion product.
     </p>
   </description>
-  <launchable type="desktop-id">tdx-settings.desktop</launchable>
+  <launchable type="desktop-id">3dxlinux-settings.desktop</launchable>
   <url type="homepage">https://github.com/Bassquake/3DxLinux</url>
   <url type="bugtracker">https://github.com/Bassquake/3DxLinux/issues</url>
   <categories>
@@ -44,8 +44,8 @@
     <keyword>spacenav</keyword>
   </keywords>
   <provides>
-    <binary>tdxd</binary>
-    <binary>tdx-settings</binary>
+    <binary>3dxlinuxd</binary>
+    <binary>3dxlinux-settings</binary>
   </provides>
   <releases>
     <release version="@VERSION@" date="@DATE@"/>

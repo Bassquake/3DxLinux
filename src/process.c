@@ -129,7 +129,7 @@ int tdx_rgb_plan(const struct tdx_config *cfg, const struct tdx_device_def *dev,
 	for (int i = 0; i < cfg->nledcolor; i++) {
 		int idx = led_index_for(dev, cfg->ledcolor[i].v3dk);
 		if (idx < 0) {
-			fprintf(stderr, "tdxd: no LED for '%s' on %s\n", cfg->ledcolor[i].v3dk, dev->name);
+			fprintf(stderr, "3dxlinuxd: no LED for '%s' on %s\n", cfg->ledcolor[i].v3dk, dev->name);
 			continue;
 		}
 		led[idx] = cfg->ledcolor[i].rgb;
@@ -285,7 +285,7 @@ void tdx_button_text(const struct tdx_config *cfg, const struct tdx_device_def *
 {
 	const char *v3dk = (dev && idx < dev->nbuttons) ? dev->buttons[idx].v3dk : NULL;
 	out[0] = 0;
-	/* 0. the focused application's own name for the key (tdxctl app-buttons) */
+	/* 0. the focused application's own name for the key (3dxlinuxctl app-buttons) */
 	for (int i = 0; v3dk && i < cfg->napp_label; i++)
 		if (!strcmp(cfg->app_label[i].v3dk, v3dk) && cfg->app_label[i].text[0]) {
 			snprintf(out, len, "%s", cfg->app_label[i].text);
@@ -394,7 +394,7 @@ int tdx_lcdcfg_xml(char *buf, size_t len, const struct tdx_config *cfg,
 	xml_esc(a, sizeof a, dev && dev->name ? dev->name : "");
 	sb_add(&s, "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
 		   "<LCDCfg Default=\"false\" CfgFormatVersion=\"1.30\" ThisFileVersion=\"1.20\""
-		   " Generator=\"tdxd\">\n<Device>\n\t<Name>%s</Name>\n\t<VendorID>%x</VendorID>\n"
+		   " Generator=\"3dxlinuxd\">\n<Device>\n\t<Name>%s</Name>\n\t<VendorID>%x</VendorID>\n"
 		   "\t<ProductID>%x</ProductID>\n", a, vid, pid);
 	sb_add(&s, "\t<Layout>\n\t\t<LCDIntensity>%d</LCDIntensity>\n\t\t<LEDIntensity>%d</LEDIntensity>\n"
 		   "\t\t<ButtonStyle></ButtonStyle>\n\t\t<TextSize></TextSize>\n\t</Layout>\n",

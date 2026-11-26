@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""tdx-settings - settings panel for tdxd.
+"""3dxlinux-settings - settings panel for 3dxlinuxd.
 
 The window layout follows the 3DxWare 10 control panel (main window,
 Advanced Settings, Buttons, LCD Manager, About), but everything it changes is
-plain tdxd configuration: your own ~/.config/3dxlinux/3dxlinux.conf over /etc/3dxlinux.conf,
+plain 3dxlinuxd configuration: your own ~/.config/3dxlinux/3dxlinux.conf over /etc/3dxlinux.conf,
 and your own per-application profiles (~/.config/3dxlinux/profiles) before those in
-/etc/3dxlinux.d, so no password is needed (tdxd reads them while you are at the
+/etc/3dxlinux.d, so no password is needed (3dxlinuxd reads them while you are at the
 screen). Files are edited in place (comments are kept), then the daemon is told
-to reload (`tdxctl reload`). With an /etc/3dxlinux.conf you can write (root), /etc
-is edited directly; `pkexec tdx-settings-helper` remains for files there.
+to reload (`3dxlinuxctl reload`). With an /etc/3dxlinux.conf you can write (root), /etc
+is edited directly; `pkexec 3dxlinux-settings-helper` remains for files there.
 
 All artwork (device illustration, axis glyphs, key caps) is drawn here with
 cairo; no 3Dconnexion images are used.
@@ -80,7 +80,7 @@ PRETTY_KEY = dict(LEFTCTRL="Ctrl", RIGHTCTRL="Ctrl", LEFTSHIFT="Shift", RIGHTSHI
                   ESC="Esc", ENTER="Enter", SPACE="Space", BACKSPACE="Backspace",
                   DELETE="Delete", PAGEUP="Page Up", PAGEDOWN="Page Down")
 
-# Driver actions (3DxWare's built-in button functions) -> tdxd action_<V3DK> names
+# Driver actions (3DxWare's built-in button functions) -> 3dxlinuxd action_<V3DK> names
 ACTIONS = [
     ("speed_up", "Increase Speed"),
     ("speed_down", "Decrease Speed"),
@@ -144,7 +144,7 @@ DEFAULT_ACTIONS = {"V3DK_PLUS": "speed_up", "V3DK_MINUS": "speed_down",
 ADVANCED_KEYS = (["dominant", "disable_translation", "disable_rotation", "led",
                   "map_ty", "map_tz"] + ["scale_" + a for a in AXES]
                  + ["invert_" + a for a in AXES])
-# a CadMouse on a Universal Receiver: sent to the mouse by tdxd (receiver.h)
+# a CadMouse on a Universal Receiver: sent to the mouse by 3dxlinuxd (receiver.h)
 MOUSE_KEYS = ["mouse_dpi", "mouse_polling_rate", "mouse_smart_scrolling"]
 # 3DxWare's Speed slider for a CadMouse (HIDDev.dll's table): the middle is 1400
 MOUSE_DPI_STEPS = [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800,
@@ -257,7 +257,7 @@ def fmt_num(x):
 # configuration files
 
 class ConfFile:
-    """A tdxd config file edited line by line so comments and order survive."""
+    """A 3dxlinuxd config file edited line by line so comments and order survive."""
 
     LINE = re.compile(r"^(\s*)([A-Za-z0-9_]+)(\s*=\s*)(.*)$")
 
@@ -364,7 +364,7 @@ class ConfFile:
 
 
 def user_settings_dir():
-    """Your own settings, saved without a password (tdxd reads them over
+    """Your own settings, saved without a password (3dxlinuxd reads them over
     /etc/3dxlinux.conf while you are at the screen)."""
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return os.path.join(base, "3dxlinux")
@@ -372,7 +372,7 @@ def user_settings_dir():
 
 
 class LayeredConf:
-    """/etc/3dxlinux.conf with your ~/.config/3dxlinux/3dxlinux.conf over it, as tdxd reads
+    """/etc/3dxlinux.conf with your ~/.config/3dxlinux/3dxlinux.conf over it, as 3dxlinuxd reads
     them: a value of yours wins; changes go to your file only (no password).
     Removing a key /etc sets: "none" for a key or an action (no binding, not
     /etc's); other options fall back to /etc's value (the admin's default)."""
@@ -427,7 +427,7 @@ class LayeredConf:
         return self.user.text()
 
     def merged_text(self):
-        """Both, as tdxd reads them (Export): /etc's, then yours over them."""
+        """Both, as 3dxlinuxd reads them (Export): /etc's, then yours over them."""
         return self.system.text() + "\n# your own settings (%s)\n" % self.user.path + \
             self.user.text()
 
@@ -474,8 +474,8 @@ class Store:
 
     @staticmethod
     def import_dirs():
-        """Where tdxd finds the profiles imported from 3DxWare (after profile_dir),
-        in tdxd's order (profile.h)."""
+        """Where 3dxlinuxd finds the profiles imported from 3DxWare (after profile_dir),
+        in 3dxlinuxd's order (profile.h)."""
         return ["/usr/local/share/3dxlinux/3dxware-ui/profiles", "/usr/share/3dxlinux/3dxware-ui/profiles",
                 os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui/profiles")]
 
@@ -487,7 +487,7 @@ class Store:
         return None
 
     def shipped_path(self, name):
-        """The settings profile @name came with, for Restore Defaults: tdxd's own
+        """The settings profile @name came with, for Restore Defaults: 3dxlinuxd's own
         (freecad.conf, kept in /usr/share/3dxlinux/defaults by the packages) or the
         one imported from 3DxWare. None for a profile you made yourself."""
         here = os.path.dirname(os.path.realpath(__file__))
@@ -501,7 +501,7 @@ class Store:
     def select(self, name):
         """Edit profile @name (None: the base file). A profile imported from
         3DxWare that isn't in profile_dir yet is shown as it is; the first
-        change saves a copy there (tdxd then uses that one, as for 3DxWare's
+        change saves a copy there (3dxlinuxd then uses that one, as for 3DxWare's
         own copy of a changed application configuration)."""
         if not name:
             self.profile = None
@@ -519,7 +519,7 @@ class Store:
     def create_profile(self, name, match):
         f = ConfFile(self.profile_path(name))
         if not f.exists:
-            f.lines = ["# tdxd per-application profile, created by tdx-settings.",
+            f.lines = ["# 3dxlinuxd per-application profile, created by 3dxlinux-settings.",
                        "# Settings here override /etc/3dxlinux.conf while a matching "
                        "application is focused.",
                        "match = %s" % match, ""]
@@ -579,14 +579,14 @@ class Store:
 # talking to the system
 
 # ---- starting with the desktop -----------------------------------------------
-# The packages enable tdx-tray and tdx-lcdmgr for every user (systemctl --global);
+# The packages enable 3dxlinux-tray and 3dxlinux-lcdmgr for every user (systemctl --global);
 # a user turns them off for themselves by masking their own copies (no password).
-# tdxd, the driver, is left alone.
-AUTOSTART_UNITS = ["tdx-tray.service", "tdx-lcdmgr.service"]
+# 3dxlinuxd, the driver, is left alone.
+AUTOSTART_UNITS = ["3dxlinux-tray.service", "3dxlinux-lcdmgr.service"]
 
 
 def systemctl():
-    return os.environ.get("TDX_SYSTEMCTL") or "systemctl"  # (tests)
+    return os.environ.get("DXLINUX_SYSTEMCTL") or "systemctl"  # (tests)
 
 
 def autostart_enabled():
@@ -642,18 +642,18 @@ class Daemon:
     def __init__(self, socket_path, status_file=None):
         self.socket = socket_path
         self.status_file = status_file
-        self.tdxctl = find_program("tdxctl")
+        self.ctl_path = find_program("3dxlinuxctl")
 
     def request(self, *args):
         if self.status_file and args == ("status",):
             with open(self.status_file) as f:
                 return 0, f.read()
         if self.status_file:
-            return 1, "demo mode: tdxd not contacted\n"
-        if not self.tdxctl:
-            return 127, "tdxctl not found\n"
+            return 1, "demo mode: 3dxlinuxd not contacted\n"
+        if not self.ctl_path:
+            return 127, "3dxlinuxctl not found\n"
         try:
-            p = subprocess.run([self.tdxctl, "-s", self.socket] + list(args),
+            p = subprocess.run([self.ctl_path, "-s", self.socket] + list(args),
                                capture_output=True, text=True, timeout=5)
         except (OSError, subprocess.TimeoutExpired) as e:
             return 1, str(e) + "\n"
@@ -674,8 +674,8 @@ class Daemon:
         if rc:
             return st
         for line in out.splitlines():
-            if line.startswith("tdxd "):
-                st["version"] = line[5:].strip()
+            if line.startswith("3dxlinuxd "):
+                st["version"] = line[len("3dxlinuxd "):].strip()
             elif line.startswith("profile "):
                 st["profile"] = line[8:].strip()
             elif line.startswith("application "):
@@ -737,7 +737,7 @@ def write_file_data(conf, data):
     try:
         if not os.path.isdir(d):
             os.makedirs(d, exist_ok=True)
-        tmp = conf.path + ".tdx-settings.tmp"
+        tmp = conf.path + ".3dxlinux-settings.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(data)
         if conf.exists:
@@ -756,12 +756,12 @@ PKEXEC_CANCELLED = "password cancelled"
 
 
 def pkexec_write(path, data):
-    """Write @data to the root-owned @path through `pkexec tdx-settings-helper`.
+    """Write @data to the root-owned @path through `pkexec 3dxlinux-settings-helper`.
     None, PKEXEC_CANCELLED (the user dismissed the password dialog) or an error."""
-    helper = find_program("tdx-settings-helper")
+    helper = find_program("3dxlinux-settings-helper")
     pkexec = shutil.which("pkexec")
     if not helper or not pkexec:
-        return "%s is not writable (and pkexec / tdx-settings-helper is missing)" % path
+        return "%s is not writable (and pkexec / 3dxlinux-settings-helper is missing)" % path
     try:
         p = subprocess.run([pkexec, helper, "write", path], input=data, text=True,
                            capture_output=True, timeout=300)
@@ -775,11 +775,11 @@ def pkexec_write(path, data):
 
 
 def pkexec_remove(path):
-    """Remove the root-owned profile @path through `pkexec tdx-settings-helper`."""
-    helper = find_program("tdx-settings-helper")
+    """Remove the root-owned profile @path through `pkexec 3dxlinux-settings-helper`."""
+    helper = find_program("3dxlinux-settings-helper")
     pkexec = shutil.which("pkexec")
     if not helper or not pkexec:
-        return "%s can't be removed (pkexec / tdx-settings-helper is missing)" % path
+        return "%s can't be removed (pkexec / 3dxlinux-settings-helper is missing)" % path
     try:
         p = subprocess.run([pkexec, helper, "remove", path], capture_output=True, text=True,
                            timeout=300)
@@ -846,7 +846,7 @@ def read_settings_archive(path):
                     PROFILE_NAME.match(name[len(pre):-5]) and "/" not in name[len(pre):]:
                 profiles[name[len(pre):-5]] = z.read(info).decode("utf-8", "replace")
     if base is None and not profiles:
-        raise ValueError("no tdxd settings in it")
+        raise ValueError("no 3dxlinuxd settings in it")
     return base, profiles
 
 
@@ -880,7 +880,7 @@ def shipped_default(name):
 
 
 def reset_settings(store):
-    """More > Reset all settings: the base file back to its default, tdxd's own
+    """More > Reset all settings: the base file back to its default, 3dxlinuxd's own
     profiles (FreeCAD's) back to theirs, the others in profile_dir removed (the
     imported 3DxWare ones elsewhere stay). Errors (list)."""
     errors = []
@@ -1119,7 +1119,7 @@ def draw_keycap(widget, cr, text):
 
 # --------------------------------------------------------------------------
 # 3DxWare look. The artwork is optional: tools/extract_3dxware_ui.py copies it
-# out of the user's own 3DxWare installer (it is not distributed with tdxd).
+# out of the user's own 3DxWare installer (it is not distributed with 3dxlinuxd).
 # Without it the same layout is drawn with plain shapes.
 
 import cairo  # noqa: E402  (python3-gi-cairo)
@@ -1137,7 +1137,7 @@ SUPPORT_URL = {"Discontinued":
 
 
 def asset_dirs():
-    env = os.environ.get("TDX_UI_ASSETS")
+    env = os.environ.get("DXLINUX_UI_ASSETS")
     here = os.path.dirname(os.path.realpath(__file__))
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
@@ -1859,12 +1859,12 @@ class MainPanel(Panel):
         self.show_page(self.mode, len(device_entries(st)) > 1)
         self.nodev_text.set_text(
             "No device found.\nPlease connect your 3Dconnexion device." if st.get("running") else
-            "The 3Dconnexion driver (tdxd) is not running.\nStart it with: sudo systemctl start tdxd")
+            "The 3Dconnexion driver (3DxLinux) is not running.\nStart it with: sudo systemctl start 3dxlinuxd")
         self.photo.update()
         self.dev_label.set_text(device_name(cur))
         self.name_btn_label.set_text(device_name(cur))
         if not st.get("running"):
-            state = "tdxd is not running"
+            state = "3dxlinuxd is not running"
         elif cur:
             info = ASSETS.device(cur.get("pid"))
             state = SUPPORT_TEXT.get(info.get("support"), "")
@@ -2057,7 +2057,7 @@ def mouse_dpi(store):
 
 class MouseAdvancedPanel(Panel):
     """3DxWare's Advanced Settings for a CadMouse. Polling Rate and Smart
-    Scrolling are sent to the mouse by tdxd; acceleration and the wheel's
+    Scrolling are sent to the mouse by 3dxlinuxd; acceleration and the wheel's
     lines per notch are Windows' own settings in 3DxWare, here the desktop's:
     set through KWin on KDE Plasma (KwinMice), greyed elsewhere."""
     title = "Advanced Settings"
@@ -2173,7 +2173,7 @@ MOUSE_BUTTONS = [
     ("V2DK_FORWARD", "SmartUI_V2DKey_Forward", "Forward Mouse Button", 291, 182),
     ("V2DK_BACKWARD", "SmartUI_V2DKey_Backward", "Backward Mouse Button", 291, 216),
 ]
-# mouse functions: done by the mouse itself (tdxd puts them in its button map)
+# mouse functions: done by the mouse itself (3dxlinuxd puts them in its button map)
 MOUSE_FUNCTIONS = [
     ("BTN_LEFT", "Primary Mouse Function", "HIDMouse_Left.png"),
     ("BTN_RIGHT", "Secondary Mouse Function", "HIDMouse_Right.png"),
@@ -2433,9 +2433,9 @@ class ActionPicker:
         w = self.widget
         top = w.get_toplevel()
         t0 = time.monotonic()
-        dbg = os.environ.get("TDX_DEBUG_PICKER")
+        dbg = os.environ.get("DXLINUX_DEBUG_PICKER")
 
-        def mark(what):  # TDX_DEBUG_PICKER=1: where opening it takes its time
+        def mark(what):  # DXLINUX_DEBUG_PICKER=1: where opening it takes its time
             if dbg:
                 sys.stderr.write("picker: %-22s %6.3f s\n" % (what, time.monotonic() - t0))
         if dbg:
@@ -2950,14 +2950,14 @@ def icon_file(spec):
 
 
 def start_osd(sock=None):
-    """tdx-osd, the On-Screen Display, in a unit of its own (it ends itself
+    """3dxlinux-osd, the On-Screen Display, in a unit of its own (it ends itself
     when "Always show On-Screen Display" is unticked)."""
-    prog = find_program("tdx-osd") or shutil.which("tdx-osd")
+    prog = find_program("3dxlinux-osd") or shutil.which("3dxlinux-osd")
     if not prog:
         return
     argv = [prog] + (["-s", sock] if sock else [])
     try:
-        r = subprocess.run(["systemd-run", "--user", "--unit=tdx-osd", "--collect", "--quiet"] +
+        r = subprocess.run(["systemd-run", "--user", "--unit=3dxlinux-osd", "--collect", "--quiet"] +
                            argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=5)
         if r.returncode == 0:
@@ -3275,7 +3275,7 @@ class RadialMenuEditor(BindingRows, Panel):
     section's function, set like a CadMouse button's (type a shortcut, or the
     arrow's picker). Saved as radial_<ID>_* lines where the button that
     opened it keeps its settings, and given to that button (radial:<ID>);
-    tdx-radial shows it."""
+    3dxlinux-radial shows it."""
     title = "Radial Menu Editor"
     subtitle = "Radial Menu Editor"
     size = (772, 368)
@@ -3645,8 +3645,8 @@ def draw_pencil(cr):
 
 class MouseButtonsPanel(BindingRows, Panel):
     """3DxWare's Buttons window for a CadMouse. Mouse functions are done by
-    the mouse itself (tdxd sends it the button map); a keystroke button
-    reports apart and tdxd sends the keys. "Application Specific Settings":
+    the mouse itself (3dxlinuxd sends it the button map); a keystroke button
+    reports apart and 3dxlinuxd sends the keys. "Application Specific Settings":
     the shown application's profile gets its own CadMouse buttons; off, it
     uses the global ones (3dxlinux.conf)."""
     title = "Buttons"
@@ -3669,7 +3669,7 @@ class MouseButtonsPanel(BindingRows, Panel):
         self.swap = self.put(Gtk.CheckButton(label="Swap Middle / Right Mouse Buttons"), 31, 292)
         self.swap.connect("toggled", self.guard(
             lambda b: self.set_value("mouse_swap_buttons", "yes" if b.get_active() else "no")))
-        # 3DxWare's On-Screen Display (3DxVirtualLCD's MouseBar): tdx-osd's dock
+        # 3DxWare's On-Screen Display (3DxVirtualLCD's MouseBar): 3dxlinux-osd's dock
         self.osd = self.put(Gtk.CheckButton(label="Always show On-Screen Display"), 31, 314)
         self.osd.set_tooltip_text("A small dock with the application and the middle, back and "
                                   "forward buttons' functions; drag it anywhere")
@@ -3734,7 +3734,7 @@ class MouseButtonsPanel(BindingRows, Panel):
         kind, val = self.binding(v2dk)
         if kind == "default":
             d = MOUSE_DEFAULT[v2dk]
-            # the radial-menu button's default: Common Tools (tdx-radial)
+            # the radial-menu button's default: Common Tools (3dxlinux-radial)
             kind, val = ("mouse", d) if d else ("action", "commontools")
         for _sec, it in picker_items(self.picker_sections()):
             if picker_value_matches(it["value"], kind, val):
@@ -3839,7 +3839,7 @@ class MouseButtonsPanel(BindingRows, Panel):
 
     def assign(self, v2dk, value, action=None):
         """@value: a BTN_* mouse function, a chord, or None for the default;
-        @action: a driver action instead (it beats a key, as in tdxd)."""
+        @action: a driver action instead (it beats a key, as in 3dxlinuxd)."""
         f = self.conf()
         key, akey = "key_" + v2dk, "action_" + v2dk
         specific = self.specific()
@@ -3860,8 +3860,8 @@ class MouseButtonsPanel(BindingRows, Panel):
         self.store.changed()
 
 
-# Add device: what 3DxPair offers for a Universal Receiver (tdxctl pair KIND)
-# 3DxPair's Device Selection, in its order: (tdxctl pair KIND, name, its picture
+# Add device: what 3DxPair offers for a Universal Receiver (3dxlinuxctl pair KIND)
+# 3DxPair's Device Selection, in its order: (3dxlinuxctl pair KIND, name, its picture
 # from 3DxPair.exe, the device photo to fall back on)
 PAIR_KINDS = [("spacemousepro", "SpaceMouse Pro Wireless", "SmartUI_Device_SMpro", "SMPW_Head.png"),
               ("spacemouse", "SpaceMouse Wireless", "SmartUI_Device_SMwireless", "SMW_Head.png"),
@@ -3873,7 +3873,7 @@ PAIR_TITLES = {"choose": "Device Selection", "pairing": "Pairing",
 
 class AddDevicePanel(Panel):
     """3DxWare's "Add device" (3DxPair.exe) for a Universal Receiver: choose the
-    device, follow the steps while tdxd keeps the receiver in pairing mode
+    device, follow the steps while 3dxlinuxd keeps the receiver in pairing mode
     (55 s), then the result."""
     title = "3Dconnexion Pairing"
     subtitle = "3Dconnexion Pairing"
@@ -3983,7 +3983,7 @@ class AddDevicePanel(Panel):
             return True
         if not p and time.monotonic() - self.started < 75:
             # no pairing line: the receiver is away for a moment (it drops off
-            # USB once a device has paired) - wait for tdxd's result
+            # USB once a device has paired) - wait for 3dxlinuxd's result
             return True
         if p and p["state"] == "done":
             self.text.set_markup("Your <b>%s</b> was successfully paired." %
@@ -4148,7 +4148,7 @@ class PairedTile(Gtk.EventBox):
 
 class ReceiverAdvancedPanel(Panel):
     """3DxWare's Advanced Settings for a Universal Receiver: the paired devices
-    (a remove button on each while the pointer is over it: tdxctl unpair SLOT)
+    (a remove button on each while the pointer is over it: 3dxlinuxctl unpair SLOT)
     and Add device."""
     title = "Advanced Settings"
     subtitle = "Advanced Settings"
@@ -4457,7 +4457,7 @@ class ButtonsPanel(Panel):
             kind, _ = self.assignment(v3dk)
             l.set_text(self.describe(v3dk, fn))
             if v3dk in self.own:
-                tip = ("%s's own command for this key (its tdxd add-on; it changes with "
+                tip = ("%s's own command for this key (its 3dxlinuxd add-on; it changes with "
                        "the workbench)" % self.own_app)
             else:
                 tip = "Sent to the application" if kind == "app" else None
@@ -4704,7 +4704,7 @@ class AboutPanel(Panel):
         self.section("Start-up", 33, 420, 478)
         self.autostart = self.put(Gtk.CheckButton(
             label="Start the tray icon and LCD Manager with the desktop"), 37, 488)
-        self.autostart.set_tooltip_text("Off: they don't start at login (tdxd, the driver, still "
+        self.autostart.set_tooltip_text("Off: they don't start at login (3dxlinuxd, the driver, still "
                                         "does). On: they start again, now and at login.")
         self.autostart.connect("toggled", self.guard(
             lambda b: set_autostart(b.get_active(), start_now=True)))
@@ -4719,7 +4719,7 @@ class AboutPanel(Panel):
         self.autostart.set_active(autostart_enabled())
         self.updating = False
         st = self.app.status
-        rows = [("3DxLinux", st.get("version", "not running")), ("tdx-settings", APP_VERSION)]
+        rows = [("3DxLinux", st.get("version", "not running")), ("3dxlinux-settings", APP_VERSION)]
         for l, (k, v) in zip(self.ver, rows):
             l.set_markup("<span foreground='#555555'><b>%s</b> %s</span>"
                          % (GLib.markup_escape_text(k), GLib.markup_escape_text(v)))
@@ -4877,9 +4877,9 @@ def import_summary(lines):
 def find_extractor():
     """The command that runs tools/extract_3dxware_ui.py: installed, or from the source tree."""
     here = os.path.dirname(os.path.realpath(__file__))
-    for p in (os.path.join(here, "tdx-extract-3dxware-ui"),
+    for p in (os.path.join(here, "3dxlinux-extract-3dxware-ui"),
               os.path.join(here, "..", "tools", "extract_3dxware_ui.py"),
-              shutil.which("tdx-extract-3dxware-ui")):
+              shutil.which("3dxlinux-extract-3dxware-ui")):
         if p and os.path.isfile(p):
             return [sys.executable, os.path.realpath(p)]
     return None
@@ -4913,7 +4913,7 @@ def import_look(parent, app):
     cmd = find_extractor()
     if not cmd:
         message(parent, Gtk.MessageType.ERROR, "The importer is missing",
-                "tdx-extract-3dxware-ui was not found. Reinstall tdxd.")
+                "3dxlinux-extract-3dxware-ui was not found. Reinstall 3dxlinuxd.")
         return
     if not (shutil.which("7z") or shutil.which("7za") or shutil.which("7zz")):
         message(parent, Gtk.MessageType.WARNING, "Importing needs 7-Zip",
@@ -4976,18 +4976,18 @@ def import_look(parent, app):
                     "\n".join(lines[-4:]) or "The importer stopped with code %d." % rc)
             return False
         # the LCD Manager and its applets load the artwork when they start
-        subprocess.call(["systemctl", "--user", "try-restart", "tdx-lcdmgr.service"],
+        subprocess.call(["systemctl", "--user", "try-restart", "3dxlinux-lcdmgr.service"],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # FreeCAD's key sets came with the import: make sure FreeCAD loads them
         here = os.path.dirname(os.path.realpath(__file__))
-        fc = next((p for p in (os.path.join(here, "tdx-freecad-addon"),
-                               os.path.join(here, "..", "packaging", "tdx-freecad-addon"),
-                               shutil.which("tdx-freecad-addon")) if p and os.path.isfile(p)), None)
+        fc = next((p for p in (os.path.join(here, "3dxlinux-freecad-addon"),
+                               os.path.join(here, "..", "packaging", "3dxlinux-freecad-addon"),
+                               shutil.which("3dxlinux-freecad-addon")) if p and os.path.isfile(p)), None)
         if fc:
             subprocess.call(["sh", fc, "install"], stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL)
-        # tdxd reads the imported application profiles (yours, as the one asking)
-        ctl = find_program("tdxctl")
+        # 3dxlinuxd reads the imported application profiles (yours, as the one asking)
+        ctl = find_program("3dxlinuxctl")
         if ctl:
             subprocess.call([ctl, "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         message(parent, Gtk.MessageType.INFO, "The 3DxWare look is imported",
@@ -5049,7 +5049,7 @@ class App:
     # ---- saving
     def on_changed(self):
         """Like 3DxWare, a change takes effect right away: saved shortly after
-        (a slider sends many changes), then tdxd reloads. Root-owned files go
+        (a slider sends many changes), then 3dxlinuxd reloads. Root-owned files go
         through pkexec - one password, which polkit keeps for a few minutes
         (auth_admin_keep) - unless the user cancelled it: then on close."""
         for p in self.panels:
@@ -5103,7 +5103,7 @@ class App:
                 self.set_save_state("Not saved: " + errors[0])
             else:
                 rc, _out = self.daemon.request("reload")
-                self.set_save_state("Saved" if rc == 0 else "Saved; tdxd not reloaded")
+                self.set_save_state("Saved" if rc == 0 else "Saved; 3dxlinuxd not reloaded")
                 GLib.timeout_add(800, self.poll_status)
             if self.save_again or (not errors and self.store.dirty()):
                 self.save_again = False
@@ -5132,7 +5132,7 @@ class App:
             self.set_save_state("Not saved: " + errors[0])
             return False
         rc, out = self.daemon.request("reload")
-        self.set_save_state("Saved" if rc == 0 else "Saved; tdxd not reloaded")
+        self.set_save_state("Saved" if rc == 0 else "Saved; 3dxlinuxd not reloaded")
         GLib.timeout_add(800, self.poll_status)
         return False
 
@@ -5160,14 +5160,14 @@ class App:
                                        for p in r["paired"])) for r in st.get("receivers", [])))
 
     def follow_tick(self):
-        """Like 3DxWare's panel, show the application used last: tdxd ignores
+        """Like 3DxWare's panel, show the application used last: 3dxlinuxd ignores
         focus on its own windows, so its active profile is that application's.
         When it changes the panel switches to it (a profile you chose from the
         title menu stays until then). Also refreshes the Buttons window when
         the application renames its keys (FreeCAD's workbench)."""
         st = self.daemon.status()
         if self.device_key(st) != self.device_key(self.status):
-            # a device plugged in or out, or tdxd started / stopped
+            # a device plugged in or out, or 3dxlinuxd started / stopped
             gone = ({e["key"] for e in device_entries(self.status)} -
                     {e["key"] for e in device_entries(st)})
             if gone and not self.device_change_expected():
@@ -5176,7 +5176,7 @@ class App:
             for p in self.panels:
                 p.refresh()
         if self.args.profile is not None or not st.get("running"):
-            return True  # -p: the profile asked for; no tdxd: nothing to follow
+            return True  # -p: the profile asked for; no 3dxlinuxd: nothing to follow
         prof = st.get("profile")
         if prof and prof != self.tdxd_profile:
             self.tdxd_profile = prof
@@ -5315,11 +5315,11 @@ class App:
 
     def show_lcd(self):
         """3DxWare's LCD Manager button opens Logitech's LCD Manager; ours opens
-        tdx-lcdmanager when tdx-lcdmgr runs, else tdxd's built-in key page settings."""
+        3dxlinux-lcdmanager when 3dxlinux-lcdmgr runs, else 3dxlinuxd's built-in key page settings."""
         rt = os.environ.get("XDG_RUNTIME_DIR")
-        sock = os.environ.get("TDX_LCD_SOCKET") or (
-            os.path.join(rt, "tdx-lcd.sock") if rt else "/tmp/tdx-lcd-%d.sock" % os.getuid())
-        prog = find_program("tdx-lcdmanager")
+        sock = os.environ.get("DXLINUX_LCD_SOCKET") or (
+            os.path.join(rt, "3dxlinux-lcd.sock") if rt else "/tmp/3dxlinux-lcd-%d.sock" % os.getuid())
+        prog = find_program("3dxlinux-lcdmanager")
         if prog and os.path.exists(sock) and not self.args.status_file:
             args = [prog]
             if ASSETS.dir:
@@ -5380,7 +5380,7 @@ class App:
             subprocess.Popen(["xdg-open", PROJECT_URL + "/issues"], start_new_session=True)
 
     def settings_changed(self, errors, done_text):
-        """After import / reset: read the files again, tell tdxd, show the result."""
+        """After import / reset: read the files again, tell 3dxlinuxd, show the result."""
         self.store.base.reload()
         name = os.path.basename(self.store.profile.path)[:-5] if self.store.profile else None
         self.store.select(name if name in self.store.profile_names() else None)
@@ -5398,7 +5398,7 @@ class App:
                         "Save" if action == Gtk.FileChooserAction.SAVE else "Open",
                         Gtk.ResponseType.OK)
         flt = Gtk.FileFilter()
-        flt.set_name("tdxd settings (*.zip)")
+        flt.set_name("3dxlinuxd settings (*.zip)")
         flt.add_pattern("*.zip")
         dlg.add_filter(flt)
         dlg.set_current_folder(os.path.expanduser("~"))
@@ -5413,7 +5413,7 @@ class App:
         if self.store.dirty():
             self.flush()
         path = self.choose_file("Export settings", Gtk.FileChooserAction.SAVE,
-                                "tdxd-settings-%s.zip" % time.strftime("%Y%m%d"))
+                                "3dxlinux-settings-%s.zip" % time.strftime("%Y%m%d"))
         if not path:
             return
         try:
@@ -5460,14 +5460,14 @@ class App:
         Gtk.main_quit()
 
     def present(self):
-        """Another start of tdx-settings: show this panel instead."""
+        """Another start of 3dxlinux-settings: show this panel instead."""
         if self.win:
             self.win.deiconify()
             self.win.present()
 
     def run(self):
         set_window_icons(window_icon_files(ASSETS.dir and os.path.join(ASSETS.dir, "appicons"),
-                                           "3dxware"), "tdxd-3dxware")
+                                           "3dxware"), "3dxlinux-3dxware")
         self.main = MainPanel(self)
         self.win = self.make_window(self.main)
         self.win.connect("delete-event", lambda *_: (self.quit(), True)[1])
@@ -5505,31 +5505,31 @@ class App:
             surf = cairo.ImageSurface(cairo.FORMAT_RGB24, w, h)
             cr = cairo.Context(surf)
             panel.box.draw(cr)
-            path = os.path.join(outdir, "tdx-settings-%s.png" % name)
+            path = os.path.join(outdir, "3dxlinux-settings-%s.png" % name)
             surf.write_to_png(path)
             print(path, "%dx%d" % (w, h))
 
 
 def main():
     global ASSETS
-    GLib.set_prgname("tdx-settings")  # Wayland app id = tdx-settings.desktop (taskbar icon)
-    ap = argparse.ArgumentParser(description="Settings panel for the tdxd 3Dconnexion driver")
+    GLib.set_prgname("3dxlinux-settings")  # Wayland app id = 3dxlinux-settings.desktop (taskbar icon)
+    ap = argparse.ArgumentParser(description="Settings panel for the 3dxlinuxd 3Dconnexion driver")
     ap.add_argument("-c", "--config", default="/etc/3dxlinux.conf", help="base configuration file")
     ap.add_argument("--profile-dir", help="per-application profiles (default: profile_dir)")
     ap.add_argument("-p", "--profile", help="edit this profile instead of the active one "
                                             "('' for the default settings)")
-    ap.add_argument("-s", "--socket", help="tdxd control socket (default: control_socket)")
+    ap.add_argument("-s", "--socket", help="3dxlinuxd control socket (default: control_socket)")
     ap.add_argument("--assets", help="3DxWare artwork from tools/extract_3dxware_ui.py "
                                      "(default: ~/.local/share/3dxlinux/3dxware-ui, "
                                      "/usr/local/share/3dxlinux/3dxware-ui)")
     ap.add_argument("--no-assets", action="store_true", help="use the built-in drawings")
     ap.add_argument("--snapshot", metavar="DIR", help="render every window to DIR/*.png and exit")
-    ap.add_argument("--status-file", help=argparse.SUPPRESS)  # canned `tdxctl status` (tests)
+    ap.add_argument("--status-file", help=argparse.SUPPRESS)  # canned `3dxlinuxctl status` (tests)
     ap.add_argument("--no-save", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--show-about", action="store_true", help=argparse.SUPPRESS)  # after an import
     ap.add_argument("--buttons", action="store_true",
                     help="open the Buttons window too (the On-Screen Display's click)")
-    ap.add_argument("-V", "--version", action="version", version="tdx-settings " + APP_VERSION)
+    ap.add_argument("-V", "--version", action="version", version="3dxlinux-settings " + APP_VERSION)
     args = ap.parse_args()
     ASSETS = Assets(args.assets) if not args.no_assets else Assets("/nonexistent")
     install_css(ASSETS)
@@ -5549,7 +5549,7 @@ def main():
     return 0
 
 
-APP_ID = "org.tdxd.Settings"
+APP_ID = "io.github.bassquake._3DxLinux.Settings"
 
 
 def single_instance(args):

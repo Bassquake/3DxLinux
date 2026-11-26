@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""tdx-tray - the 3Dconnexion icon in the desktop's system tray, like 3DxWare's
+"""3dxlinux-tray - the 3Dconnexion icon in the desktop's system tray, like 3DxWare's
 on Windows. Left click: the settings panel. Right click:
 
-    Open 3Dconnexion Settings    tdx-settings (brought forward if open)
+    Open 3Dconnexion Settings    3dxlinux-settings (brought forward if open)
     Write Log File               what support asks for, in a text file on the
                                  Desktop, and a notification saying where
     Start with the Desktop       the tray icon and the LCD Manager at login
     Quit                         the tray icon and the LCD Manager, for now
-                                 (tdxd, the driver, keeps running)
+                                 (3dxlinuxd, the driver, keeps running)
 
 The icon is a StatusNotifierItem with a DBusMenu menu (the D-Bus protocols KDE
 Plasma's tray uses, as do GNOME's AppIndicator extension, Xfce, Cinnamon, ...),
-served with Gio alone. Started with the desktop session (tdx-tray.service).
+served with Gio alone. Started with the desktop session (3dxlinux-tray.service).
 
-    tdx-tray [--write-log]     --write-log: just write the log file and exit
+    3dxlinux-tray [--write-log]     --write-log: just write the log file and exit
 """
 
 import argparse
@@ -33,7 +33,7 @@ from gi.repository import Gio, GLib  # noqa: E402
 
 APP_VERSION = "dev"  # set by make install / dist
 TITLE = "3Dconnexion Settings"
-ICON = "tdxd-3dxware"        # the 3Dconnexion logo, installed by the 3DxWare look import
+ICON = "3dxlinux-3dxware"        # the 3Dconnexion logo, installed by the 3DxWare look import
 ICON_FALLBACK = "input-mouse"
 WATCHER = "org.kde.StatusNotifierWatcher"
 ITEM_PATH = "/StatusNotifierItem"
@@ -146,14 +146,14 @@ def log_dir():
 
 
 # ---- starting with the desktop -----------------------------------------------
-# The packages enable tdx-tray and tdx-lcdmgr for every user (systemctl --global);
+# The packages enable 3dxlinux-tray and 3dxlinux-lcdmgr for every user (systemctl --global);
 # a user turns them off for themselves by masking their own copies (no password).
-# tdxd, the driver, is left alone.
-AUTOSTART_UNITS = ["tdx-tray.service", "tdx-lcdmgr.service"]
+# 3dxlinuxd, the driver, is left alone.
+AUTOSTART_UNITS = ["3dxlinux-tray.service", "3dxlinux-lcdmgr.service"]
 
 
 def systemctl():
-    return os.environ.get("TDX_SYSTEMCTL") or "systemctl"  # (tests)
+    return os.environ.get("DXLINUX_SYSTEMCTL") or "systemctl"  # (tests)
 
 
 def autostart_enabled():
@@ -201,41 +201,41 @@ def read(path, limit=200000):
         return "(%s)" % (e.strerror or e)
 
 
-def log_sections(tdxctl=None):
+def log_sections(ctl_prog=None):
     """[(title, text)]: what a log for a 3D mouse problem needs - versions, what
-    tdxd sees, the settings, and the services' recent messages."""
-    ctl = tdxctl or find_program("tdxctl") or "tdxctl"
-    s = [("Written", "%s by tdx-tray %s" % (datetime.datetime.now().isoformat(" ", "seconds"),
+    3dxlinuxd sees, the settings, and the services' recent messages."""
+    ctl = ctl_prog or find_program("3dxlinuxctl") or "3dxlinuxctl"
+    s = [("Written", "%s by 3dxlinux-tray %s" % (datetime.datetime.now().isoformat(" ", "seconds"),
                                             APP_VERSION)),
          ("System", run(["uname", "-a"]) + "\n" + "\n".join(
              l for l in read("/etc/os-release").splitlines()
              if l.startswith(("PRETTY_NAME=", "VERSION_ID=")))),
          ("Desktop", "XDG_CURRENT_DESKTOP=%s XDG_SESSION_TYPE=%s" % (
              os.environ.get("XDG_CURRENT_DESKTOP", "-"), os.environ.get("XDG_SESSION_TYPE", "-"))),
-         ("Package", run(["dpkg-query", "-W", "-f", "${Package} ${Version}\n", "tdxd"])
-          if shutil.which("dpkg-query") else run(["rpm", "-q", "tdxd"])),
-         ("tdxctl -V", run([ctl, "-V"])),
-         ("tdxctl status", run([ctl, "status"])),
-         ("tdxctl buttons", run([ctl, "buttons"])),
-         ("tdxctl app-keys", run([ctl, "app-keys"])),
-         ("tdxctl profiles", run([ctl, "profiles"])),
+         ("Package", run(["dpkg-query", "-W", "-f", "${Package} ${Version}\n", "3dxlinuxd"])
+          if shutil.which("dpkg-query") else run(["rpm", "-q", "3dxlinuxd"])),
+         ("3dxlinuxctl -V", run([ctl, "-V"])),
+         ("3dxlinuxctl status", run([ctl, "status"])),
+         ("3dxlinuxctl buttons", run([ctl, "buttons"])),
+         ("3dxlinuxctl app-keys", run([ctl, "app-keys"])),
+         ("3dxlinuxctl profiles", run([ctl, "profiles"])),
          ("USB (3Dconnexion / Logitech)",
           run(["lsusb", "-d", "256f:"]) + "\n" + run(["lsusb", "-d", "046d:"])),
          ("Device nodes", run(["sh", "-c", "ls -l /dev/hidraw* /dev/uinput 2>&1"])),
          ("User and groups", run(["id"])),
-         ("tdxd service", run(["systemctl", "status", "--no-pager", "-n", "0", "tdxd.service"])),
+         ("3dxlinuxd service", run(["systemctl", "status", "--no-pager", "-n", "0", "3dxlinuxd.service"])),
          ("User services", run(["systemctl", "--user", "status", "--no-pager", "-n", "0",
-                                "tdx-lcdmgr.service", "tdx-focus.service", "tdx-tray.service"])),
-         ("tdxd messages (this boot)",
-          run(["journalctl", "-b", "-u", "tdxd.service", "-n", "300", "--no-pager"])),
+                                "3dxlinux-lcdmgr.service", "3dxlinux-focus.service", "3dxlinux-tray.service"])),
+         ("3dxlinuxd messages (this boot)",
+          run(["journalctl", "-b", "-u", "3dxlinuxd.service", "-n", "300", "--no-pager"])),
          ("Session messages (LCD Manager, focus, tray)",
-          run(["journalctl", "--user", "-b", "-u", "tdx-lcdmgr.service", "-u", "tdx-focus.service",
-               "-u", "tdx-tray.service", "-n", "300", "--no-pager"])),
+          run(["journalctl", "--user", "-b", "-u", "3dxlinux-lcdmgr.service", "-u", "3dxlinux-focus.service",
+               "-u", "3dxlinux-tray.service", "-n", "300", "--no-pager"])),
          ("/etc/3dxlinux.conf", read("/etc/3dxlinux.conf"))]
     for p in sorted(glob.glob("/etc/3dxlinux.d/*.conf")):
         s.append((p, read(p)))
     own = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
-                       "3dxlinux")  # your own settings (tdx-settings, no password)
+                       "3dxlinux")  # your own settings (3dxlinux-settings, no password)
     for p in [os.path.join(own, "3dxlinux.conf")] + sorted(glob.glob(os.path.join(own, "profiles",
                                                                               "*.conf"))):
         if os.path.isfile(p):
@@ -244,23 +244,23 @@ def log_sections(tdxctl=None):
                  glob.glob("/usr/local/share/3dxlinux/3dxware-ui/profiles/*.conf"))
     s.append(("Imported 3DxWare profiles", "%d: %s" % (
         len(imp), " ".join(os.path.basename(p)[:-5] for p in imp)) if imp else "none"))
-    s.append(("udev rule", read("/usr/lib/udev/rules.d/70-3dconnexion-tdxd.rules")
-              if os.path.exists("/usr/lib/udev/rules.d/70-3dconnexion-tdxd.rules")
-              else read("/etc/udev/rules.d/70-3dconnexion-tdxd.rules")))
+    s.append(("udev rule", read("/usr/lib/udev/rules.d/70-3dconnexion-3dxlinux.rules")
+              if os.path.exists("/usr/lib/udev/rules.d/70-3dconnexion-3dxlinux.rules")
+              else read("/etc/udev/rules.d/70-3dconnexion-3dxlinux.rules")))
     return s
 
 
-def write_log(directory=None, tdxctl=None):
+def write_log(directory=None, ctl_prog=None):
     """Write the log file; its path."""
     d = directory or log_dir()
-    stem = os.path.join(d, "tdxd-log-%s" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    stem = os.path.join(d, "3dxlinux-log-%s" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
     path, n = stem + ".txt", 1
     while os.path.exists(path):  # two in the same second: don't overwrite
         n += 1
         path = "%s-%d.txt" % (stem, n)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("tdxd log file (3Dconnexion driver for Linux)\n")
-        for title, text in log_sections(tdxctl):
+        f.write("3dxlinuxd log file (3Dconnexion driver for Linux)\n")
+        for title, text in log_sections(ctl_prog):
             f.write("\n==== %s ====\n%s\n" % (title, text))
     return path
 
@@ -362,7 +362,7 @@ class Tray:
                  GLib.Variant("(s)", (self.name,)), None, Gio.DBusCallFlags.NONE, -1, None, None)
 
     def on_sni_prop(self, _bus, _sender, _path, _iface, prop):
-        v = {"Category": ("s", "Hardware"), "Id": ("s", "tdxd"), "Title": ("s", TITLE),
+        v = {"Category": ("s", "Hardware"), "Id": ("s", "3dxlinuxd"), "Title": ("s", TITLE),
              "Status": ("s", "Active"), "WindowId": ("i", 0), "IconName": ("s", self.icon),
              "IconThemePath": ("s", ""), "AttentionIconName": ("s", ""),
              "OverlayIconName": ("s", ""), "ItemIsMenu": ("b", False),
@@ -447,8 +447,8 @@ class Tray:
     def quit(self):
         """Quit everything of 3Dconnexion's on the screen for this session: the
         tray icon, the LCD Manager, the On-Screen Display, the Virtual NumPad,
-        a radial menu and the settings panel. tdxd keeps running, so the 3D
-        mouse works and the LCD shows tdxd's key page (and tdx-focus, unseen,
+        a radial menu and the settings panel. 3dxlinuxd keeps running, so the 3D
+        mouse works and the LCD shows 3dxlinuxd's key page (and 3dxlinux-focus, unseen,
         so profiles still follow). Opening 3Dconnexion Settings brings them back,
         and so does the next login (unless Start with the Desktop is off)."""
         try:
@@ -456,14 +456,14 @@ class Tray:
                            capture_output=True, timeout=10)
         except (OSError, subprocess.TimeoutExpired):
             pass
-        for name in ("tdx-osd", "tdx-numpad", "tdx-radial"):  # started outside systemd
+        for name in ("3dxlinux-osd", "3dxlinux-numpad", "3dxlinux-radial"):  # started outside systemd
             stop_by_pidfile(name)
         quit_settings(self.bus)
         if self.loop:
             self.loop.quit()  # exit 0: systemd doesn't restart us
 
     def open_settings(self):
-        prog = os.environ.get("TDX_TRAY_SETTINGS") or find_program("tdx-settings")  # (tests)
+        prog = os.environ.get("DXLINUX_TRAY_SETTINGS") or find_program("3dxlinux-settings")  # (tests)
         if prog:  # single instance: an open panel comes to the front
             subprocess.Popen([prog], start_new_session=True, stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -500,13 +500,13 @@ class Tray:
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-# what Quit stops (the user units tdxd, the tray and the panel start them in)
-QUIT_UNITS = ["tdx-lcdmgr.service", "tdx-osd.service", "tdx-numpad.service",
-              "tdx-radial.service"]
+# what Quit stops (the user units 3dxlinuxd, the tray and the panel start them in)
+QUIT_UNITS = ["3dxlinux-lcdmgr.service", "3dxlinux-osd.service", "3dxlinux-numpad.service",
+              "3dxlinux-radial.service"]
 
 
 def stop_by_pidfile(name):
-    """End @name (tdx-osd, tdx-numpad, tdx-radial) by its pid file in the
+    """End @name (3dxlinux-osd, 3dxlinux-numpad, 3dxlinux-radial) by its pid file in the
     session's runtime folder, if it is running there."""
     path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
                         "%s-%d.pid" % (name, os.getuid()))
@@ -526,7 +526,7 @@ def quit_settings(bus):
     if not bus:
         return
     try:
-        bus.call_sync("org.tdxd.Settings", "/org/tdxd/Settings", "org.gtk.Actions", "Activate",
+        bus.call_sync("io.github.bassquake._3DxLinux.Settings", "/io/github/bassquake/_3DxLinux/Settings", "org.gtk.Actions", "Activate",
                       GLib.Variant("(sava{sv})", ("quit", [], {})), None,
                       Gio.DBusCallFlags.NO_AUTO_START, 2000, None)
     except GLib.Error:
@@ -534,13 +534,13 @@ def quit_settings(bus):
 
 
 def start_osd():
-    """The CadMouse's On-Screen Display (tdx-osd), in a unit of its own: it ends
+    """The CadMouse's On-Screen Display (3dxlinux-osd), in a unit of its own: it ends
     itself at once unless "Always show On-Screen Display" is ticked."""
-    prog = os.environ.get("TDX_TRAY_OSD", "") or find_program("tdx-osd")  # (tests: "-")
+    prog = os.environ.get("DXLINUX_TRAY_OSD", "") or find_program("3dxlinux-osd")  # (tests: "-")
     if not prog or prog == "-":
         return
     try:
-        r = subprocess.run(["systemd-run", "--user", "--unit=tdx-osd", "--collect", "--quiet",
+        r = subprocess.run(["systemd-run", "--user", "--unit=3dxlinux-osd", "--collect", "--quiet",
                             prog], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=5)
         if r.returncode == 0:
@@ -555,9 +555,9 @@ def start_osd():
 
 
 def main():
-    ap = argparse.ArgumentParser(description="The 3Dconnexion icon in the system tray (tdxd)")
+    ap = argparse.ArgumentParser(description="The 3Dconnexion icon in the system tray (3DxLinux)")
     ap.add_argument("--write-log", action="store_true", help="write the log file and exit")
-    ap.add_argument("-V", "--version", action="version", version="tdx-tray " + APP_VERSION)
+    ap.add_argument("-V", "--version", action="version", version="3dxlinux-tray " + APP_VERSION)
     args = ap.parse_args()
     if args.write_log:
         print(write_log())
@@ -565,7 +565,7 @@ def main():
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     except GLib.Error as e:
-        print("tdx-tray: no session bus (%s)" % e.message, file=sys.stderr)
+        print("3dxlinux-tray: no session bus (%s)" % e.message, file=sys.stderr)
         return 0  # nothing to show the icon in
     loop = GLib.MainLoop()
     Tray(bus, loop)

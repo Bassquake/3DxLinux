@@ -1,6 +1,6 @@
-/* libtdxlcd: lglcd-compatible client for tdx-lcdmgr (see tdxlcd.h, lcdmgr_proto.h). */
+/* lib3dxlinuxlcd: lglcd-compatible client for 3dxlinux-lcdmgr (see 3dxlinuxlcd.h, lcdmgr_proto.h). */
 #define _GNU_SOURCE
-#include "tdxlcd.h"
+#include "3dxlinuxlcd.h"
 #include "lcdmgr_proto.h"
 
 #include <errno.h>
@@ -50,16 +50,16 @@ void tdxLcdSetSocketPath(const char *path)
 
 static void default_sock(char *out, size_t n)
 {
-	const char *env = getenv("TDX_LCD_SOCKET");
+	const char *env = getenv("DXLINUX_LCD_SOCKET");
 	const char *rt = getenv("XDG_RUNTIME_DIR");
 	if (g_sock[0])
 		snprintf(out, n, "%s", g_sock);
 	else if (env && *env)
 		snprintf(out, n, "%s", env);
 	else if (rt && *rt)
-		snprintf(out, n, "%s/tdx-lcd.sock", rt);
+		snprintf(out, n, "%s/3dxlinux-lcd.sock", rt);
 	else
-		snprintf(out, n, "/tmp/tdx-lcd-%u.sock", (unsigned)getuid());
+		snprintf(out, n, "/tmp/3dxlinux-lcd-%u.sock", (unsigned)getuid());
 }
 
 static int read_full(int fd, void *buf, size_t len)

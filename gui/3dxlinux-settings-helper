@@ -1,10 +1,10 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# tdx-settings-helper - privileged writer for tdx-settings, run through pkexec.
+# 3dxlinux-settings-helper - privileged writer for 3dxlinux-settings, run through pkexec.
 #
-#   pkexec tdx-settings-helper write /etc/3dxlinux.conf        < new-content
-#   pkexec tdx-settings-helper write /etc/3dxlinux.d/NAME.conf < new-content
-#   pkexec tdx-settings-helper remove /etc/3dxlinux.d/NAME.conf   (Reset all settings)
+#   pkexec 3dxlinux-settings-helper write /etc/3dxlinux.conf        < new-content
+#   pkexec 3dxlinux-settings-helper write /etc/3dxlinux.d/NAME.conf < new-content
+#   pkexec 3dxlinux-settings-helper remove /etc/3dxlinux.d/NAME.conf   (Reset all settings)
 #
 # Only those paths are accepted; NAME is limited to [A-Za-z0-9_.-] and may not
 # start with a dot. The file is replaced atomically with mode 0644, owner root.
@@ -37,9 +37,9 @@ if [ "$verb" = remove ]; then
 	exit 0
 fi
 [ ! -L "$path" ] || { echo "refusing to write through a symlink: $path" >&2; exit 1; }
-tmp=$(mktemp "$dir/.tdx-settings.XXXXXX")
+tmp=$(mktemp "$dir/.3dxlinux-settings.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
-# 1 MiB is far more than any tdxd config
+# 1 MiB is far more than any 3dxlinuxd config
 head -c 1048576 > "$tmp"
 chmod 0644 "$tmp"
 chown 0:0 "$tmp"

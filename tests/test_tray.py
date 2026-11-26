@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for tdx-tray, the system tray icon: run on a private session bus with
+"""Tests for 3dxlinux-tray, the system tray icon: run on a private session bus with
 a stand-in tray (StatusNotifierWatcher) and notification service.
 
     dbus-run-session -- python3 tests/test_tray.py
@@ -58,7 +58,7 @@ def fake_systemctl(d):
 
 
 def load_tray():
-    loader = importlib.machinery.SourceFileLoader("tray", os.path.join(ROOT, "gui", "tdx-tray"))
+    loader = importlib.machinery.SourceFileLoader("tray", os.path.join(ROOT, "gui", "3dxlinux-tray"))
     spec = importlib.util.spec_from_loader("tray", loader)
     m = importlib.util.module_from_spec(spec)
     loader.exec_module(m)
@@ -75,7 +75,7 @@ def wait(ctx, cond, secs=10):
 
 def main():
     t = load_tray()
-    d = tempfile.mkdtemp(prefix="tdx-tray-")
+    d = tempfile.mkdtemp(prefix="3dxlinux-tray-")
 
     # ---- the parts that need no bus
     lay = t.menu_layout().unpack()
@@ -88,16 +88,16 @@ def main():
     check(bytes(on["icon-data"][:8]) == b"\x89PNG\r\n\x1a\n" and on["icon-data"] != off["icon-data"],
           "the tick box drawn as its icon, ticked and empty")
     os.makedirs(os.path.join(d, "Desktop"))
-    fake_ctl = os.path.join(d, "tdxctl")
+    fake_ctl = os.path.join(d, "3dxlinuxctl")
     with open(fake_ctl, "w") as f:
-        f.write("#!/bin/sh\necho \"fake tdxctl $*\"\n")
+        f.write("#!/bin/sh\necho \"fake 3dxlinuxctl $*\"\n")
     os.chmod(fake_ctl, 0o755)
-    path = t.write_log(os.path.join(d, "Desktop"), tdxctl=fake_ctl)
+    path = t.write_log(os.path.join(d, "Desktop"), ctl_prog=fake_ctl)
     text = open(path).read()
-    check(os.path.basename(path).startswith("tdxd-log-") and path.endswith(".txt"), "log name %s" % path)
-    check("==== tdxctl status ====\nfake tdxctl status" in text and "==== /etc/3dxlinux.conf ====" in text
-          and "==== tdxd messages (this boot) ====" in text, "log sections")
-    again = t.write_log(os.path.join(d, "Desktop"), tdxctl=fake_ctl)
+    check(os.path.basename(path).startswith("3dxlinux-log-") and path.endswith(".txt"), "log name %s" % path)
+    check("==== 3dxlinuxctl status ====\nfake 3dxlinuxctl status" in text and "==== /etc/3dxlinux.conf ====" in text
+          and "==== 3dxlinuxd messages (this boot) ====" in text, "log sections")
+    again = t.write_log(os.path.join(d, "Desktop"), ctl_prog=fake_ctl)
     check(again != path and os.path.exists(path), "a second log in the same second: its own file")
     os.environ["HOME"] = d
     os.environ.pop("XDG_CONFIG_HOME", None)
@@ -133,9 +133,9 @@ def main():
         f.write("#!/bin/sh\ntouch %s\n" % opened)
     os.chmod(fake_settings, 0o755)
     sysctl, state, sclog = fake_systemctl(d)
-    env = dict(os.environ, TDX_TRAY_SETTINGS=fake_settings, TDX_SYSTEMCTL=sysctl, TDX_TRAY_OSD="-",
+    env = dict(os.environ, DXLINUX_TRAY_SETTINGS=fake_settings, DXLINUX_SYSTEMCTL=sysctl, DXLINUX_TRAY_OSD="-",
                PATH=d + ":" + os.environ["PATH"])
-    p = subprocess.Popen([sys.executable, os.path.join(ROOT, "gui", "tdx-tray")], env=env)
+    p = subprocess.Popen([sys.executable, os.path.join(ROOT, "gui", "3dxlinux-tray")], env=env)
     ctx = GLib.MainContext.default()
     try:
         check(wait(ctx, lambda: registered), "registers with the tray")
@@ -149,7 +149,7 @@ def main():
 
         sni = "org.kde.StatusNotifierItem"
         check(prop("/StatusNotifierItem", sni, "Title") == "3Dconnexion Settings", "title")
-        check(prop("/StatusNotifierItem", sni, "IconName") in ("tdxd-3dxware", "input-mouse"), "icon")
+        check(prop("/StatusNotifierItem", sni, "IconName") in ("3dxlinux-3dxware", "input-mouse"), "icon")
         check(prop("/StatusNotifierItem", sni, "Menu") == "/MenuBar", "menu object")
         lay = bus.call_sync(name, "/MenuBar", "com.canonical.dbusmenu", "GetLayout",
                             GLib.Variant("(iias)", (0, -1, [])), None, Gio.DBusCallFlags.NONE,
@@ -169,7 +169,7 @@ def main():
                           Gio.DBusCallFlags.NONE, 5000, None)
 
         click(1)
-        check(wait(ctx, lambda: os.path.exists(opened)), "Open 3Dconnexion Settings runs tdx-settings")
+        check(wait(ctx, lambda: os.path.exists(opened)), "Open 3Dconnexion Settings runs 3dxlinux-settings")
         os.remove(opened)
         bus.call_sync(name, "/StatusNotifierItem", sni, "Activate", GLib.Variant("(ii)", (0, 0)),
                       None, Gio.DBusCallFlags.NONE, 5000, None)
@@ -184,7 +184,7 @@ def main():
                              Gio.DBusSignalFlags.NONE, lambda *a: updates.append(a[5].unpack()))
         click(4)
         check(wait(ctx, lambda: updates) and open(state).read().strip() == "masked" and
-              "--user mask tdx-tray.service tdx-lcdmgr.service" in open(sclog).read(),
+              "--user mask 3dxlinux-tray.service 3dxlinux-lcdmgr.service" in open(sclog).read(),
               "unticked: masked (%s)" % open(sclog).read().strip().splitlines()[-1:])
         check(layout()[1][2][3][1]["toggle-state"] == 0, "the menu shows it unticked")
         with open(state, "w") as f:  # ticked again in the settings panel
@@ -203,8 +203,8 @@ def main():
         except subprocess.TimeoutExpired:
             rc = None
         stopped = open(sclog).read()
-        check(rc == 0 and "--user stop tdx-lcdmgr.service" in stopped and
-              "tdx-osd.service" in stopped and "tdx-numpad.service" in stopped,
+        check(rc == 0 and "--user stop 3dxlinux-lcdmgr.service" in stopped and
+              "3dxlinux-osd.service" in stopped and "3dxlinux-numpad.service" in stopped,
               "Quit: LCD Manager, On-Screen Display, NumPad stopped, tray exited (%s)" % rc)
     finally:
         if p.poll() is None:

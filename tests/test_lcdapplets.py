@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the LCD applet ports (gui/3dxlinux-lcd-functionkeys, -rss, -pictures):
 feed parsing, LCDCfg.xml reading, picture scanning, transitions and rendering,
-with and without the extracted artwork (TDX_UI_ASSETS).
+with and without the extracted artwork (DXLINUX_UI_ASSETS).
 
     python3 tests/test_lcdapplets.py [build/ARCH]
 """
@@ -56,8 +56,8 @@ def main():
     build = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", os.uname().machine)
     d = tempfile.mkdtemp(prefix="tdx-applets-")
     os.environ["XDG_CONFIG_HOME"] = d
-    real_assets = os.environ.get("TDX_UI_ASSETS")
-    os.environ["TDX_UI_ASSETS"] = os.path.join(d, "no-assets")
+    real_assets = os.environ.get("DXLINUX_UI_ASSETS")
+    os.environ["DXLINUX_UI_ASSETS"] = os.path.join(d, "no-assets")
 
     rss = load("3dxlinux-lcd-rss")
     t, logo, items = rss.parse_feed(RSS2)
@@ -109,7 +109,7 @@ def main():
     a.snapshot(os.path.join(d, "rss.png"))
     check(os.path.getsize(os.path.join(d, "rss.png")) > 1000, "RSS renders without artwork")
 
-    # Function Keys from the LCDCfg.xml tdxd writes
+    # Function Keys from the LCDCfg.xml 3dxlinuxd writes
     fk = load("3dxlinux-lcd-functionkeys")
     xml = os.path.join(d, "LCDCfg.xml")
     open(xml, "w").write("""<?xml version="1.0"?><LCDCfg><Device><Name>SpacePilot PRO</Name>
@@ -119,7 +119,7 @@ def main():
 <Button><V3DK>V3DK_1</V3DK><Text>Copy</Text></Button>
 <Button><V3DK>V3DK_MINUS</V3DK><Text>Decrease Speed</Text></Button>
 <Button><V3DK>V3DK_PLUS</V3DK><Text>Increase Speed</Text></Button></Device></LCDCfg>""")
-    os.environ["TDX_LCDCFG"] = xml
+    os.environ["DXLINUX_LCDCFG"] = xml
     f = fk.FunctionKeys()
     check(f.tick(time.time()), "LCDCfg.xml read")
     check(f.info["app"] == "blender" and not f.info["panzoom"] and f.info["slider"] == 125,
@@ -239,9 +239,9 @@ def main():
     inst = os.path.join(d, "installed")
     os.makedirs(os.path.join(inst, "bin"))
     os.makedirs(os.path.join(inst, "lib", "3dxlinux", "python"))
-    for m in ("tdxlcd.py", "lcdapplet.py"):
+    for m in ("lcd_3dxlinux.py", "lcdapplet.py"):
         shutil.copy(os.path.join(ROOT, "gui", m), os.path.join(inst, "lib", "3dxlinux", "python", m))
-    progs = ("3dxlinux-lcd-functionkeys", "3dxlinux-lcd-rss", "3dxlinux-lcd-pictures", "tdx-lcdmanager", "tdx-settings")
+    progs = ("3dxlinux-lcd-functionkeys", "3dxlinux-lcd-rss", "3dxlinux-lcd-pictures", "3dxlinux-lcdmanager", "3dxlinux-settings")
     for p in progs:
         shutil.copy(os.path.join(ROOT, "gui", p), os.path.join(inst, "bin", p))
     for p in progs:
@@ -253,29 +253,29 @@ def main():
               % (p, (r.stderr.strip().splitlines() or [""])[-1]))
 
     if real_assets:  # same with the 3DxWare artwork
-        os.environ["TDX_UI_ASSETS"] = real_assets
+        os.environ["DXLINUX_UI_ASSETS"] = real_assets
         for mod, cls in ((rss, "Rss"), (fk, "FunctionKeys"), (pv, "Pictures")):
             o = getattr(mod, cls)()
             check(o.art.dir is not None, "%s finds its artwork" % cls)
             o.snapshot(os.path.join(d, cls + "-art.png"))
 
-    # applets talk to tdx-lcdmgr end to end (virtual LCD)
-    mgr_bin = os.path.join(build, "tdx-lcdmgr")
+    # applets talk to 3dxlinux-lcdmgr end to end (virtual LCD)
+    mgr_bin = os.path.join(build, "3dxlinux-lcdmgr")
     if os.access(mgr_bin, os.X_OK):
         sock, ppm = os.path.join(d, "lcd.sock"), os.path.join(d, "lcd.ppm")
         mgr = subprocess.Popen([mgr_bin, "-N", "-s", sock, "-d", os.path.join(d, "db.ini"),
                                 "-F", ppm, "-t", os.path.join(d, "none")],
                                stderr=subprocess.DEVNULL)
-        env = dict(os.environ, TDX_LCD_SOCKET=sock)
+        env = dict(os.environ, DXLINUX_LCD_SOCKET=sock)
         procs = [subprocess.Popen([sys.executable, os.path.join(ROOT, "gui", n)], env=env,
                                   stderr=subprocess.DEVNULL)
                  for n in ("3dxlinux-lcd-functionkeys", "3dxlinux-lcd-rss", "3dxlinux-lcd-pictures")]
-        import tdxlcd
+        import lcd_3dxlinux
         end = time.time() + 15
         names = []
         while time.time() < end:
             try:
-                names = sorted(q["name"] for q in tdxlcd.status(sock)["programs"] if q["running"])
+                names = sorted(q["name"] for q in lcd_3dxlinux.status(sock)["programs"] if q["running"])
             except OSError:
                 pass
             if len(names) == 3:
@@ -290,27 +290,27 @@ def main():
 
         def boom(_b):
             raise FileNotFoundError("xdg-open")
-        c = tdxlcd.Connection("Crashy", path=sock)
-        cd = c.open(tdxlcd.DEVICE_QVGA, on_buttons=boom)
+        c = lcd_3dxlinux.Connection("Crashy", path=sock)
+        cd = c.open(lcd_3dxlinux.DEVICE_QVGA, on_buttons=boom)
         cd.update(bytes(320 * 240 * 4))
-        i = [q["index"] for q in tdxlcd.status(sock)["programs"] if q["name"] == "Crashy"][0]
-        tdxlcd.admin("select %d" % i, sock)
+        i = [q["index"] for q in lcd_3dxlinux.status(sock)["programs"] if q["name"] == "Crashy"][0]
+        lcd_3dxlinux.admin("select %d" % i, sock)
         cd.set_foreground(True)
         time.sleep(0.3)
         with contextlib.redirect_stderr(io.StringIO()):
-            tdxlcd.admin("press 400 0", sock)
+            lcd_3dxlinux.admin("press 400 0", sock)
             time.sleep(0.5)
         alive = True
         try:
             c.enumerate()
-        except tdxlcd.LcdError:
+        except lcd_3dxlinux.LcdError:
             alive = False
-        n = sum(q["name"] == "Crashy" for q in tdxlcd.status(sock)["programs"] if q["running"])
+        n = sum(q["name"] == "Crashy" for q in lcd_3dxlinux.status(sock)["programs"] if q["running"])
         check(alive and n == 1, "a failing button callback keeps the connection (alive=%s, listed %d)"
               % (alive, n))
         c.close()
 
-        # first run: tdx-lcdmgr registers and starts the applets itself (on its
+        # first run: 3dxlinux-lcdmgr registers and starts the applets itself (on its
         # own socket), and stops them again when it exits
         d2 = os.path.join(d, "autostart")
         os.makedirs(d2)
@@ -323,13 +323,13 @@ def main():
         pids = []
         while time.time() < end:
             try:
-                st = tdxlcd.status(sock2)["programs"]
+                st = lcd_3dxlinux.status(sock2)["programs"]
                 if sum(q["running"] for q in st) == 3:
                     break
             except OSError:
                 pass
             time.sleep(0.3)
-        check(sum(q["running"] for q in st) == 3, "autostarted applets connect to tdx-lcdmgr's socket")
+        check(sum(q["running"] for q in st) == 3, "autostarted applets connect to 3dxlinux-lcdmgr's socket")
         mgr2.terminate()
         log = mgr2.communicate(timeout=10)[1]
         import re
@@ -342,7 +342,7 @@ def main():
                 os.kill(p, 15)  # do not leave it behind
             except OSError:
                 gone.append(p)
-        check(len(pids) == 3 and gone == pids, "tdx-lcdmgr stops the applets it started: %s of %s"
+        check(len(pids) == 3 and gone == pids, "3dxlinux-lcdmgr stops the applets it started: %s of %s"
               % (gone, pids))
 
         # an applet port that moved (install.sh's /usr/local/bin -> a package's
@@ -359,7 +359,7 @@ def main():
         progs = []
         while time.time() < end and not progs:
             try:
-                progs = tdxlcd.status(os.path.join(d3, "lcd.sock"))["programs"]
+                progs = lcd_3dxlinux.status(os.path.join(d3, "lcd.sock"))["programs"]
             except OSError:
                 time.sleep(0.2)
         mgr3.terminate()

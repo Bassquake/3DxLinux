@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=LCD Manager (tdxd)
+Name=LCD Manager (3DxLinux)
 GenericName=3D Mouse LCD Manager
 Comment=Programs, brightness and contrast for the SpacePilot PRO LCD
-Exec=tdx-lcdmanager
-TryExec=tdx-lcdmanager
+Exec=3dxlinux-lcdmanager
+TryExec=3dxlinux-lcdmanager
 Icon=input-mouse
 Terminal=false
 Categories=Settings;HardwareSettings;

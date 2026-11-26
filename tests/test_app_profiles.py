@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for the importer's application profiles: 3DxWare's per-application
-configurations (cut-down stand-ins for Blender.xml, en-US.xml ...) -> tdxd
+configurations (cut-down stand-ins for Blender.xml, en-US.xml ...) -> 3dxlinuxd
 profile text.
 
     python3 tests/test_app_profiles.py
@@ -126,15 +126,15 @@ def main():
     has("key_V3DK_FRONT = KEY_LEFTSHIFT + KEY_KP7")      # "does what TOP does"
     for k in ("V3DK_4", "V3DK_5", "V3DK_7", "V3DK_8", "V3DK_9"):
         check(not any(l.startswith(("key_%s " % k, "action_%s " % k)) for l in lines),
-              "%s left to tdxd's defaults (mouse, odd key, NavLib, SDK, menu)" % k)
+              "%s left to 3dxlinuxd's defaults (mouse, odd key, NavLib, SDK, menu)" % k)
     check("Blendy" in text and "Blender.xml" in text, "header names the application and file")
     check(n == 7, "keys bound to keystrokes: %d" % n)  # TOP ISO1 2 3 6 ESC FRONT
     check(prof["3dx-creo"][0].count("match = creo\n") == 1, "java and two-letter names dropped")
-    # the extracted profile loads in tdxd's syntax: every key name is known
+    # the extracted profile loads in 3dxlinuxd's syntax: every key name is known
     import re
     known = set(re.findall(r"K\(KEY_(\w+)\)", open(os.path.join(ROOT, "src", "config.c")).read()))
     used = set(re.findall(r"KEY_(\w+)", text))
-    check(used <= known, "key names tdxd knows: %s" % sorted(used - known))
+    check(used <= known, "key names 3dxlinuxd knows: %s" % sorted(used - known))
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

@@ -1,8 +1,8 @@
 /*
- * tdxd control socket: one text command per connection, one text reply.
+ * 3dxlinuxd control socket: one text command per connection, one text reply.
  *   status                 active profile, focused app, devices
  *   profiles               list profiles and what they match
- *   focus APP [PID]        the focused application changed (sent by tdx-focus)
+ *   focus APP [PID]        the focused application changed (sent by 3dxlinux-focus)
  *   calibrate              re-zero every device (feature report 0x07)
  *   reload                 re-read the configuration and profiles (like SIGHUP)
  *   buttons                each key's number and V3DK id
@@ -10,8 +10,8 @@
  *   app-buttons PID [TAB V3DK TAB NAME]...
  *                          keys the application handles itself (PID 0: the
  *                          process on the other end of this connection)
- *   lcd-release            hand the SpacePilot Pro LCD to tdx-lcdmgr while this
- *                          connection stays open (tdxd takes it back on close)
+ *   lcd-release            hand the SpacePilot Pro LCD to 3dxlinux-lcdmgr while this
+ *                          connection stays open (3dxlinuxd takes it back on close)
  */
 #ifndef TDX_CONTROL_H
 #define TDX_CONTROL_H

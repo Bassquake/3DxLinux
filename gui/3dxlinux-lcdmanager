@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""tdx-lcdmanager - the LCD Manager window (Linux port of Logitech LCDMon's UI).
+"""3dxlinux-lcdmanager - the LCD Manager window (Linux port of Logitech LCDMon's UI).
 
 Pages as in LCDMon 3.06: the device (Configuration / Programs Running on This
 Device), Programs, Global Settings, Help and About. Every change is sent to
-tdx-lcdmgr at once (its admin commands, see src/tdx-lcdmgr.c) and stored in its
+3dxlinux-lcdmgr at once (its admin commands, see src/3dxlinux-lcdmgr.c) and stored in its
 LGLCDDB-format database.
 
 The look uses LCDMon's own artwork when it has been extracted from the user's
@@ -35,7 +35,7 @@ import cairo  # noqa: E402
 
 _here = os.path.dirname(os.path.realpath(__file__))
 sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
-import tdxlcd  # noqa: E402
+import lcd_3dxlinux  # noqa: E402
 
 APP_VERSION = "dev"  # set by make install / make dist
 DOCS_URL = "https://github.com/Bassquake/3DxLinux/blob/main/docs/LCD_MANAGER.md"
@@ -50,7 +50,7 @@ FONT = "Segoe UI, Selawik, Ubuntu, Noto Sans, DejaVu Sans, sans-serif"
 # artwork
 
 def asset_dirs():
-    env = os.environ.get("TDX_UI_ASSETS")
+    env = os.environ.get("DXLINUX_UI_ASSETS")
     here = os.path.dirname(os.path.realpath(__file__))
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
@@ -270,7 +270,7 @@ FALLBACK_ICON = {"device": "input-mouse", "programs": "view-list",
 class LcdManager:
     def __init__(self, args):
         self.args = args
-        self.sock = args.socket or tdxlcd.socket_path()
+        self.sock = args.socket or lcd_3dxlinux.socket_path()
         self.st = None
         self.page = "device"
         self.updating = False
@@ -296,13 +296,13 @@ class LcdManager:
     # ---- data
     def refresh_status(self):
         try:
-            self.st = tdxlcd.status(self.sock)
+            self.st = lcd_3dxlinux.status(self.sock)
         except (OSError, ValueError):
             self.st = None
 
     def admin(self, cmd):
         try:
-            r = tdxlcd.admin(cmd, self.sock)
+            r = lcd_3dxlinux.admin(cmd, self.sock)
         except OSError as e:
             r = "error: %s" % e
         self.refresh_status()
@@ -509,7 +509,7 @@ class LcdManager:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.get_style_context().add_class("banner")
         box.set_size_request(w - 80, -1)
-        msg = lab("The LCD Manager service (tdx-lcdmgr) is not running.\n"
+        msg = lab("The LCD Manager service (3dxlinux-lcdmgr) is not running.\n"
                   "Start it to manage the programs on the LCD.")
         msg.set_line_wrap(True)
         box.pack_start(msg, False, False, 0)
@@ -521,13 +521,13 @@ class LcdManager:
 
     def start_service(self, *_):
         if shutil.which("systemctl") and subprocess.run(
-                ["systemctl", "--user", "start", "tdx-lcdmgr"], capture_output=True).returncode == 0:
+                ["systemctl", "--user", "start", "3dxlinux-lcdmgr"], capture_output=True).returncode == 0:
             pass
         else:
             here = os.path.dirname(os.path.realpath(__file__))
-            for cand in (os.path.join(here, "tdx-lcdmgr"),
-                         os.path.join(here, "..", "build", os.uname().machine, "tdx-lcdmgr"),
-                         shutil.which("tdx-lcdmgr")):
+            for cand in (os.path.join(here, "3dxlinux-lcdmgr"),
+                         os.path.join(here, "..", "build", os.uname().machine, "3dxlinux-lcdmgr"),
+                         shutil.which("3dxlinux-lcdmgr")):
                 if cand and os.access(cand, os.X_OK):
                     subprocess.Popen([cand], start_new_session=True,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -784,8 +784,8 @@ class LcdManager:
         self.put(lab("Help", "title"), x + 18, y + 20)
         txt = lab("Programs on the LCD: press the LCD key on the SpacePilot PRO to open\n"
                   "the program list, UP / DOWN to choose, OK to run, CANCEL to close.\n\n"
-                  "Programs written for the LCD use libtdxlcd (C, lglcd-compatible) or\n"
-                  "the tdxlcd Python module.")
+                  "Programs written for the LCD use lib3dxlinuxlcd (C, lglcd-compatible) or\n"
+                  "the lcd_3dxlinux Python module.")
         self.put(txt, x + 37, y + 405)
         b = Gtk.LinkButton.new_with_label(DOCS_URL, "Open the LCD Manager documentation")
         self.put(b, x + 33, y + 505)
@@ -794,8 +794,8 @@ class LcdManager:
         x, y, w, h = PANEL
         self.section = ("IMAGE_SECTION_ABOUT", "About")
         self.put(lab("About", "title"), x + 18, y + 20)
-        ver = (self.st or {}).get("tdx-lcdmgr", "not running")
-        for i, t in enumerate(["tdx-lcdmgr LCD Manager", "Version  %s  (window %s)" % (ver, APP_VERSION),
+        ver = (self.st or {}).get("3dxlinux-lcdmgr", "not running")
+        for i, t in enumerate(["3dxlinux-lcdmgr LCD Manager", "Version  %s  (window %s)" % (ver, APP_VERSION),
                                "Linux port of the LCD Manager's behaviour; not a Logitech product."]):
             self.put(lab(t), x + 37, y + 405 + i * 30)
 
@@ -808,7 +808,7 @@ class LcdManager:
     # ---- run / snapshot
     def run(self):
         set_window_icons(window_icon_files(ART.dir and os.path.join(os.path.dirname(ART.dir), "appicons"),
-                                           "lcdmanager"), "tdxd-lcdmanager")
+                                           "lcdmanager"), "3dxlinux-lcdmanager")
         win = self.win = Gtk.Window(title="LCD Manager")
         win.set_resizable(False)
         win.add(self.root)
@@ -818,7 +818,7 @@ class LcdManager:
         Gtk.main()
 
     def present(self):
-        """Another start of tdx-lcdmanager: show this window instead."""
+        """Another start of 3dxlinux-lcdmanager: show this window instead."""
         win = getattr(self, "win", None)
         if win:
             win.deiconify()
@@ -846,21 +846,21 @@ class LcdManager:
                     Gtk.main_iteration()
             surf = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
             self.root.draw(cairo.Context(surf))
-            p = os.path.join(outdir, "tdx-lcdmanager-%s.png" % page)
+            p = os.path.join(outdir, "3dxlinux-lcdmanager-%s.png" % page)
             surf.write_to_png(p)
             print(p)
 
 
 def main():
     global ART
-    GLib.set_prgname("tdx-lcdmanager")  # Wayland app id = tdx-lcdmanager.desktop (taskbar icon)
-    ap = argparse.ArgumentParser(description="LCD Manager window for tdx-lcdmgr")
-    ap.add_argument("-s", "--socket", help="tdx-lcdmgr socket (default $XDG_RUNTIME_DIR/tdx-lcd.sock)")
+    GLib.set_prgname("3dxlinux-lcdmanager")  # Wayland app id = 3dxlinux-lcdmanager.desktop (taskbar icon)
+    ap = argparse.ArgumentParser(description="LCD Manager window for 3dxlinux-lcdmgr")
+    ap.add_argument("-s", "--socket", help="3dxlinux-lcdmgr socket (default $XDG_RUNTIME_DIR/3dxlinux-lcd.sock)")
     ap.add_argument("--assets", help="artwork extracted by tools/extract_3dxware_ui.py")
     ap.add_argument("--no-assets", action="store_true", help="use the built-in drawings")
     ap.add_argument("-p", "--page", choices=[p[0] for p in PAGES], default="device")
     ap.add_argument("--snapshot", metavar="DIR", help="render every page to DIR and exit")
-    ap.add_argument("-V", "--version", action="version", version="tdx-lcdmanager " + APP_VERSION)
+    ap.add_argument("-V", "--version", action="version", version="3dxlinux-lcdmanager " + APP_VERSION)
     args = ap.parse_args()
     ART = Art(args.assets, args.no_assets)
     install_css()
@@ -879,7 +879,7 @@ def main():
     return 0
 
 
-APP_ID = "org.tdxd.LcdManager"
+APP_ID = "io.github.bassquake._3DxLinux.LcdManager"
 
 
 def single_instance():

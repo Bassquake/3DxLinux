@@ -1,4 +1,4 @@
-/* Host-side tests for the hardware-independent parts of tdxd. */
+/* Host-side tests for the hardware-independent parts of 3dxlinuxd. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -575,7 +575,7 @@ static void test_giotto_move(void)
 		n = tdx_gio_plan_move(&m, 0, y, st, 4);
 		for (int i = 0; i < n; i++)
 			gdev_exec(st[i].pkt);
-		gshown = m.a; /* present (tdxd addition) */
+		gshown = m.a; /* present (3dxlinuxd addition) */
 		for (int r = 0; r < TDX_GIO_H && !bad; r += 5)
 			for (int x = 0; x < TDX_GIO_W && !bad; x += 11) {
 				uint32_t got = screen_px(gshown, x, r);
@@ -886,7 +886,7 @@ static void test_profiles(void)
 	CHECK(tdx_app_from_pid(getpid(), app, sizeof app) == 0 && !strcmp(app, "test_core"));
 }
 
-/* Profiles imported from 3DxWare (tdx-extract-3dxware-ui): chords one after
+/* Profiles imported from 3DxWare (3dxlinux-extract-3dxware-ui): chords one after
  * another, folders after /etc/3dxlinux.d, and a user's folder limited to keys. */
 static void test_imported_profiles(void)
 {
@@ -1285,15 +1285,15 @@ static void test_freecad_profile(void)
 	CHECK(!strcmp(t, "V, F"));
 }
 
-/* Focus: a script is named after the script, not its interpreter (tdx-settings
- * runs as python3.14), and tdxd's own programs are recognised. */
+/* Focus: a script is named after the script, not its interpreter (3dxlinux-settings
+ * runs as python3.14), and 3dxlinuxd's own programs are recognised. */
 static void test_focus_names(void)
 {
-	char dir[] = "/tmp/tdx-focus-XXXXXX";
+	char dir[] = "/tmp/3dxlinux-focus-XXXXXX";
 	if (!mkdtemp(dir))
 		return;
 	char path[64], name[64];
-	snprintf(path, sizeof path, "%s/tdx-settings", dir);
+	snprintf(path, sizeof path, "%s/3dxlinux-settings", dir);
 	write_file(path, "sleep 5\n");
 	pid_t pid = fork();
 	if (pid == 0) {
@@ -1301,7 +1301,7 @@ static void test_focus_names(void)
 		_exit(127);
 	}
 	usleep(200000);
-	CHECK(tdx_app_from_pid(pid, name, sizeof name) == 0 && !strcmp(name, "tdx-settings"));
+	CHECK(tdx_app_from_pid(pid, name, sizeof name) == 0 && !strcmp(name, "3dxlinux-settings"));
 	CHECK(tdx_is_own_app(name));
 	kill(pid, SIGTERM);
 	waitpid(pid, NULL, 0);
@@ -1311,12 +1311,12 @@ static void test_focus_names(void)
 		_exit(127);
 	}
 	usleep(200000);
-	CHECK(tdx_app_from_pid(pid, name, sizeof name) == 0 && strcmp(name, "tdx-settings")); /* -c: no script */
+	CHECK(tdx_app_from_pid(pid, name, sizeof name) == 0 && strcmp(name, "3dxlinux-settings")); /* -c: no script */
 	kill(pid, SIGTERM);
 	waitpid(pid, NULL, 0);
 	unlink(path);
 	rmdir(dir);
-	CHECK(!tdx_is_own_app("freecad") && !tdx_is_own_app("blender") && tdx_is_own_app("tdx-lcdmanager"));
+	CHECK(!tdx_is_own_app("freecad") && !tdx_is_own_app("blender") && tdx_is_own_app("3dxlinux-lcdmanager"));
 }
 
 /* Captured from a Universal Receiver (256f:c652) with a CadMouse Compact
@@ -1381,7 +1381,7 @@ static void test_receiver(void)
 		CHECK(tdx_config_load(&mc, p) == 0);
 		unlink(p);
 	}
-	/* a driver action or Disabled: the button reports (40 + n), tdxd acts */
+	/* a driver action or Disabled: the button reports (40 + n), 3dxlinuxd acts */
 	vend = tdx_rcv_mouse_map(&mc, cmw, map);
 	CHECK(map[5] == 46 && map[3] == 44 && map[6] == 47 && (vend & 0x68) == 0x68);
 	CHECK(tdx_rcv_mouse_action(&mc, cmw, 5) == TDX_ACT_SPEED_UP &&
@@ -1396,7 +1396,7 @@ static void test_receiver(void)
 		CHECK(tdx_config_load(&mc, p) == 0);
 		unlink(p);
 	}
-	/* Common Tools (the radial menu) on another button: it reports, tdxd shows it */
+	/* Common Tools (the radial menu) on another button: it reports, 3dxlinuxd shows it */
 	vend = tdx_rcv_mouse_map(&mc, cmw, map);
 	CHECK(tdx_action_from_name("commontools") == TDX_ACT_COMMONTOOLS &&
 	      !strcmp(tdx_action_name(TDX_ACT_COMMONTOOLS), "commontools") &&
@@ -1417,7 +1417,7 @@ static void test_receiver(void)
 		unlink(p);
 	}
 	/* a user radial menu: the button's action keeps the menu ID; its lines stay
-	 * as written (a later one overrides) for tdx-radial */
+	 * as written (a later one overrides) for 3dxlinux-radial */
 	int rm = -1;
 	for (int i = 0; i < mc.nactions; i++)
 		if (!strcmp(mc.actions[i].v3dk, "V2DK_BACKWARD"))

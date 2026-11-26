@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Tests for gui/tdx-settings: config editing, the GUI handlers, and that tdxd
+"""Tests for gui/3dxlinux-settings: config editing, the GUI handlers, and that 3dxlinuxd
 accepts every file the GUI writes. Needs GTK 3 and a display (X11/Wayland).
 
-    python3 tests/test_settings.py [path/to/tdxd]
+    python3 tests/test_settings.py [path/to/3dxlinuxd]
 """
 import importlib.machinery
 import importlib.util
@@ -17,7 +17,7 @@ sys.dont_write_bytecode = True
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 loader = importlib.machinery.SourceFileLoader("tdx_settings",
-                                              os.path.join(ROOT, "gui", "tdx-settings"))
+                                              os.path.join(ROOT, "gui", "3dxlinux-settings"))
 spec = importlib.util.spec_from_loader("tdx_settings", loader)
 ts = importlib.util.module_from_spec(spec)
 loader.exec_module(ts)
@@ -60,7 +60,7 @@ def conf_file_tests(d):
     check(not c.has("led_ring_color") and c.lines[0] == "# header", "remove keeps comments")
 
 
-def gui_tests(d, tdxd):
+def gui_tests(d, daemon):
     base = os.path.join(d, "3dxlinux.conf")
     pdir = os.path.join(d, "3dxlinux.d")
     os.makedirs(pdir)
@@ -79,7 +79,7 @@ def gui_tests(d, tdxd):
         status_file = os.path.join(d, "status.txt")
         no_save = True
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication blender (via focus)\ndevices 1\n"
+        f.write("3dxlinuxd test\nprofile default\napplication blender (via focus)\ndevices 1\n"
                 "  SpacePilot Pro [046d:c629] /dev/hidraw0 firmware 4.11\n")
     app = ts.App(Args)
     check(app.status["devices"][0]["firmware"] == "4.11", "status parsed")
@@ -151,18 +151,18 @@ def gui_tests(d, tdxd):
     check(ts.write_file(app.store.profile) is None and ts.write_file(app.store.base) is None,
           "profile written")
 
-    # ---- tdxd must accept both files without a warning
-    if tdxd and os.access(tdxd, os.X_OK):
+    # ---- 3dxlinuxd must accept both files without a warning
+    if daemon and os.access(daemon, os.X_OK):
         for args in (["-c", base], ["-c", base]):
-            p = subprocess.run(["timeout", "1", tdxd, "-v"] + args, capture_output=True,
+            p = subprocess.run(["timeout", "1", daemon, "-v"] + args, capture_output=True,
                                text=True)
             bad = [l for l in p.stderr.splitlines()
                    if "unknown" in l or "expected" in l or "ignored" in l]
-            check(not bad, "tdxd parses the GUI's files: %s" % bad)
-            check("1 per-application profile" in p.stderr, "tdxd sees the new profile")
+            check(not bad, "3dxlinuxd parses the GUI's files: %s" % bad)
+            check("1 per-application profile" in p.stderr, "3dxlinuxd sees the new profile")
             break
     else:
-        print("skip: tdxd not built")
+        print("skip: 3dxlinuxd not built")
 
     # ---- About: the 3DxWare look, and the importer it runs
     cmd = ts.find_extractor()
@@ -176,7 +176,7 @@ def gui_tests(d, tdxd):
     art = os.path.join(d, "art")
     os.makedirs(os.path.join(art, "ui"))
     with open(os.path.join(art, "SOURCE"), "w") as f:
-        f.write("Extracted from 3DxWare64_v10-9-14_b745.exe for local use by tdx-settings.\n")
+        f.write("Extracted from 3DxWare64_v10-9-14_b745.exe for local use by 3dxlinux-settings.\n")
     ts.ASSETS = ts.Assets(art)
     about.refresh()
     check(re.match(r"Imported from 3DxWare64_v10-9-14_b745\.exe on \d\d \w+ \d{4}, \d\d:\d\d\.$",
@@ -260,16 +260,16 @@ def gui_tests(d, tdxd):
     with open(sysctl, "w") as f:
         f.write('#!/bin/sh\necho "$*" >> %s\n[ "$2" = is-enabled ] && echo enabled\nexit 0\n' % log)
     os.chmod(sysctl, 0o755)
-    os.environ["TDX_SYSTEMCTL"] = sysctl
+    os.environ["DXLINUX_SYSTEMCTL"] = sysctl
     about = [p for p in app.panels if isinstance(p, ts.AboutPanel)][0]
     about.refresh()
     check(about.autostart.get_active(), "Start-up ticked when not masked")
     about.autostart.set_active(False)
     about.autostart.set_active(True)
     calls = open(log).read()
-    check("--user mask tdx-tray.service tdx-lcdmgr.service" in calls and
-          "--user unmask tdx-tray.service tdx-lcdmgr.service" in calls and
-          "--user start tdx-tray.service tdx-lcdmgr.service" in calls, "Start-up: %r" % calls)
+    check("--user mask 3dxlinux-tray.service 3dxlinux-lcdmgr.service" in calls and
+          "--user unmask 3dxlinux-tray.service 3dxlinux-lcdmgr.service" in calls and
+          "--user start 3dxlinux-tray.service 3dxlinux-lcdmgr.service" in calls, "Start-up: %r" % calls)
     # opening the panel brings them back after the tray's Quit ...
     open(log, "w").close()
     check(ts.bring_back(), "asked systemd to start them")
@@ -277,30 +277,30 @@ def gui_tests(d, tdxd):
         if "--user start" in open(log).read():
             break
         time.sleep(0.05)
-    check("--user start tdx-tray.service tdx-lcdmgr.service" in open(log).read(), "started: %r"
+    check("--user start 3dxlinux-tray.service 3dxlinux-lcdmgr.service" in open(log).read(), "started: %r"
           % open(log).read())
     # ... but not when Start with the Desktop is off
     with open(sysctl, "w") as f:
         f.write('#!/bin/sh\necho "$*" >> %s\n[ "$2" = is-enabled ] && echo masked\nexit 0\n' % log)
     open(log, "w").close()
     check(ts.bring_back() is False and "--user start" not in open(log).read(), "masked: left off")
-    del os.environ["TDX_SYSTEMCTL"]
+    del os.environ["DXLINUX_SYSTEMCTL"]
 
-    # ---- the panel follows the application used last (tdxd's active profile)
+    # ---- the panel follows the application used last (3dxlinuxd's active profile)
     app.args.profile = None  # not started with -p
     app.store.select(None)
     app.tdxd_profile = "default"
     with open(os.path.join(pdir, "blender.conf"), "w") as f:
         f.write("match = blender\n")
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile blender\napplication blender (via focus)\ndevices 1\n")
+        f.write("3dxlinuxd test\nprofile blender\napplication blender (via focus)\ndevices 1\n")
     check(app.follow_tick() is True and app.store.profile and
           os.path.basename(app.store.profile.path) == "blender.conf", "switched to Blender's profile")
     app.store.select(None)  # chosen by hand from the title menu
     app.follow_tick()
-    check(app.store.profile is None, "a profile chosen by hand stays until tdxd's changes")
+    check(app.store.profile is None, "a profile chosen by hand stays until 3dxlinuxd's changes")
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n")
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n")
     app.store.select("blender")
     app.follow_tick()
     check(app.store.profile is None, "back to All Applications")
@@ -309,7 +309,7 @@ def gui_tests(d, tdxd):
 
     # ---- a device unplugged and plugged in again while the panel is open
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n")
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n")
     app.follow_tick()
     check(main.dev_label.get_text() == "No device connected" and
           main.state_label.get_text() == "Connect a device", "unplugged: %s / %s"
@@ -319,7 +319,7 @@ def gui_tests(d, tdxd):
           not main.speed.get_visible() and not main.main_buttons[0].get_visible() and
           main.nodev_text.get_text().startswith("No device found."), "3DxWare's no-device page")
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
                 "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")
     app.follow_tick()
     check(main.dev_label.get_text() == "SpacePilot Pro" and main.photo.key == ("046d", "c629") and
@@ -329,12 +329,12 @@ def gui_tests(d, tdxd):
     check(not main.name_btn.get_visible() and main.dev_label.get_visible(),
           "one device: its name, no chooser")
 
-    # ---- a Universal Receiver with a CadMouse paired (tdxd's status lines)
+    # ---- a Universal Receiver with a CadMouse paired (3dxlinuxd's status lines)
     rcv = ("receiver Universal Receiver [256f:c652] firmware 1.06\n"
            "paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery %s "
            "charging no seen 2 active yes\n")
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 + rcv % "52")
     app.follow_tick()
     r = app.status["receivers"]
@@ -597,14 +597,14 @@ def gui_tests(d, tdxd):
           main.recv_title.get_visible() and main.recv_buttons[1].get_visible() and
           not main.speed.get_visible() and not main.main_buttons[0].get_visible(),
           "receiver page")
-    # ---- Add device: tdxd's pairing line under its receiver
+    # ---- Add device: 3dxlinuxd's pairing line under its receiver
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 "receiver Universal Receiver [256f:c652] firmware 1.06\npairing on 42\n")
     check(app.daemon.status()["receivers"][0]["pairing"] == {"state": "on", "left": 42},
           "pairing on, seconds left")
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 "receiver Universal Receiver [256f:c652] firmware 1.06\n"
                 "pairing done 4 CadMouse Compact Wireless\n")
     p = app.daemon.status()["receivers"][0]["pairing"]
@@ -618,10 +618,10 @@ def gui_tests(d, tdxd):
     addp.page = "pairing"
     addp.started = ts.time.monotonic()
     with open(Args.status_file, "w") as f:  # the receiver away after pairing: keep waiting
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n")
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n")
     check(addp.tick() is True and addp.page == "pairing", "Add device: waits while the receiver is away")
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 "receiver Universal Receiver [256f:c652] firmware 1.06\n"
                 "pairing done 4 CadMouse Compact Wireless\n")
     addp.tick()
@@ -631,7 +631,7 @@ def gui_tests(d, tdxd):
     app.panels.remove(addp)
     # ---- the receiver's Advanced Settings: the paired devices, a remove button each
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 "receiver Universal Receiver [256f:c652] firmware 1.06\n"
                 "paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery 50 "
                 "charging no seen 2 active no serial Y1224194699\n")
@@ -648,7 +648,7 @@ def gui_tests(d, tdxd):
     check(not tiles[0].xbtn.get_visible(), "... and goes again")
     remp.removing = 4
     with open(Args.status_file, "w") as f:  # gone from the receiver
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 "receiver Universal Receiver [256f:c652] firmware 1.06\n")
     app.status = app.daemon.status()
     remp.refresh()
@@ -657,13 +657,13 @@ def gui_tests(d, tdxd):
           remp.count.get_text() == "Currently paired devices (0/5)", "Remove: removed")
     app.panels.remove(remp)
     with open(Args.status_file, "w") as f:  # the battery report changes: still the receiver
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 + rcv % "-")
     app.follow_tick()
     check(main.mode == "receiver" and app.status["receivers"][0]["paired"][0]["battery"] is None,
           "the chosen device stays chosen")
     with open(Args.status_file, "w") as f:  # paired, but switched off / not used yet
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 0\n"
                 + (rcv % "-").replace("active yes", "active no"))
     app.follow_tick()
     check([e["kind"] for e in ts.device_entries(app.status)] == ["receiver"] and
@@ -671,14 +671,14 @@ def gui_tests(d, tdxd):
           not main.name_btn.get_visible() and main.dev_label.get_text() == "Universal Receiver",
           "a CadMouse that has not been heard from: just the receiver, no chooser")
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
                 "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")
     app.follow_tick()
     check(main.mode == "3d" and main.speed.get_sensitive() and main.lcd_button.get_visible(),
           "receiver unplugged: the SpacePilot again")
 
     # ---- a device unplugged: the other windows close, back to the main window
-    two = ("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+    two = ("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
            "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n"
            "receiver Universal Receiver [256f:c652] firmware 1.06\n"
            "paired 4 CadMouse Compact Wireless [256f:c658] id 0048f7ba8b battery 50 "
@@ -725,7 +725,7 @@ def gui_tests(d, tdxd):
     check(ts.AddDevicePanel in app.windows, "a device plugged in closes nothing")
     app.windows[ts.AddDevicePanel].destroy()
     with open(Args.status_file, "w") as f:
-        f.write("tdxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
+        f.write("3dxlinuxd test\nprofile default\napplication gimp (via focus)\ndevices 1\n"
                 "  SpacePilot PRO [046d:c629] /dev/hidraw0 firmware 4.11\n")
     app.follow_tick()
 
@@ -779,13 +779,13 @@ def gui_tests(d, tdxd):
           ts.ConfFile(os.path.join(ROOT, "packaging", "profiles", "freecad.conf")).get("key_V3DK_TOP"),
           "reset: own profiles removed, FreeCAD's back to its default")
     # the password helper removes only profiles (refusals only: the tests may run as root)
-    helper = os.path.join(ROOT, "gui", "tdx-settings-helper")
+    helper = os.path.join(ROOT, "gui", "3dxlinux-settings-helper")
     for args in (["remove", "/etc/3dxlinux.conf"], ["remove", "/etc/passwd"],
                  ["remove", "/etc/3dxlinux.d/../passwd.conf"]):
         r = subprocess.run(["sh", helper] + args, capture_output=True, text=True)
         check(r.returncode != 0, "helper refuses %s" % " ".join(args))
 
-    # ---- the application's own key names (tdxctl app-keys; the FreeCAD add-on)
+    # ---- the application's own key names (3dxlinuxctl app-keys; the FreeCAD add-on)
     d0 = ts.Daemon("/nonexistent")
     d0.request = lambda *a: (0, "app FreeCAD\nV3DK_1\tCreate sketch\nV3DK_2\tPart Design Modeling\n")
     check(d0.app_keys() == ("FreeCAD", {"V3DK_1": "Create sketch", "V3DK_2": "Part Design Modeling"}),
@@ -830,7 +830,7 @@ def gui_tests(d, tdxd):
     check(p.get("key_V3DK_3") == "KEY_LEFTCTRL + KEY_LEFTSHIFT + KEY_R" and not p.has("key_V3DK_4") and
           p.get("lcd_label_V3DK_3") == "Refresh", "Restore Defaults: the imported keys")
     ts.Store.import_dirs = orig_dirs
-    # ... and on tdxd's FreeCAD profile: its view keys, not nothing
+    # ... and on 3dxlinuxd's FreeCAD profile: its view keys, not nothing
     with open(os.path.join(pdir, "freecad.conf"), "w") as f:
         f.write("match = freecad*\n")  # what an earlier Restore Defaults left
     app.store.select("freecad")
@@ -847,8 +847,8 @@ def gui_tests(d, tdxd):
 
 
 def radial_tests(d):
-    """tdx-radial: 3DxWare's Common Tools radial menu."""
-    ld = importlib.machinery.SourceFileLoader("tdx_radial", os.path.join(ROOT, "gui", "tdx-radial"))
+    """3dxlinux-radial: 3DxWare's Common Tools radial menu."""
+    ld = importlib.machinery.SourceFileLoader("tdx_radial", os.path.join(ROOT, "gui", "3dxlinux-radial"))
     sp = importlib.util.spec_from_loader("tdx_radial", ld)
     rd = importlib.util.module_from_spec(sp)
     ld.exec_module(rd)
@@ -858,7 +858,7 @@ def radial_tests(d):
     check(rd.menu_opacity(100) == 1 and rd.menu_opacity(10000) == 0.15 and
           0.15 < rd.menu_opacity(200) < 1, "radial: fades away from the menu, to 0.15")
     check([it[0] for it in rd.COMMON_TOOLS] == ["Virtual\nNumPad", "Redo", "Properties...", "Undo"]
-          and rd.COMMON_TOOLS[0][2] == ("numpad", "tdx-numpad") and
+          and rd.COMMON_TOOLS[0][2] == ("numpad", "3dxlinux-numpad") and
           rd.COMMON_TOOLS[3][2] == ("keys", "KEY_LEFTCTRL+KEY_Z"),
           "radial: Common Tools as Base.xml's Base_MenuRM1")
 
@@ -874,7 +874,7 @@ def radial_tests(d):
           "radial: what is under the pointer")
     m.on_press(None, Ev(1, cx, cy - 80))
     m.on_release(None, Ev(1, cx, cy - 80))
-    check(m.done == ("numpad", "tdx-numpad"), "radial: Virtual NumPad chosen")
+    check(m.done == ("numpad", "3dxlinux-numpad"), "radial: Virtual NumPad chosen")
     m.done = None
     m.on_press(None, Ev(1, cx - 80, cy))
     m.on_release(None, Ev(1, cx - 80, cy))
@@ -890,24 +890,24 @@ def radial_tests(d):
           "radial: 8 slices, clockwise from the top")
     check(rd.slice_action("keys:LEFTCTRL+SHIFT+Z") == ("keys", "KEY_LEFTCTRL+KEY_SHIFT+KEY_Z") and
           rd.slice_action("keys:V, F") == ("keys", "KEY_V,KEY_F") and
-          rd.slice_action("action:settings") == ("run", "tdx-settings") and
-          rd.slice_action("action:numpad") == ("numpad", "tdx-numpad") and
+          rd.slice_action("action:settings") == ("run", "3dxlinux-settings") and
+          rd.slice_action("action:numpad") == ("numpad", "3dxlinux-numpad") and
           rd.slice_action("action:speed_up") == ("action", "speed_up") and
           rd.slice_action("BTN_LEFT") is None and rd.slice_action("") is None,
           "radial: a user menu's sections")
-    check(rd.load_menu(os.path.join(d, "none.sock"), "r1") is None, "radial: no tdxd, no menu")
+    check(rd.load_menu(os.path.join(d, "none.sock"), "r1") is None, "radial: no 3dxlinuxd, no menu")
     m8 = rd.RadialMenu(os.path.join(d, "none.sock"), [("A", "", ("keys", "KEY_A"))] * 8)
     check(m8.radius == rd.RADIUS_8, "radial: 8 sections, a bigger menu")
     m8.destroy()
     check(rd.tdxd_request(os.path.join(d, "none.sock"), "keys KEY_Z").startswith("error"),
-          "radial: no tdxd, an error, no crash")
+          "radial: no 3dxlinuxd, an error, no crash")
     m.destroy()
     m2.destroy()
 
 
 def numpad_tests(d):
-    """tdx-numpad: 3DxWare's Virtual NumPad."""
-    ld = importlib.machinery.SourceFileLoader("tdx_numpad", os.path.join(ROOT, "gui", "tdx-numpad"))
+    """3dxlinux-numpad: 3DxWare's Virtual NumPad."""
+    ld = importlib.machinery.SourceFileLoader("tdx_numpad", os.path.join(ROOT, "gui", "3dxlinux-numpad"))
     sp = importlib.util.spec_from_loader("tdx_numpad", ld)
     npd = importlib.util.module_from_spec(sp)
     ld.exec_module(npd)
@@ -973,7 +973,7 @@ def own_settings_tests(d):
     c = ts.ConfFile(os.path.join(d, "merged.conf"))
     c.lines = b.splitlines()
     check(c.get("sensitivity") == "2.5" and "KEY_END" in profs["blender"] and "gimp" in profs,
-          "own settings: Export has what tdxd uses")
+          "own settings: Export has what 3dxlinuxd uses")
     check(ts.reset_settings(st) == [] and not os.path.exists(os.path.join(mine, "3dxlinux.conf")) and
           not os.listdir(os.path.join(mine, "profiles")) and
           all(open(p).read() == t for p, t in before.items()),
@@ -981,8 +981,8 @@ def own_settings_tests(d):
 
 
 def osd_tests(d):
-    """tdx-osd: 3DxWare's On-Screen Display (MouseBar) for a CadMouse."""
-    ld = importlib.machinery.SourceFileLoader("tdx_osd", os.path.join(ROOT, "gui", "tdx-osd"))
+    """3dxlinux-osd: 3DxWare's On-Screen Display (MouseBar) for a CadMouse."""
+    ld = importlib.machinery.SourceFileLoader("tdx_osd", os.path.join(ROOT, "gui", "3dxlinux-osd"))
     sp = importlib.util.spec_from_loader("tdx_osd", ld)
     osd = importlib.util.module_from_spec(sp)
     ld.exec_module(osd)
@@ -1068,11 +1068,11 @@ def icon_tests(d):
 
 
 def main():
-    tdxd = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build",
-                                                              os.uname().machine, "tdxd")
+    daemon = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build",
+                                                              os.uname().machine, "3dxlinuxd")
     with tempfile.TemporaryDirectory() as d:
         conf_file_tests(d)
-        gui_tests(d, tdxd)
+        gui_tests(d, daemon)
         radial_tests(d)
         numpad_tests(d)
         icon_tests(d)

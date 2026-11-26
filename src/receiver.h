@@ -11,7 +11,7 @@
  *  - input report 0x17 is the battery: data byte 0 the level in percent
  *    (0 = unknown), byte 1 bit 0 = charging. A connected device sends it
  *    every 1.5 s or so (HIDDev's "Battery Level Packet").
- * Pure parsing only; tdxd does the I/O. */
+ * Pure parsing only; 3dxlinuxd does the I/O. */
 #ifndef TDX_RECEIVER_H
 #define TDX_RECEIVER_H
 
@@ -83,7 +83,7 @@ void tdx_rcv_mouse_config(uint8_t rep[TDX_RCV_MOUSE_CONFIG_LEN], int dpi, int ra
 /* The button map: 9 + n makes a button mouse button n (1 left, 2 right,
  * 3 middle, 4 back, 5 forward), done by the mouse itself; 40 + its own number
  * makes it report in input report 0x03 instead (bit = button - 1), which
- * moves nothing: 3DxWare's "sent only to 3DxService", tdxd's keystrokes.
+ * moves nothing: 3DxWare's "sent only to 3DxService", 3dxlinuxd's keystrokes.
  * From the bindings of @dev's V2DK buttons in @cfg: key_V2DK_FORWARD =
  * BTN_EXTRA (a mouse function), = KEY_... (keystrokes); unbound, 3DxWare's
  * default (the radial-menu button reports and does nothing on Linux). Left

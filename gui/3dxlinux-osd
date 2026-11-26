@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tdx-osd: 3DxWare's On-Screen Display for a CadMouse (3DxVirtualLCD's
+"""3dxlinux-osd: 3DxWare's On-Screen Display for a CadMouse (3DxVirtualLCD's
 MouseBar) on Linux.
 
 A small dock that stays on the screen while "Always show On-Screen Display"
@@ -12,7 +12,7 @@ is kept in ~/.config/3dxlinux/osd.json); a click opens the Buttons window.
 Like the NumPad it never takes the keyboard focus (Wayland: a gtk-layer-shell
 surface). The tray starts it at login and the Buttons window when you tick the
 box; it ends itself when the box is unticked. 3DxWare also lights a button
-while it is pressed; the CadMouse does its mouse functions itself, so tdxd
+while it is pressed; the CadMouse does its mouse functions itself, so 3dxlinuxd
 doesn't see those presses and the dock doesn't light them.
 """
 import argparse
@@ -29,17 +29,17 @@ sys.dont_write_bytecode = True
 
 
 def load_settings_module():
-    """3Dconnexion Settings (tdx-settings): its Buttons window's icons and the
+    """3Dconnexion Settings (3dxlinux-settings): its Buttons window's icons and the
     way it reads your settings, so the dock shows what the window shows."""
     here = os.path.dirname(os.path.realpath(__file__))
-    for p in (os.path.join(here, "tdx-settings"), shutil.which("tdx-settings") or ""):
+    for p in (os.path.join(here, "3dxlinux-settings"), shutil.which("3dxlinux-settings") or ""):
         if p and os.path.isfile(p):
             ld = importlib.machinery.SourceFileLoader("tdx_settings", p)
             spec = importlib.util.spec_from_loader("tdx_settings", ld)
             mod = importlib.util.module_from_spec(spec)
             ld.exec_module(mod)
             return mod
-    raise SystemExit("tdx-osd: tdx-settings not found")
+    raise SystemExit("3dxlinux-osd: 3dxlinux-settings not found")
 
 
 ts = load_settings_module()
@@ -86,7 +86,7 @@ def save_place(x, y):
 
 def pidfile():
     return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
-                        "tdx-osd-%d.pid" % os.getuid())
+                        "3dxlinux-osd-%d.pid" % os.getuid())
 
 
 def running():
@@ -94,14 +94,14 @@ def running():
         with open(pidfile()) as f:
             pid = int(f.read().strip())
         with open("/proc/%d/cmdline" % pid, "rb") as f:
-            return b"tdx-osd" in f.read() and pid != os.getpid()
+            return b"3dxlinux-osd" in f.read() and pid != os.getpid()
     except (OSError, ValueError):
         return False
 
 
 class Faces:
     """What the Buttons window shows for a CadMouse button (its functions,
-    borrowed from MouseButtonsPanel), for the profile tdxd uses now."""
+    borrowed from MouseButtonsPanel), for the profile 3dxlinuxd uses now."""
     specific = ts.MouseButtonsPanel.specific
     conf = ts.MouseButtonsPanel.conf
     value = ts.MouseButtonsPanel.value
@@ -170,7 +170,7 @@ class Dock(Gtk.Window):
         self.py = min(max(0, self.py), max(0, mon[3] - H))
         if self.layer:
             GtkLayerShell.init_for_window(self)
-            GtkLayerShell.set_namespace(self, "tdx-osd")
+            GtkLayerShell.set_namespace(self, "3dxlinux-osd")
             GtkLayerShell.set_layer(self, GtkLayerShell.Layer.TOP)
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
@@ -338,7 +338,7 @@ class Dock(Gtk.Window):
         return True
 
     def open_buttons(self):
-        prog = ts.find_program("tdx-settings") or shutil.which("tdx-settings")
+        prog = ts.find_program("3dxlinux-settings") or shutil.which("3dxlinux-settings")
         if prog:
             subprocess.Popen([prog, "--buttons"], start_new_session=True,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -347,12 +347,12 @@ class Dock(Gtk.Window):
 
 def start_detached(sock=None):
     """Start the dock in a unit of its own (the tray's or the panel's unit ends
-    with them), else in a new session. For tdx-tray and tdx-settings."""
-    prog = shutil.which("tdx-osd") or os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                                   "tdx-osd")
+    with them), else in a new session. For 3dxlinux-tray and 3dxlinux-settings."""
+    prog = shutil.which("3dxlinux-osd") or os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                   "3dxlinux-osd")
     argv = [prog] + (["-s", sock] if sock else [])
     try:
-        r = subprocess.run(["systemd-run", "--user", "--unit=tdx-osd", "--collect", "--quiet"] +
+        r = subprocess.run(["systemd-run", "--user", "--unit=3dxlinux-osd", "--collect", "--quiet"] +
                            argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=5)
         if r.returncode == 0:
@@ -369,8 +369,8 @@ def start_detached(sock=None):
 def main():
     ap = argparse.ArgumentParser(description="3DxWare's On-Screen Display for a CadMouse")
     ap.add_argument("-c", "--config", default="/etc/3dxlinux.conf", help="base configuration file")
-    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="tdxd control socket")
-    ap.add_argument("-V", "--version", action="version", version="tdx-osd " + APP_VERSION)
+    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="3dxlinuxd control socket")
+    ap.add_argument("-V", "--version", action="version", version="3dxlinux-osd " + APP_VERSION)
     args = ap.parse_args()
     if running():
         return 0

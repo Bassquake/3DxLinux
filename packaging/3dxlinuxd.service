@@ -1,0 +1,15 @@
+[Unit]
+Description=3Dconnexion device driver (3DxLinux)
+Documentation=file:///usr/local/share/doc/3dxlinux/README.md
+After=systemd-udevd.service
+Conflicts=spacenavd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/3dxlinuxd -c /etc/3dxlinux.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RuntimeDirectory=3dxlinux
+
+[Install]
+WantedBy=multi-user.target

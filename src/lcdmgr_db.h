@@ -1,5 +1,5 @@
 /*
- * tdx-lcdmgr settings: the LCD Manager database, same layout and keys as
+ * 3dxlinux-lcdmgr settings: the LCD Manager database, same layout and keys as
  * LCDMon's %LOCALAPPDATA%\Logitech\LCD Software\LCD Manager\LGLCDDB.TXT
  * (LCDMon.exe FUN_140032680 writes it, FUN_140034f0c / FUN_140036c4c read it):
  *

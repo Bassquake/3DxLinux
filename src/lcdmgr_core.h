@@ -1,5 +1,5 @@
 /*
- * tdx-lcdmgr decisions, kept free of I/O so they can be unit-tested:
+ * 3dxlinux-lcdmgr decisions, kept free of I/O so they can be unit-tested:
  * which program the LCD shows, and the on-LCD program menu.
  *
  * Display selection (LCDMon "Display Switching Method"):

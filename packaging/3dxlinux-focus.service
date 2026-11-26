@@ -1,0 +1,14 @@
+# systemd *user* unit: reports the focused application to 3dxlinuxd for
+# per-application profiles. Enable with:  systemctl --user enable --now 3dxlinux-focus
+[Unit]
+Description=Report the focused application to 3dxlinuxd (per-application profiles, LCD)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/3dxlinux-focus
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""tdxd add-on for FreeCAD: the SpacePilot's keys follow the active workbench.
+"""3dxlinuxd add-on for FreeCAD: the SpacePilot's keys follow the active workbench.
 
 On Windows, FreeCAD (0.22+) and 3DxWare talk through 3Dconnexion's NavLib:
 FreeCAD tells the driver which workbench is active, and every workbench has its
@@ -7,15 +7,15 @@ own key set (FreeCAD_Navlib.xml) - Part Design: 1 Create sketch, 2 the "Part
 Design Modeling" radial menu, 4 Create body, ... On Linux FreeCAD only gets
 numbered spacenav buttons, so this add-on does that part:
 
-- one FreeCAD command per SpacePilot key ("Tdxd_Key_V3DK_1", ...), put into
+- one FreeCAD command per SpacePilot key ("SpaceMouse3DxLinux_Key_V3DK_1", ...), put into
   FreeCAD's own 3D mouse button map (BaseApp/Spaceball/Buttons/<n>/Command), so
   FreeCAD runs it when the key is pressed;
 - the command runs what the active workbench's set has for that key: a FreeCAD
   command (with a group command's entry), or a radial menu as a pop-up menu;
-- on every workbench change it tells tdxd which keys FreeCAD now handles and
-  their names (tdxctl app-buttons): the LCD shows "Create sketch", and tdxd
+- on every workbench change it tells 3dxlinuxd which keys FreeCAD now handles and
+  their names (3dxlinuxctl app-buttons): the LCD shows "Create sketch", and 3dxlinuxd
   does not also send its own shortcut for those keys. Keys a workbench leaves
-  out keep tdxd's functions (as on Windows).
+  out keep 3dxlinuxd's functions (as on Windows).
 
 The key sets come from your own 3DxWare installer, read by the "Import 3DxWare
 look" step (freecad/buttons.json next to the artwork).
@@ -24,14 +24,14 @@ import json
 import os
 import socket
 
-SOCKET = os.environ.get("TDXD_SOCKET", "/run/3dxlinux.sock")
-PREFIX = "Tdxd_Key_"
+SOCKET = os.environ.get("DXLINUX_SOCKET", "/run/3dxlinux.sock")
+PREFIX = "SpaceMouse3DxLinux_Key_"
 
 
 # ---- pure logic (no FreeCAD needed: tested in tests/test_freecad.py) --------
 
 def asset_dirs():
-    env = os.environ.get("TDX_UI_ASSETS")
+    env = os.environ.get("DXLINUX_UI_ASSETS")
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
         "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui",
@@ -69,7 +69,7 @@ def key_names(data, workbench, keys):
 
 
 def app_buttons_message(pid, names):
-    """The tdxctl app-buttons line: fields split by tabs (names have spaces)."""
+    """The 3dxlinuxctl app-buttons line: fields split by tabs (names have spaces)."""
     fields = ["app-buttons", str(pid)]
     for k, n in names:
         fields += [k, n.replace("\t", " ").replace("\n", " ")[:40]]
@@ -78,7 +78,7 @@ def app_buttons_message(pid, names):
 
 def resolve(data, workbench, key):
     """What a key does in a workbench: ("command", name, index), ("menu", title,
-    [(name, command, index)]), or None (not FreeCAD's: tdxd's own function)."""
+    [(name, command, index)]), or None (not FreeCAD's: 3dxlinuxd's own function)."""
     acts = data.get("actions", {})
     a = acts.get(bank_for(data, workbench).get(key, ""))
     if not a:
@@ -92,7 +92,7 @@ def resolve(data, workbench, key):
 
 
 def parse_buttons(reply):
-    """tdxctl buttons -> {V3DK id: spacenav button number}."""
+    """3dxlinuxctl buttons -> {V3DK id: spacenav button number}."""
     out = {}
     for line in reply.splitlines():
         parts = line.split()
@@ -101,8 +101,8 @@ def parse_buttons(reply):
     return out
 
 
-def tdxd(command, path=SOCKET):
-    """One request to tdxd's control socket; the reply, or "" when tdxd is away."""
+def request(command, path=SOCKET):
+    """One request to 3dxlinuxd's control socket; the reply, or "" when 3dxlinuxd is away."""
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(2)
@@ -131,7 +131,7 @@ class _Key:
     def GetResources(self):
         return {"MenuText": "SpacePilot key %s" % self.key[5:],
                 "ToolTip": "Runs what the active workbench has on the 3D mouse key %s "
-                           "(tdxd)" % self.key[5:]}
+                           "(3DxLinux)" % self.key[5:]}
 
     def IsActive(self):
         return True
@@ -146,23 +146,23 @@ class Addon:
         self.data = load_buttons()
         self.numbers = {}
         self.workbench = ""
-        self.sent = False    # tdxd has our key names
+        self.sent = False    # 3dxlinuxd has our key names
         self.warned = False
 
     def log(self, text):
-        self.FreeCAD.Console.PrintLog("tdxd: %s\n" % text)
+        self.FreeCAD.Console.PrintLog("3dxlinuxd: %s\n" % text)
 
     def start(self):
         if not self.data:
             self.FreeCAD.Console.PrintMessage(
-                "tdxd: no FreeCAD key sets yet - import the 3DxWare look in tdx-settings "
+                "3dxlinuxd: no FreeCAD key sets yet - import the 3DxWare look in 3dxlinux-settings "
                 "(About)\n")
             return
-        self.numbers = parse_buttons(tdxd("buttons"))
+        self.numbers = parse_buttons(request("buttons"))
         if not self.numbers:
             self.FreeCAD.Console.PrintWarning(
-                "tdxd: can't reach tdxd at %s or no 3D mouse connected; the keys keep "
-                "their usual functions (FreeCAD as a Flatpak: run tdx-freecad-addon "
+                "3dxlinuxd: can't reach 3dxlinuxd at %s or no 3D mouse connected; the keys keep "
+                "their usual functions (FreeCAD as a Flatpak: run 3dxlinux-freecad-addon "
                 "install, then restart FreeCAD)\n" % SOCKET)
         params = "User parameter:BaseApp/Spaceball/Buttons/%d"
         for key, num in self.numbers.items():
@@ -184,9 +184,9 @@ class Addon:
         self.workbench_changed(self.active_workbench())
         if self.numbers:
             self.FreeCAD.Console.PrintMessage(
-                "tdxd: 3D mouse keys follow the workbench (%d key sets)\n"
+                "3dxlinuxd: 3D mouse keys follow the workbench (%d key sets)\n"
                 % len(self.data.get("banks", {})))
-        if self.numbers and self.QtCore:  # tdxd keeps them in memory only
+        if self.numbers and self.QtCore:  # 3dxlinuxd keeps them in memory only
             self.watch = self.QtCore.QTimer(mw)
             self.watch.timeout.connect(self.check_tdxd)
             self.watch.start(3000)
@@ -211,31 +211,31 @@ class Addon:
     def workbench_changed(self, name):
         self.workbench = str(name or "")
         names = key_names(self.data, self.workbench, self.numbers.keys())
-        reply = tdxd(app_buttons_message(0, names)).strip()
+        reply = request(app_buttons_message(0, names)).strip()
         self.sent = bool(names) and reply.startswith("ok")
         self.log("%s: %s" % (self.workbench, reply))
 
     def check_tdxd(self):
-        """tdxd keeps the key names in memory: after it restarts (a new tdxd
+        """3dxlinuxd keeps the key names in memory: after it restarts (a new 3dxlinuxd
         package, say) it has none, so send them again. FreeCAD's spacenav
         connection went with the restart, and FreeCAD doesn't reopen it."""
         if not self.sent:
             return
-        reply = tdxd("app-keys")
+        reply = request("app-keys")
         if not reply.startswith("app "):
-            return  # tdxd away (it comes back), or one without app-keys
+            return  # 3dxlinuxd away (it comes back), or one without app-keys
         if reply.split("\n", 1)[0].strip() != "app -":
             return
         self.workbench_changed(self.workbench)
         if not self.warned:
             self.warned = True
             self.FreeCAD.Console.PrintWarning(
-                "tdxd: tdxd had forgotten FreeCAD's 3D mouse keys (restarted?) and has them "
+                "3dxlinuxd: 3dxlinuxd had forgotten FreeCAD's 3D mouse keys (restarted?) and has them "
                 "again. If the 3D mouse doesn't move the view or its keys do nothing, "
                 "restart FreeCAD.\n")
 
     def stop(self):
-        tdxd(app_buttons_message(0, []))
+        request(app_buttons_message(0, []))
 
     def press(self, key):
         what = resolve(self.data, self.workbench, key)
@@ -248,7 +248,7 @@ class Addon:
 
     def run(self, command, index):
         if command not in self.Gui.listCommands():
-            self.FreeCAD.Console.PrintWarning("tdxd: FreeCAD has no command %s\n" % command)
+            self.FreeCAD.Console.PrintWarning("3dxlinuxd: FreeCAD has no command %s\n" % command)
             return
         try:
             if index is None:
@@ -256,7 +256,7 @@ class Addon:
             else:
                 self.Gui.runCommand(command, int(index))
         except Exception as e:  # noqa: BLE001 - never break FreeCAD over a key
-            self.FreeCAD.Console.PrintWarning("tdxd: %s: %s\n" % (command, e))
+            self.FreeCAD.Console.PrintWarning("3dxlinuxd: %s: %s\n" % (command, e))
 
     def popup(self, title, items):
         """3DxWare's radial menu, as a pop-up menu at the mouse pointer."""

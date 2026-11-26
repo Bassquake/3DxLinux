@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent check of tdxd's raw-deflate encoder against Python's zlib.
+"""Independent check of 3dxlinuxd's raw-deflate encoder against Python's zlib.
 
 test_core writes pairs NAME.raw / NAME.def into a directory; every .def must
 inflate (raw deflate, wbits=-15) back to the matching .raw, and must consist of

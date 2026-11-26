@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""tdx-radial: 3DxWare's radial menu (3DxPieMenus.exe) on Linux.
+"""3dxlinux-radial: 3DxWare's radial menu (3DxPieMenus.exe) on Linux.
 
-tdxd starts it when a button shows "Common Tools" (a CadMouse's radial-menu
+3dxlinuxd starts it when a button shows "Common Tools" (a CadMouse's radial-menu
 button does by default); a second press closes it. The menu opens centred on
 the pointer, as 3DxWare's: four slices round a close button, as in Base.xml's
 Base_MenuRM1:
 
-    top     Virtual NumPad  (Driver_Toggle_3DxNumPad: tdx-numpad, next to the menu)
+    top     Virtual NumPad  (Driver_Toggle_3DxNumPad: 3dxlinux-numpad, next to the menu)
     right   Redo            (Macro_Redo)
     bottom  Properties...   (Driver_ShowDriverGUI: 3Dconnexion Settings)
     left    Undo            (Macro_Undo)
@@ -15,7 +15,7 @@ Click a slice to run it. The centre button, a right click, Escape or a click
 outside closes the menu; it fades as the pointer moves away (3DxPieMenus'
 FnOpacity, down to 0.15). Wayland lets no window place itself at the
 pointer, so the menu is drawn on a transparent full-screen window, where the
-pointer's position is known. Undo and Redo are keystrokes, sent by tdxd
+pointer's position is known. Undo and Redo are keystrokes, sent by 3dxlinuxd
 ("keys" on its control socket) to the window that had the focus.
 """
 import argparse
@@ -42,9 +42,9 @@ APP_VERSION = "dev"
 # Base_MenuRM1 (Common Tools), MenuButton_1..4 clockwise from the top:
 # (label, icon, what it does)
 COMMON_TOOLS = [
-    ("Virtual\nNumPad", "Driver_Toggle_3DxNumPad.png", ("numpad", "tdx-numpad")),
+    ("Virtual\nNumPad", "Driver_Toggle_3DxNumPad.png", ("numpad", "3dxlinux-numpad")),
     ("Redo", "Macro_Redo.png", ("keys", "KEY_LEFTCTRL+KEY_LEFTSHIFT+KEY_Z")),
-    ("Properties...", "Driver_ShowDriverGUI.png", ("run", "tdx-settings")),
+    ("Properties...", "Driver_ShowDriverGUI.png", ("run", "3dxlinux-settings")),
     ("Undo", "Macro_Undo.png", ("keys", "KEY_LEFTCTRL+KEY_Z")),
 ]
 NOT_LINUX = "Not on Linux yet"
@@ -68,7 +68,7 @@ SCALE_FROM = 0.3      # the menu grows from 30 % at the pointer as it fades in
 
 
 def asset_dirs():
-    env = os.environ.get("TDX_UI_ASSETS")
+    env = os.environ.get("DXLINUX_UI_ASSETS")
     here = os.path.dirname(os.path.realpath(__file__))
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
@@ -86,7 +86,7 @@ def icon_path(name):
 
 def pidfile():
     run = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
-    return os.path.join(run, "tdx-radial-%d.pid" % os.getuid())
+    return os.path.join(run, "3dxlinux-radial-%d.pid" % os.getuid())
 
 
 def close_running():
@@ -95,7 +95,7 @@ def close_running():
         with open(pidfile()) as f:
             pid = int(f.read().strip())
         with open("/proc/%d/cmdline" % pid, "rb") as f:
-            if b"tdx-radial" not in f.read():
+            if b"3dxlinux-radial" not in f.read():
                 return False
         os.kill(pid, signal.SIGTERM)
         return True
@@ -104,7 +104,7 @@ def close_running():
 
 
 def tdxd_request(sock, line):
-    """One request on tdxd's control socket; its reply."""
+    """One request on 3dxlinuxd's control socket; its reply."""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(2)
     try:
@@ -124,13 +124,13 @@ def tdxd_request(sock, line):
 
 
 def run_detached(argv):
-    """Start @argv so that it outlives the menu. tdxd runs the menu as a systemd
+    """Start @argv so that it outlives the menu. 3dxlinuxd runs the menu as a systemd
     user unit, and systemd stops everything in it when the menu exits: so the
-    program gets a unit of its own, the one tdxd uses for it (tdx-settings-menu
-    as the MENU button's, tdx-numpad), so a second one isn't started. Without a
+    program gets a unit of its own, the one 3dxlinuxd uses for it (3dxlinux-settings-menu
+    as the MENU button's, 3dxlinux-numpad), so a second one isn't started. Without a
     user manager (WSL), a new session."""
     prog = argv[0]
-    unit = "tdx-settings-menu" if prog == "tdx-settings" else prog
+    unit = "3dxlinux-settings-menu" if prog == "3dxlinux-settings" else prog
     try:
         r = subprocess.run(["systemd-run", "--user", "--unit=" + unit, "--collect", "--quiet"]
                            + argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -143,7 +143,7 @@ def run_detached(argv):
         subprocess.Popen(argv, start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     except OSError as e:
-        print("tdx-radial: %s: %s" % (prog, e), file=sys.stderr)
+        print("3dxlinux-radial: %s: %s" % (prog, e), file=sys.stderr)
 
 
 def slice_at(dx, dy, n=4):
@@ -154,7 +154,7 @@ def slice_at(dx, dy, n=4):
 
 def slice_action(value):
     """A user menu slice's value, as the Radial Menu Editor saves it (the
-    picker's values): what tdx-radial does, or None (empty, not on Linux)."""
+    picker's values): what 3dxlinux-radial does, or None (empty, not on Linux)."""
     v = (value or "").strip()
     if v.startswith("keys:"):
         chords = []
@@ -164,19 +164,19 @@ def slice_action(value):
                 chords.append("+".join(n if n.startswith("KEY_") else "KEY_" + n for n in names))
         return ("keys", ",".join(chords)) if chords else None
     if v == "action:settings":
-        return ("run", "tdx-settings")
+        return ("run", "3dxlinux-settings")
     if v == "action:numpad":
-        return ("numpad", "tdx-numpad")
+        return ("numpad", "3dxlinux-numpad")
     if v.startswith("action:") and len(v) > 7:
         return ("action", v[7:])
     return None  # empty, or a mouse function (not from a menu yet)
 
 
 def load_menu(sock, menu_id):
-    """(name, items) of a user radial menu, from tdxd ("radial ID"), or None."""
+    """(name, items) of a user radial menu, from 3dxlinuxd ("radial ID"), or None."""
     out = tdxd_request(sock, "radial " + menu_id)
     if out.startswith("error"):
-        print("tdx-radial: " + out.strip(), file=sys.stderr)
+        print("3dxlinux-radial: " + out.strip(), file=sys.stderr)
         return None
     kv = dict(line.split("\t", 1) for line in out.splitlines() if "\t" in line)
     n = 8 if kv.get("layout", "4").strip() == "8" else 4
@@ -248,7 +248,7 @@ class RadialMenu(Gtk.Window):
         self.connect("key-press-event", self.on_key)
         if self.kind == "layer":
             GtkLayerShell.init_for_window(self)
-            GtkLayerShell.set_namespace(self, "tdx-radial")
+            GtkLayerShell.set_namespace(self, "3dxlinux-radial")
             GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
             for edge in (GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT,
                          GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM):
@@ -264,7 +264,7 @@ class RadialMenu(Gtk.Window):
             _s, x, y = disp.get_default_seat().get_pointer().get_position()
             g = (disp.get_monitor_at_point(x, y) or disp.get_monitor(0)).get_geometry()
             self.move(g.x, g.y)
-            self.origin = (g.x, g.y)  # the pointer in screen coordinates, for tdx-numpad
+            self.origin = (g.x, g.y)  # the pointer in screen coordinates, for 3dxlinux-numpad
             self.set_default_size(g.width, g.height)
             self.set_size_request(g.width, g.height)
         else:
@@ -381,11 +381,11 @@ class RadialMenu(Gtk.Window):
             for chord in a[1].split(","):  # a sequence: one chord after another
                 out = tdxd_request(self.sock, "keys " + chord)
                 if not out.startswith("ok"):
-                    print("tdx-radial: " + out.strip(), file=sys.stderr)
-        elif a and a[0] == "action":  # a driver function, done by tdxd
+                    print("3dxlinux-radial: " + out.strip(), file=sys.stderr)
+        elif a and a[0] == "action":  # a driver function, done by 3dxlinuxd
             out = tdxd_request(self.sock, "action " + a[1])
             if not out.startswith("ok"):
-                print("tdx-radial: " + out.strip(), file=sys.stderr)
+                print("3dxlinux-radial: " + out.strip(), file=sys.stderr)
         elif a and a[0] == "run":
             run_detached([a[1]])
         elif a and a[0] == "numpad":  # next to where the menu opened
@@ -482,9 +482,9 @@ class RadialMenu(Gtk.Window):
 
 def main():
     ap = argparse.ArgumentParser(description="3DxWare's Common Tools radial menu")
-    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="tdxd control socket")
+    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="3dxlinuxd control socket")
     ap.add_argument("--menu", help="a radial menu of your own (its ID), instead of Common Tools")
-    ap.add_argument("-V", "--version", action="version", version="tdx-radial " + APP_VERSION)
+    ap.add_argument("-V", "--version", action="version", version="3dxlinux-radial " + APP_VERSION)
     args = ap.parse_args()
     if close_running():
         return 0

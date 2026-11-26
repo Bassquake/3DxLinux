@@ -155,8 +155,8 @@ static int is_interpreter(const char *exe)
 	return 0;
 }
 
-/* The script an interpreter runs (/proc/<pid>/cmdline): "python3 -B /usr/bin/tdx-settings"
- * -> "tdx-settings", "python3 -m foo.bar" -> "foo.bar". 0, or -1 if none. */
+/* The script an interpreter runs (/proc/<pid>/cmdline): "python3 -B /usr/bin/3dxlinux-settings"
+ * -> "3dxlinux-settings", "python3 -m foo.bar" -> "foo.bar". 0, or -1 if none. */
 static int script_of(int pid, char *out, size_t len)
 {
 	char p[64], buf[4096];
@@ -201,7 +201,7 @@ int tdx_app_from_pid(int pid, char *out, size_t len)
 			*del = 0;
 		const char *base = strrchr(buf, '/');
 		base = base ? base + 1 : buf;
-		/* a script is the application, not its interpreter (tdx-settings runs
+		/* a script is the application, not its interpreter (3dxlinux-settings runs
 		 * as /usr/bin/python3.14) */
 		if (is_interpreter(base) && script_of(pid, out, len) == 0)
 			return 0;
@@ -223,9 +223,9 @@ int tdx_app_from_pid(int pid, char *out, size_t len)
 
 int tdx_is_own_app(const char *app)
 {
-	static const char *const own[] = {"tdx-settings", "tdx-settings-helper", "tdx-lcdmanager",
+	static const char *const own[] = {"3dxlinux-settings", "3dxlinux-settings-helper", "3dxlinux-lcdmanager",
 					  "3dxlinux-lcd-functionkeys", "3dxlinux-lcd-rss", "3dxlinux-lcd-pictures",
-					  "tdx-lcd-demo", "tdx-extract-3dxware-ui", NULL};
+					  "3dxlinux-lcd-demo", "3dxlinux-extract-3dxware-ui", NULL};
 	for (int i = 0; app && own[i]; i++)
 		if (!strcasecmp(app, own[i]))
 			return 1;

@@ -444,7 +444,7 @@ long tdx_gio_bmp_convert(const struct tdx_bmp *bmp, int x, int y, int w, int h, 
 				break;
 			long s = 3L * col; /* always 3 bytes per source pixel, as on Windows */
 			if (s < 0 || s + 2 >= bmp->stride)
-				break;      /* Windows would read past the row; tdxd stops instead */
+				break;      /* Windows would read past the row; 3dxlinuxd stops instead */
 			out[dst] = src[s];
 			out[dst + 1] = src[s + 1];
 			out[dst + 2] = src[s + 2];
@@ -562,7 +562,7 @@ int tdx_giolcd_move(struct tdx_giolcd *l, int y, int present)
 	int n = tdx_gio_plan_move(&l->st, l->st.move_x, y, steps, 2);
 	if (n < 0)
 		return -EINVAL;
-	if (present) { /* tdxd addition: Windows leaves A unshown in this operation */
+	if (present) { /* 3dxlinuxd addition: Windows leaves A unshown in this operation */
 		steps[n].kind = TDX_GIO_STEP_CMD;
 		tdx_gio_cmd_show(steps[n++].pkt, (uint8_t)l->st.a);
 	}

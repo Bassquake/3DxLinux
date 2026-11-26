@@ -1,9 +1,9 @@
 /*
- * libtdxlcd - LCD applet API for tdx-lcdmgr (Linux).
+ * lib3dxlinuxlcd - LCD applet API for 3dxlinux-lcdmgr (Linux).
  *
  * Source-compatible with the function names, structures, constants and
  * semantics of Logitech's lglcd API (LCD SDK 3.06), so applets written for
- * LCDMon can be ported by swapping the include and linking -ltdxlcd. Strings
+ * LCDMon can be ported by swapping the include and linking -l3dxlinuxlcd. Strings
  * are UTF-8 (char); the W/A variants are both provided and identical.
  * Callbacks run on the library's reader thread, one at a time.
  * Return values are the Win32 error codes lglcd documents (0 = success).

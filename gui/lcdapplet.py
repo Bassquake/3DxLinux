@@ -4,7 +4,7 @@
 
 An applet subclasses Applet, sets NAME / ART / CONFIG_DEFAULTS and implements
 draw(cr), and optionally on_buttons(pressed) and configure_dialog(). The base
-class connects to tdx-lcdmgr (reconnecting when it restarts), sends the
+class connects to 3dxlinux-lcdmgr (reconnecting when it restarts), sends the
 program-list icon, renders 320x240 frames with cairo and pushes them, and
 runs "Configure..." (LCD Manager) as a GTK dialog in a separate process.
 """
@@ -32,18 +32,18 @@ from gi.repository import Pango, PangoCairo  # noqa: E402
 
 _here = os.path.dirname(os.path.realpath(__file__))
 sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
-import tdxlcd  # noqa: E402
+import lcd_3dxlinux  # noqa: E402
 
 W, H = 320, 240
 FONT = "Arial, Liberation Sans, Arimo, DejaVu Sans, sans-serif"
 
-LEFT, RIGHT, OK, CANCEL, UP, DOWN, MENU = (tdxlcd.BUTTON_LEFT, tdxlcd.BUTTON_RIGHT, tdxlcd.BUTTON_OK,
-                                           tdxlcd.BUTTON_CANCEL, tdxlcd.BUTTON_UP,
-                                           tdxlcd.BUTTON_DOWN, tdxlcd.BUTTON_MENU)
+LEFT, RIGHT, OK, CANCEL, UP, DOWN, MENU = (lcd_3dxlinux.BUTTON_LEFT, lcd_3dxlinux.BUTTON_RIGHT, lcd_3dxlinux.BUTTON_OK,
+                                           lcd_3dxlinux.BUTTON_CANCEL, lcd_3dxlinux.BUTTON_UP,
+                                           lcd_3dxlinux.BUTTON_DOWN, lcd_3dxlinux.BUTTON_MENU)
 
 
 def asset_dirs():
-    env = os.environ.get("TDX_UI_ASSETS")
+    env = os.environ.get("DXLINUX_UI_ASSETS")
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
         os.path.join(_here, "..", "share", "3dxlinux", "3dxware-ui"),
@@ -229,7 +229,7 @@ class Applet:
         gi.require_version("Gtk", "3.0")
         gi.require_version("GdkPixbuf", "2.0")
         from gi.repository import GdkPixbuf, GLib, Gtk
-        # Wayland app id = tdx-lcd-<applet>.desktop, where the taskbar icon comes from
+        # Wayland app id = 3dxlinux-lcd-<applet>.desktop, where the taskbar icon comes from
         GLib.set_prgname(os.path.basename(os.path.realpath(sys.argv[0])))
         pbs = []
         for p in self.window_icon_files():
@@ -256,10 +256,10 @@ class Applet:
                          start_new_session=True)
 
     def _on_notify(self, code, *_):
-        if code in (tdxlcd.NOTIFICATION_CLOSE_CONNECTION, tdxlcd.NOTIFICATION_DEVICE_REMOVAL,
-                    tdxlcd.NOTIFICATION_APPLET_DISABLED):
+        if code in (lcd_3dxlinux.NOTIFICATION_CLOSE_CONNECTION, lcd_3dxlinux.NOTIFICATION_DEVICE_REMOVAL,
+                    lcd_3dxlinux.NOTIFICATION_APPLET_DISABLED):
             self.dev = None
-            if code == tdxlcd.NOTIFICATION_CLOSE_CONNECTION:
+            if code == lcd_3dxlinux.NOTIFICATION_CLOSE_CONNECTION:
                 self.drop_connection()
         self.dirty = True
 
@@ -272,27 +272,27 @@ class Applet:
 
     def connect(self):
         try:
-            self.conn = tdxlcd.Connection(self.NAME, persistent=True, autostart=True,
-                                          capabilities=tdxlcd.APPLET_CAP_QVGA,
+            self.conn = lcd_3dxlinux.Connection(self.NAME, persistent=True, autostart=True,
+                                          capabilities=lcd_3dxlinux.APPLET_CAP_QVGA,
                                           on_configure=self._on_configure,
                                           on_notify=self._on_notify)
-        except (tdxlcd.LcdError, OSError):
+        except (lcd_3dxlinux.LcdError, OSError):
             self.conn = None
             return False
         icon = self.art.path("icon.png")
         if icon:
             try:
                 self.conn.set_icon_png(icon)
-            except (tdxlcd.LcdError, OSError, cairo.Error):
+            except (lcd_3dxlinux.LcdError, OSError, cairo.Error):
                 pass
         return True
 
     def open(self):
         try:
-            self.dev = self.conn.open(tdxlcd.DEVICE_QVGA, on_buttons=self._on_buttons)
+            self.dev = self.conn.open(lcd_3dxlinux.DEVICE_QVGA, on_buttons=self._on_buttons)
             self.dirty = True
             return True
-        except tdxlcd.LcdError:
+        except lcd_3dxlinux.LcdError:
             self.dev = None
             return False
         except OSError:
@@ -309,7 +309,7 @@ class Applet:
 
     def push(self):
         surf = self.render()
-        self.dev.update(bytes(surf.get_data()), tdxlcd.PRIORITY_NORMAL)
+        self.dev.update(bytes(surf.get_data()), lcd_3dxlinux.PRIORITY_NORMAL)
         self.frames += 1
 
     def run(self):
@@ -329,7 +329,7 @@ class Applet:
                 self.dirty = False
                 try:
                     self.push()
-                except tdxlcd.LcdError:
+                except lcd_3dxlinux.LcdError:
                     self.dev = None
                 except OSError:
                     self.drop_connection()
@@ -341,7 +341,7 @@ class Applet:
 
 def main(cls):
     import argparse
-    ap = argparse.ArgumentParser(description="%s LCD applet for tdx-lcdmgr" % cls.NAME)
+    ap = argparse.ArgumentParser(description="%s LCD applet for 3dxlinux-lcdmgr" % cls.NAME)
     ap.add_argument("--configure", action="store_true", help="open the settings dialog")
     ap.add_argument("--snapshot", metavar="PNG", help="render one frame to a PNG and exit")
     args = ap.parse_args()

@@ -1,26 +1,26 @@
 /*
- * tdx-lcd - drive a 3Dconnexion LCD directly (stop tdxd or set lcd = no first).
+ * 3dxlinux-lcd - drive a 3Dconnexion LCD directly (stop 3dxlinuxd or set lcd = no first).
  *
  * Supported panels (auto-detected, or pick one with -d VID:PID):
  *   046d:c629  SpacePilot Pro         320x240, raw RGB565 frames
  *   256f:c633  SpaceMouse Enterprise  640x150, deflate-compressed RGB565 frames
  *   256f:c63c  Giotto                1280x416, deflate-compressed 24 bpp, double-buffered
  *
- *   tdx-lcd image FILE.ppm        show a binary PPM (cropped / padded to the panel)
- *   tdx-lcd text "line1" ...      show text lines
- *   tdx-lcd fill RRGGBB|bars      solid colour or colour bars
- *   tdx-lcd brightness [0-100]    get (SpacePilot Pro) / set (SpacePilot Pro, Enterprise)
- *   tdx-lcd ping                  SpacePilot Pro vendor request 0x01
- *   tdx-lcd dump OUT.bin          write the USB transfer for 'bars' to a file, no device
- *   tdx-lcd preview OUT.ppm [CONF] render tdxd's key page to a PPM, no device
- *   tdx-lcd slide [-s PX] P1.ppm P2.ppm [P3 P4]   Giotto: slide through 2-4 pages,
+ *   3dxlinux-lcd image FILE.ppm        show a binary PPM (cropped / padded to the panel)
+ *   3dxlinux-lcd text "line1" ...      show text lines
+ *   3dxlinux-lcd fill RRGGBB|bars      solid colour or colour bars
+ *   3dxlinux-lcd brightness [0-100]    get (SpacePilot Pro) / set (SpacePilot Pro, Enterprise)
+ *   3dxlinux-lcd ping                  SpacePilot Pro vendor request 0x01
+ *   3dxlinux-lcd dump OUT.bin          write the USB transfer for 'bars' to a file, no device
+ *   3dxlinux-lcd preview OUT.ppm [CONF] render 3dxlinuxd's key page to a PPM, no device
+ *   3dxlinux-lcd slide [-s PX] P1.ppm P2.ppm [P3 P4]   Giotto: slide through 2-4 pages,
  *                                 PX pixels per 25 ms step (default 64)
- *   tdx-lcd move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm   Giotto: move the image
+ *   3dxlinux-lcd move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm   Giotto: move the image
  *                                 down off the panel, uncovering the background
  *                                 (-w: Windows-exact, never shows the result)
- *   tdx-lcd rect X Y W H IMAGE.ppm  Giotto: rewrite only that rectangle of the
+ *   3dxlinux-lcd rect X Y W H IMAGE.ppm  Giotto: rewrite only that rectangle of the
  *                                 panel from a full-size image (opcode 0x21)
- *   tdx-lcd bmp FILE.bmp [CONTROL]  Giotto: legacy sp4LCD.bmp path (opcode 0x13);
+ *   3dxlinux-lcd bmp FILE.bmp [CONTROL]  Giotto: legacy sp4LCD.bmp path (opcode 0x13);
  *                                 CONTROL holds "(x, y), (w, h)" (24 bpp BMPs)
  */
 #define _GNU_SOURCE
@@ -60,7 +60,7 @@ static void bars(void)
 
 static int usage(void)
 {
-	fputs("usage: tdx-lcd [-d VID:PID] image FILE.ppm | text LINE... | fill RRGGBB|bars |\n"
+	fputs("usage: 3dxlinux-lcd [-d VID:PID] image FILE.ppm | text LINE... | fill RRGGBB|bars |\n"
 	      "               brightness [0-100] | ping | buttons | dump OUT.bin | preview OUT.ppm [CONF] |\n"
 	      "               slide [-s PX] PAGE1.ppm PAGE2.ppm [PAGE3.ppm PAGE4.ppm]   (Giotto)\n"
 	      "               move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm                (Giotto)\n"
@@ -121,9 +121,9 @@ static int ent_brightness(uint16_t vid, uint16_t pid, int percent)
 
 static int open_error(unsigned vid, unsigned pid, int rc)
 {
-	fprintf(stderr, "tdx-lcd: cannot open LCD %04x:%04x: %s\n", vid, pid, strerror(-rc));
+	fprintf(stderr, "3dxlinux-lcd: cannot open LCD %04x:%04x: %s\n", vid, pid, strerror(-rc));
 	if (rc == -EBUSY)
-		fputs("  (interface busy: stop tdxd or set lcd = no)\n", stderr);
+		fputs("  (interface busy: stop 3dxlinuxd or set lcd = no)\n", stderr);
 	if (rc == -EACCES)
 		fputs("  (permission denied: install the udev rule or run as root)\n", stderr);
 	return 1;
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
 	unsigned vid = 0, pid = 0;
 	int ai = 1;
 	if (argc == 2 && (!strcmp(argv[1], "-V") || !strcmp(argv[1], "--version"))) {
-		puts("tdx-lcd " TDX_VERSION);
+		puts("3dxlinux-lcd " TDX_VERSION);
 		return 0;
 	}
 	if (argc > 2 && !strcmp(argv[1], "-d")) {
@@ -165,7 +165,7 @@ int main(int argc, char **argv)
 	}
 	const struct tdx_device_def *def = tdx_device_lookup((uint16_t)vid, (uint16_t)pid);
 	if (!def || def->lcd == TDX_LCD_NONE) {
-		fprintf(stderr, "tdx-lcd: %04x:%04x has no supported LCD\n", vid, pid);
+		fprintf(stderr, "3dxlinux-lcd: %04x:%04x has no supported LCD\n", vid, pid);
 		return 1;
 	}
 	set_kind(def->lcd);
@@ -218,7 +218,7 @@ int main(int argc, char **argv)
 		}
 		fclose(f);
 		if (!ok) {
-			fprintf(stderr, "tdx-lcd: writing %s failed\n", argv[ai]);
+			fprintf(stderr, "3dxlinux-lcd: writing %s failed\n", argv[ai]);
 			return 1;
 		}
 		return 0;
@@ -227,26 +227,26 @@ int main(int argc, char **argv)
 	int rc = 0;
 	if (!strcmp(cmd, "brightness") && kind == TDX_LCD_ENT640) {
 		if (ai >= argc) {
-			fputs("tdx-lcd: the Enterprise brightness cannot be read back, only set\n", stderr);
+			fputs("3dxlinux-lcd: the Enterprise brightness cannot be read back, only set\n", stderr);
 			return 1;
 		}
 		rc = ent_brightness((uint16_t)vid, (uint16_t)pid, atoi(argv[ai]));
 		if (rc)
-			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s\n", strerror(-rc));
 		return rc ? 1 : 0;
 	}
 	if (kind == TDX_LCD_GIO1280 && (!strcmp(cmd, "brightness") || !strcmp(cmd, "ping"))) {
-		fputs("tdx-lcd: no brightness/ping request is known for the Giotto LCD\n", stderr);
+		fputs("3dxlinux-lcd: no brightness/ping request is known for the Giotto LCD\n", stderr);
 		return 1;
 	}
 	if (!strcmp(cmd, "ping") && kind == TDX_LCD_ENT640) {
-		fputs("tdx-lcd: ping is a SpacePilot Pro request\n", stderr);
+		fputs("3dxlinux-lcd: ping is a SpacePilot Pro request\n", stderr);
 		return 1;
 	}
 
 	if (!strcmp(cmd, "slide")) {
 		if (kind != TDX_LCD_GIO1280) {
-			fputs("tdx-lcd: slide is a Giotto LCD operation\n", stderr);
+			fputs("3dxlinux-lcd: slide is a Giotto LCD operation\n", stderr);
 			return 1;
 		}
 		int step = 64;
@@ -262,7 +262,7 @@ int main(int argc, char **argv)
 			pages[i] = calloc(TDX_GIO_PIXELS, sizeof(uint32_t));
 			struct tdx_fb pf = {TDX_GIO_W, TDX_GIO_H, pages[i]};
 			if (!pages[i] || (rc = gfx_load_ppm(&pf, argv[ai + i]))) {
-				fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai + i], strerror(rc ? -rc : ENOMEM));
+				fprintf(stderr, "3dxlinux-lcd: %s: %s\n", argv[ai + i], strerror(rc ? -rc : ENOMEM));
 				return 1;
 			}
 		}
@@ -280,7 +280,7 @@ int main(int argc, char **argv)
 		}
 		tdx_giolcd_close(&gl);
 		if (rc) {
-			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s\n", strerror(-rc));
 			return 1;
 		}
 		return 0;
@@ -288,19 +288,19 @@ int main(int argc, char **argv)
 
 	if (!strcmp(cmd, "bmp")) {
 		if (kind != TDX_LCD_GIO1280) {
-			fputs("tdx-lcd: bmp is the Giotto legacy LCD path\n", stderr);
+			fputs("3dxlinux-lcd: bmp is the Giotto legacy LCD path\n", stderr);
 			return 1;
 		}
 		if (argc - ai < 1 || argc - ai > 2)
 			return usage();
 		struct tdx_bmp probe;
 		if ((rc = tdx_bmp_load(argv[ai], &probe))) {
-			fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai], strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s: %s\n", argv[ai], strerror(-rc));
 			return 1;
 		}
 		if (probe.bpp != 24)
-			fprintf(stderr, "tdx-lcd: warning: %d bpp BMP; Windows' converter only handles "
-				"24 bpp correctly and tdx-lcd reproduces that\n", probe.bpp);
+			fprintf(stderr, "3dxlinux-lcd: warning: %d bpp BMP; Windows' converter only handles "
+				"24 bpp correctly and 3dxlinux-lcd reproduces that\n", probe.bpp);
 		tdx_bmp_free(&probe);
 		static struct tdx_giolcd gl;
 		if ((rc = tdx_giolcd_open(&gl, (uint16_t)vid, (uint16_t)pid)))
@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 		rc = tdx_giolcd_send_bmp(&gl, argv[ai], argc - ai == 2 ? argv[ai + 1] : NULL);
 		tdx_giolcd_close(&gl);
 		if (rc) {
-			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s\n", strerror(-rc));
 			return 1;
 		}
 		return 0;
@@ -316,7 +316,7 @@ int main(int argc, char **argv)
 
 	if (!strcmp(cmd, "rect")) {
 		if (kind != TDX_LCD_GIO1280) {
-			fputs("tdx-lcd: rect is a Giotto LCD operation\n", stderr);
+			fputs("3dxlinux-lcd: rect is a Giotto LCD operation\n", stderr);
 			return 1;
 		}
 		if (argc - ai != 5)
@@ -324,11 +324,11 @@ int main(int argc, char **argv)
 		int rx = atoi(argv[ai]), ry = atoi(argv[ai + 1]);
 		int rw = atoi(argv[ai + 2]), rh = atoi(argv[ai + 3]);
 		if (rw <= 0 || rh <= 0 || rx < 0 || ry < 0 || rx + rw > TDX_GIO_W || ry + rh > TDX_GIO_H) {
-			fprintf(stderr, "tdx-lcd: rectangle must lie within %dx%d\n", TDX_GIO_W, TDX_GIO_H);
+			fprintf(stderr, "3dxlinux-lcd: rectangle must lie within %dx%d\n", TDX_GIO_W, TDX_GIO_H);
 			return 1;
 		}
 		if ((rc = gfx_load_ppm(&fb, argv[ai + 4]))) {
-			fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai + 4], strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s: %s\n", argv[ai + 4], strerror(-rc));
 			return 1;
 		}
 		static struct tdx_giolcd gl;
@@ -340,7 +340,7 @@ int main(int argc, char **argv)
 			rc = tdx_giolcd_show_rect(&gl, px, rx, ry, rw, rh);
 		tdx_giolcd_close(&gl);
 		if (rc) {
-			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s\n", strerror(-rc));
 			return 1;
 		}
 		return 0;
@@ -348,7 +348,7 @@ int main(int argc, char **argv)
 
 	if (!strcmp(cmd, "move")) {
 		if (kind != TDX_LCD_GIO1280) {
-			fputs("tdx-lcd: move is a Giotto LCD operation\n", stderr);
+			fputs("3dxlinux-lcd: move is a Giotto LCD operation\n", stderr);
 			return 1;
 		}
 		int step = 16, present = 1;
@@ -369,7 +369,7 @@ int main(int argc, char **argv)
 			img[i] = calloc(TDX_GIO_PIXELS, sizeof(uint32_t));
 			struct tdx_fb pf = {TDX_GIO_W, TDX_GIO_H, img[i]};
 			if (!img[i] || (rc = gfx_load_ppm(&pf, argv[ai + i]))) {
-				fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai + i], strerror(rc ? -rc : ENOMEM));
+				fprintf(stderr, "3dxlinux-lcd: %s: %s\n", argv[ai + i], strerror(rc ? -rc : ENOMEM));
 				return 1;
 			}
 		}
@@ -388,7 +388,7 @@ int main(int argc, char **argv)
 			rc = tdx_giolcd_move_finish(&gl);
 		tdx_giolcd_close(&gl);
 		if (rc) {
-			fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s\n", strerror(-rc));
 			return 1;
 		}
 		return 0;
@@ -398,7 +398,7 @@ int main(int argc, char **argv)
 	int draw = 1;
 	if (!strcmp(cmd, "image") && ai < argc) {
 		if ((rc = gfx_load_ppm(&fb, argv[ai]))) {
-			fprintf(stderr, "tdx-lcd: %s: %s\n", argv[ai], strerror(-rc));
+			fprintf(stderr, "3dxlinux-lcd: %s: %s\n", argv[ai], strerror(-rc));
 			return 1;
 		}
 	} else if (!strcmp(cmd, "text")) {
@@ -467,13 +467,13 @@ int main(int argc, char **argv)
 			}
 		} else if (draw) {
 			if (tdx_lcd_wait_ready(&lcd, 20) != 0)
-				fputs("tdx-lcd: no answer to ping, sending frame anyway\n", stderr);
+				fputs("3dxlinux-lcd: no answer to ping, sending frame anyway\n", stderr);
 			rc = tdx_lcd_show(&lcd, px);
 		}
 		tdx_lcd_close(&lcd);
 	}
 	if (rc) {
-		fprintf(stderr, "tdx-lcd: %s\n", strerror(-rc));
+		fprintf(stderr, "3dxlinux-lcd: %s\n", strerror(-rc));
 		return 1;
 	}
 	return 0;

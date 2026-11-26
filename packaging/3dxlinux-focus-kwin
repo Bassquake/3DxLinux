@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""tdx-focus-kwin - tell tdxd which application has the focus on KDE Plasma.
+"""3dxlinux-focus-kwin - tell 3dxlinuxd which application has the focus on KDE Plasma.
 
 On Plasma (Wayland, also X11) only KWin knows which window is active. This
 helper loads a small KWin script that, whenever another window becomes active,
 calls back over the session D-Bus with the window's process id and resource
-class; the helper then runs `tdxctl focus <app> <pid>`, like tdx-focus does on
+class; the helper then runs `3dxlinuxctl focus <app> <pid>`, like 3dxlinux-focus does on
 X11 and sway. The app name is the process's executable (/proc/<pid>/exe), as
 3DxWare uses the .exe name, else the window's resource class (Flatpak, ...).
 
-    tdx-focus-kwin            run (started by tdx-focus)
-    tdx-focus-kwin --check    exit 0 if KWin scripting is available
-    tdx-focus-kwin --serve    only the D-Bus side, no KWin script (tests)
+    3dxlinux-focus-kwin            run (started by 3dxlinux-focus)
+    3dxlinux-focus-kwin --check    exit 0 if KWin scripting is available
+    3dxlinux-focus-kwin --serve    only the D-Bus side, no KWin script (tests)
 
-Needs python3-gi (Gio). Started by tdx-focus, which tdx-focus.service runs.
+Needs python3-gi (Gio). Started by 3dxlinux-focus, which 3dxlinux-focus.service runs.
 """
 import os
 import signal
@@ -25,13 +25,13 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
 
-BUS_NAME = "org.tdxd.Focus"
+BUS_NAME = "io.github.bassquake._3DxLinux.Focus"
 OBJ_PATH = "/Focus"
-IFACE = "org.tdxd.Focus"
-PLUGIN = "tdxd-focus"
+IFACE = "io.github.bassquake._3DxLinux.Focus"
+PLUGIN = "3dxlinux-focus"
 INTROSPECTION = """
 <node>
-  <interface name="org.tdxd.Focus">
+  <interface name="io.github.bassquake._3DxLinux.Focus">
     <method name="Window">
       <arg type="s" name="pid" direction="in"/>
       <arg type="s" name="resource_class" direction="in"/>
@@ -57,14 +57,14 @@ if (workspace.windowActivated) {
 }
 """ % {"bus": BUS_NAME, "path": OBJ_PATH, "iface": IFACE}
 
-TDXCTL = os.environ.get("TDXCTL", "tdxctl")
+DXLINUX_CTL = os.environ.get("DXLINUX_CTL", "3dxlinuxctl")
 verbose = "-v" in sys.argv
 last = [None]
 
 
 def log(*a):
     if verbose:
-        print("tdx-focus-kwin:", *a, file=sys.stderr, flush=True)
+        print("3dxlinux-focus-kwin:", *a, file=sys.stderr, flush=True)
 
 
 def app_of_pid(pid):
@@ -84,12 +84,12 @@ def focused(pid_s, resource_class):
     app = app_of_pid(pid) if pid > 0 else ""
     if not app:  # no pid, or another pid namespace (Flatpak): the window's class
         app = resource_class.split(".")[-1] if resource_class else ""
-        pid = 0  # a pid we can't see is no use to tdxd
+        pid = 0  # a pid we can't see is no use to 3dxlinuxd
     if not app or app == last[0]:
         return
     last[0] = app
     log("focus", app, pid or "")
-    cmd = [TDXCTL, "focus", app] + ([str(pid)] if pid > 0 else [])
+    cmd = [DXLINUX_CTL, "focus", app] + ([str(pid)] if pid > 0 else [])
     try:
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
@@ -120,7 +120,7 @@ def kwin_available(bus):
 
 def load_script(bus):
     rt = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
-    path = os.path.join(rt, "tdxd-focus-kwin.js")
+    path = os.path.join(rt, "3dxlinux-focus-kwin.js")
     with open(path, "w") as f:
         f.write(KWIN_SCRIPT)
     try:  # a copy left by an earlier run (KWin keeps scripts until unloaded)
@@ -154,13 +154,13 @@ def main():
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     except GLib.Error as e:
-        print("tdx-focus-kwin: no session D-Bus: %s" % e.message, file=sys.stderr)
+        print("3dxlinux-focus-kwin: no session D-Bus: %s" % e.message, file=sys.stderr)
         return 2
     if "--check" in sys.argv:
         return 0 if kwin_available(bus) else 3
     serve_only = "--serve" in sys.argv
     if not serve_only and not kwin_available(bus):
-        print("tdx-focus-kwin: KWin scripting not available", file=sys.stderr)
+        print("3dxlinux-focus-kwin: KWin scripting not available", file=sys.stderr)
         return 3
     node = Gio.DBusNodeInfo.new_for_xml(INTROSPECTION)
     bus.register_object(OBJ_PATH, node.interfaces[0], on_call, None, None)
@@ -173,13 +173,13 @@ def main():
             try:
                 load_script(bus)
             except GLib.Error as e:
-                print("tdx-focus-kwin: cannot load the KWin script: %s" % e.message,
+                print("3dxlinux-focus-kwin: cannot load the KWin script: %s" % e.message,
                       file=sys.stderr)
                 loop.quit()
 
     def lost(*_):
         if not owned:
-            print("tdx-focus-kwin: %s is taken (already running?)" % BUS_NAME, file=sys.stderr)
+            print("3dxlinux-focus-kwin: %s is taken (already running?)" % BUS_NAME, file=sys.stderr)
         loop.quit()
 
     Gio.bus_own_name_on_connection(bus, BUS_NAME, Gio.BusNameOwnerFlags.NONE, acquired, lost)

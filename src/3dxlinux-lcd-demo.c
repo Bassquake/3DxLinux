@@ -1,15 +1,15 @@
 /*
- * tdx-lcd-demo - a minimal LCD applet for tdx-lcdmgr, written against the
- * lglcd-compatible API (tdxlcd.h). Shows a counter, the soft buttons pressed
+ * 3dxlinux-lcd-demo - a minimal LCD applet for 3dxlinux-lcdmgr, written against the
+ * lglcd-compatible API (3dxlinuxlcd.h). Shows a counter, the soft buttons pressed
  * and whether "Configure..." was clicked in the LCD Manager.
  *
- *   tdx-lcd-demo [-n NAME] [-p PRIORITY] [-a] [-f] [-s SECONDS]
+ *   3dxlinux-lcd-demo [-n NAME] [-p PRIORITY] [-a] [-f] [-s SECONDS]
  *     -a  persistent + autostartable (appears in the Programs list)
  *     -f  ask to be the foreground program
  *     -s  run for SECONDS then exit (default: until Ctrl+C)
  */
 #include "gfx.h"
-#include "tdxlcd.h"
+#include "3dxlinuxlcd.h"
 
 #include <signal.h>
 #include <stdio.h>
@@ -43,7 +43,7 @@ static DWORD on_notify(int connection, const PVOID ctx, DWORD code, DWORD p1, DW
 {
 	(void)connection, (void)ctx, (void)p1, (void)p2, (void)p3, (void)p4;
 	notes++;
-	fprintf(stderr, "tdx-lcd-demo: notification %u\n", (unsigned)code);
+	fprintf(stderr, "3dxlinux-lcd-demo: notification %u\n", (unsigned)code);
 	if (code == LGLCD_NOTIFICATION_CLOSE_CONNECTION)
 		quit = 1;
 	return 0;
@@ -61,7 +61,7 @@ int main(int argc, char **argv)
 		case 'f': fg = 1; break;
 		case 's': secs = atoi(optarg); break;
 		default:
-			fputs("usage: tdx-lcd-demo [-n NAME] [-p PRIORITY] [-a] [-f] [-s SECONDS]\n", stderr);
+			fputs("usage: 3dxlinux-lcd-demo [-n NAME] [-p PRIORITY] [-a] [-f] [-s SECONDS]\n", stderr);
 			return 2;
 		}
 	}
@@ -78,8 +78,8 @@ int main(int argc, char **argv)
 	cc.onNotify.notificationCallback = on_notify;
 	DWORD st = lgLcdConnectEx(&cc);
 	if (st) {
-		fprintf(stderr, "tdx-lcd-demo: connect failed (%u)%s\n", (unsigned)st,
-			st == 2 ? ": is tdx-lcdmgr running?" : "");
+		fprintf(stderr, "3dxlinux-lcd-demo: connect failed (%u)%s\n", (unsigned)st,
+			st == 2 ? ": is 3dxlinux-lcdmgr running?" : "");
 		return 1;
 	}
 	lgLcdOpenByTypeContext oc;
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 	while ((st = lgLcdOpenByType(&oc)) == 1167 && !quit) /* device not connected yet */
 		sleep(1);
 	if (st) {
-		fprintf(stderr, "tdx-lcd-demo: open failed (%u)\n", (unsigned)st);
+		fprintf(stderr, "3dxlinux-lcd-demo: open failed (%u)\n", (unsigned)st);
 		lgLcdDisconnect(cc.connection);
 		return 1;
 	}
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
 		}
 		st = lgLcdUpdateBitmap(oc.device, &bmp.hdr, LGLCD_SYNC_UPDATE((DWORD)prio));
 		if (st && st != 5)
-			fprintf(stderr, "tdx-lcd-demo: update failed (%u)\n", (unsigned)st);
+			fprintf(stderr, "3dxlinux-lcd-demo: update failed (%u)\n", (unsigned)st);
 		usleep(250 * 1000);
 	}
 	lgLcdClose(oc.device);

@@ -1,12 +1,12 @@
 /*
- * tdx-lcdmgr applet protocol (Linux replacement for LCDMon's LGLCDPIPE).
+ * 3dxlinux-lcdmgr applet protocol (Linux replacement for LCDMon's LGLCDPIPE).
  *
  * On Windows, applets link lglcd.lib -> LgLcdApi.dll, which talks to LCDMon.exe
- * over the named pipe \\.\pipe\LGLCDPIPE... On Linux, applets use libtdxlcd
- * (same function names as lglcd) or the Python module tdxlcd, which speak this
- * protocol to tdx-lcdmgr over a Unix stream socket:
+ * over the named pipe \\.\pipe\LGLCDPIPE... On Linux, applets use lib3dxlinuxlcd
+ * (same function names as lglcd) or the Python module lcd_3dxlinux, which speak this
+ * protocol to 3dxlinux-lcdmgr over a Unix stream socket:
  *
- *     $XDG_RUNTIME_DIR/tdx-lcd.sock   (else /tmp/tdx-lcd-<uid>.sock)
+ *     $XDG_RUNTIME_DIR/3dxlinux-lcd.sock   (else /tmp/3dxlinux-lcd-<uid>.sock)
  *
  * One socket = one lglcd "connection". Every message is a header followed by
  * len payload bytes, all integers little-endian. Requests are answered in order
@@ -46,7 +46,7 @@ enum lm_type {
 	LM_EV_CONFIGURE = 65, /* (user pressed Configure... in the LCD Manager) */
 	LM_EV_NOTIFY = 66,    /* u32 code, u32 p1, p2, p3, p4 */
 	LM_REPLY = 128,       /* u32 request type, u32 status (Win32 error code), data */
-	/* administration (tdx-settings LCD Manager): UTF-8 text in, text reply */
+	/* administration (3dxlinux-settings LCD Manager): UTF-8 text in, text reply */
 	LM_ADMIN = 200,
 };
 
@@ -61,7 +61,7 @@ struct lm_devdesc {
 	char name[64];
 };
 
-/* lglcd constants the server needs (same values as tdxlcd.h) */
+/* lglcd constants the server needs (same values as 3dxlinuxlcd.h) */
 #define LGLCD_DEVICE_BW_ 1
 #define LGLCD_DEVICE_QVGA_ 2
 #define LGLCD_BMP_FORMAT_160x43x1_ 1

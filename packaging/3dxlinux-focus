@@ -1,24 +1,24 @@
 #!/bin/sh
-# tdx-focus - tell tdxd which application has the keyboard focus, so it can
+# 3dxlinux-focus - tell 3dxlinuxd which application has the keyboard focus, so it can
 # switch per-application profiles (/etc/3dxlinux.d/*.conf), like 3DxWare does.
 #
-# Runs in your desktop session (see tdx-focus.service). Supported:
-#   KDE Plasma (Wayland or X11)  through a KWin script (tdx-focus-kwin)
+# Runs in your desktop session (see 3dxlinux-focus.service). Supported:
+#   KDE Plasma (Wayland or X11)  through a KWin script (3dxlinux-focus-kwin)
 #   sway                         needs swaymsg and jq
 #   other X11 desktops           needs xprop   (Debian/Ubuntu: x11-utils)
-# Elsewhere (e.g. GNOME on Wayland) tdxd falls back to the newest spacenavd
-# client (e.g. Blender), and tdx-focus exits quietly.
-TDXCTL=${TDXCTL:-tdxctl}
-export TDXCTL
+# Elsewhere (e.g. GNOME on Wayland) 3dxlinuxd falls back to the newest spacenavd
+# client (e.g. Blender), and 3dxlinux-focus exits quietly.
+DXLINUX_CTL=${DXLINUX_CTL:-3dxlinuxctl}
+export DXLINUX_CTL
 last=""
 
-# FreeCAD: keep tdxd's add-on loader in place (the keys follow the workbench)
-command -v tdx-freecad-addon >/dev/null 2>&1 && tdx-freecad-addon install >/dev/null 2>&1
+# FreeCAD: keep 3dxlinuxd's add-on loader in place (the keys follow the workbench)
+command -v 3dxlinux-freecad-addon >/dev/null 2>&1 && 3dxlinux-freecad-addon install >/dev/null 2>&1
 
-kwin_helper() { # tdx-focus-kwin: installed in lib/3dxlinux, or next to us in the source tree
+kwin_helper() { # 3dxlinux-focus-kwin: installed in lib/3dxlinux, or next to us in the source tree
 	here=$(dirname "$(readlink -f "$0")")
-	for p in "$here/../lib/3dxlinux/tdx-focus-kwin" /usr/lib/3dxlinux/tdx-focus-kwin \
-		 /usr/local/lib/3dxlinux/tdx-focus-kwin "$here/tdx-focus-kwin"; do
+	for p in "$here/../lib/3dxlinux/3dxlinux-focus-kwin" /usr/lib/3dxlinux/3dxlinux-focus-kwin \
+		 /usr/local/lib/3dxlinux/3dxlinux-focus-kwin "$here/3dxlinux-focus-kwin"; do
 		[ -f "$p" ] && { echo "$p"; return 0; }
 	done
 	return 1
@@ -33,7 +33,7 @@ send() { # send APP [PID], skipping repeats
 	[ -n "$1" ] || return 0
 	[ "$1" = "$last" ] && return 0
 	last=$1
-	$TDXCTL focus "$1" ${2:+"$2"} >/dev/null 2>&1 || true
+	$DXLINUX_CTL focus "$1" ${2:+"$2"} >/dev/null 2>&1 || true
 }
 
 if [ -z "${SWAYSOCK:-}" ] && k=$(kwin_helper) && python3 "$k" --check 2>/dev/null; then
@@ -60,7 +60,7 @@ elif [ -n "${DISPLAY:-}" ] && command -v xprop >/dev/null 2>&1; then
 		send "$app" "$pid"
 	done
 else
-	echo "tdx-focus: this desktop is not supported (KDE Plasma, sway, or X11 with xprop);" \
-	     "tdxd follows the newest spacenavd client instead" >&2
+	echo "3dxlinux-focus: this desktop is not supported (KDE Plasma, sway, or X11 with xprop);" \
+	     "3dxlinuxd follows the newest spacenavd client instead" >&2
 	exit 0 # not a failure: the service must not restart it over and over
 fi

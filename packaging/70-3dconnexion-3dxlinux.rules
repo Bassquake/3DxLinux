@@ -1,7 +1,7 @@
-# tdxd: access to 3Dconnexion devices for the logged-in user and the tdxd service.
+# 3dxlinuxd: access to 3Dconnexion devices for the logged-in user and the 3dxlinuxd service.
 # Numbered before 73-seat-late.rules: that is where systemd turns TAG+="uaccess"
 # into the logged-in user's ACL. In a later file (it was 99-) the tag comes too
-# late and only root can open the LCD - tdx-lcdmgr, which runs as the user,
+# late and only root can open the LCD - 3dxlinux-lcdmgr, which runs as the user,
 # then can't draw and the LCD keeps its idle "SpacePilot PRO" picture.
 # hidraw nodes (motion + buttons) for Logitech-era (046d) and 3Dconnexion (256f) devices
 KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c6[0-2][0-9a-f]", MODE="0660", GROUP="input", TAG+="uaccess"
@@ -18,9 +18,9 @@ SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="256f", ATTR{idPro
 KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"
 
 # The kernel's own input device for the 3D mouse (hid-generic) is classed as a
-# mouse (ID_INPUT_MOUSE), so the desktop moved the cursor with the cap. tdxd
+# mouse (ID_INPUT_MOUSE), so the desktop moved the cursor with the cap. 3dxlinuxd
 # reads the device through hidraw and makes its own; hide this one from
-# libinput. Only real USB/Bluetooth devices: tdxd's virtual ones have no
+# libinput. Only real USB/Bluetooth devices: 3dxlinuxd's virtual ones have no
 # USB/Bluetooth parent and stay visible.
 # Not the CadMouse, the keyboards and the Universal Receiver (256f:c650-c66f):
 # they are ordinary mice and keyboards, and hiding them left the CadMouse

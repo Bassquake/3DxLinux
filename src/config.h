@@ -33,12 +33,12 @@ enum tdx_action {
 	TDX_ACT_PANZOOM,      /* "Pan Zoom On/Off"  */
 	TDX_ACT_CALIBRATE,    /* "Calibrate" (Driver_RezeroDevice) */
 	TDX_ACT_LCD_NEXT,     /* Giotto: slide to the next LCD page */
-	TDX_ACT_SETTINGS,     /* "3Dconnexion Settings" (Driver_ShowDriverGUI): open tdx-settings */
+	TDX_ACT_SETTINGS,     /* "3Dconnexion Settings" (Driver_ShowDriverGUI): open 3dxlinux-settings */
 	TDX_ACT_DISABLED,     /* "Disabled" (Driver_Disabled): the button does nothing */
 	TDX_ACT_COMMONTOOLS,  /* "Common Tools" (Base_RadialMenu_CommonTools): 3DxWare's
-			       * radial menu, shown by tdx-radial; a CadMouse's radial
+			       * radial menu, shown by 3dxlinux-radial; a CadMouse's radial
 			       * button does it by default */
-	TDX_ACT_NUMPAD,       /* "Virtual NumPad" (Driver_Toggle_3DxNumPad): tdx-numpad */
+	TDX_ACT_NUMPAD,       /* "Virtual NumPad" (Driver_Toggle_3DxNumPad): 3dxlinux-numpad */
 	TDX_ACT_RADIAL,       /* "radial:ID": a radial menu of the user's own (the
 			       * Radial Menu Editor's), its radial_ID_* lines */
 	TDX_ACT_COUNT
@@ -87,11 +87,11 @@ struct tdx_config {
 	struct tdx_named_label named_label[TDX_MAX_NAMED_LABELS];
 	int nnamed_label;
 	/* the user's radial menus: radial_<ID>_name, _layout, _<n>, _<n>_label, _<n>_icon
-	 * lines, kept as they are for tdx-radial ("radial ID" on the control socket) */
+	 * lines, kept as they are for 3dxlinux-radial ("radial ID" on the control socket) */
 	struct tdx_kv { char key[48]; char val[160]; } radial[TDX_MAX_RADIAL_KV];
 	int nradial;
 	/* runtime, not from a file: names the focused application gave its keys
-	 * (tdxctl app-buttons, e.g. the FreeCAD add-on); first in tdx_button_text */
+	 * (3dxlinuxctl app-buttons, e.g. the FreeCAD add-on); first in tdx_button_text */
 	struct tdx_named_label app_label[TDX_MAX_NAMED_LABELS];
 	int napp_label;
 	char lcd_slide_button[32];/* V3DK id that slides the Giotto LCD to the next page */
@@ -115,7 +115,7 @@ struct tdx_config {
 	char calibrate_button[32];    /* V3DK id that re-zeroes the device */
 	/* per-application profiles */
 	char profile_dir[256];        /* directory of <name>.conf overlays */
-	char control_socket[108];     /* tdxctl / tdx-focus command socket */
+	char control_socket[108];     /* 3dxlinuxctl / 3dxlinux-focus command socket */
 	char lcd_cfg[256];            /* LCDCfg.xml for the LCD applets ("" = off) */
 	char match[256];              /* profile files: comma-separated process names */
 };
@@ -129,10 +129,10 @@ int tdx_config_load_profile(struct tdx_config *c, const char *path);
 /* A profile imported into a user's own folder: a plain file (no symlink), and
  * only match, key_*, action_* and lcd_label_* are taken. */
 int tdx_config_load_user_profile(struct tdx_config *c, const char *path);
-/* The desktop user's own settings (tdx-settings saves them, no password):
+/* The desktop user's own settings (3dxlinux-settings saves them, no password):
  * ~/.config/3dxlinux/3dxlinux.conf over /etc/3dxlinux.conf, and their own profiles. Read
  * only if they are plain files of @uid's, and without the options that are
- * paths or tdxd's own plumbing (uinput, sockets, folders ...). */
+ * paths or 3dxlinuxd's own plumbing (uinput, sockets, folders ...). */
 void tdx_config_set_user(int uid, const char *user_base);
 int tdx_config_load_user_base(struct tdx_config *c);    /* 0 when there is none */
 int tdx_config_load_own_profile(struct tdx_config *c, const char *path);

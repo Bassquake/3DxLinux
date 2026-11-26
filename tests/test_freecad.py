@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for the FreeCAD key sets: the importer (FreeCAD_Navlib.xml -> buttons.json)
-and the tdxd FreeCAD add-on, with stand-ins for FreeCAD and tdxd's control socket.
+and the 3dxlinuxd FreeCAD add-on, with stand-ins for FreeCAD and 3dxlinuxd's control socket.
 
     python3 tests/test_freecad.py
 """
@@ -65,7 +65,7 @@ NAVLIB = """<?xml version="1.0" encoding="utf-8"?>
 
 
 class FakeTdxd:
-    """tdxd's control socket: answers "buttons", records app-buttons."""
+    """3dxlinuxd's control socket: answers "buttons", records app-buttons."""
 
     def __init__(self, path):
         self.path, self.got = path, []
@@ -97,7 +97,7 @@ def main():
     fc = ex.freecad_buttons(xml)
     pd = fc["banks"]["PartDesignWorkbench"]
     check(fc["banks"]["Default"] == {"V3DK_1": "AppCommand_File|Std_New"}, "default bank, 3D mouse only")
-    check(set(pd) == {"V3DK_1", "V3DK_2", "V3DK_6"}, "3DxWare's own functions stay with tdxd: %s" % sorted(pd))
+    check(set(pd) == {"V3DK_1", "V3DK_2", "V3DK_6"}, "3DxWare's own functions stay with 3dxlinuxd: %s" % sorted(pd))
     check(fc["actions"][pd["V3DK_6"]] == {"name": "Create a local coordinate system",
                                           "command": "PartDesign_CompDatums", "index": 3},
           "group command entry")
@@ -109,10 +109,10 @@ def main():
     # the add-on's own logic
     os.makedirs(os.path.join(d, "art", "freecad"))
     json.dump(fc, open(os.path.join(d, "art", "freecad", "buttons.json"), "w"))
-    os.environ["TDX_UI_ASSETS"] = os.path.join(d, "art")
-    sock = os.path.join(d, "tdxd.sock")
-    os.environ["TDXD_SOCKET"] = sock
-    tf = load("tdxd_freecad", os.path.join(ROOT, "packaging", "freecad", "tdxd_freecad.py"))
+    os.environ["DXLINUX_UI_ASSETS"] = os.path.join(d, "art")
+    sock = os.path.join(d, "3dxlinuxd.sock")
+    os.environ["DXLINUX_SOCKET"] = sock
+    tf = load("freecad_3dxlinux", os.path.join(ROOT, "packaging", "freecad", "freecad_3dxlinux.py"))
     data = tf.load_buttons()
     check(data is not None, "buttons.json found in the asset dirs")
     check(tf.bank_for(data, "StartWorkbench") == data["banks"]["Default"], "no set: the default one")
@@ -125,7 +125,7 @@ def main():
     msg = tf.app_buttons_message(123, tf.key_names(data, "PartDesignWorkbench", ["V3DK_1", "V3DK_7"]))
     check(msg == "app-buttons\t123\tV3DK_1\tCreate sketch", "app-buttons message: %r" % msg)
     check(tf.parse_buttons("12 V3DK_1\n27 V3DK_PANZOOM\nerror x\n") == {"V3DK_1": 12, "V3DK_PANZOOM": 27},
-          "parse tdxctl buttons")
+          "parse 3dxlinuxctl buttons")
 
     # the add-on in a stand-in FreeCAD
     srv = FakeTdxd(sock)
@@ -221,42 +221,42 @@ def main():
     params[("User parameter:BaseApp/Spaceball/Buttons/13", "Command")] = "Std_ViewFitAll"  # the user's own
     addon = tf.Addon(Gui, FreeCAD, QtGui, None)
     addon.start()
-    check(set(commands) == {"Tdxd_Key_V3DK_1", "Tdxd_Key_V3DK_2", "Tdxd_Key_V3DK_6"},
+    check(set(commands) == {"SpaceMouse3DxLinux_Key_V3DK_1", "SpaceMouse3DxLinux_Key_V3DK_2", "SpaceMouse3DxLinux_Key_V3DK_6"},
           "one FreeCAD command per key in a set: %s" % sorted(commands))
-    check(params.get(("User parameter:BaseApp/Spaceball/Buttons/12", "Command")) == "Tdxd_Key_V3DK_1",
+    check(params.get(("User parameter:BaseApp/Spaceball/Buttons/12", "Command")) == "SpaceMouse3DxLinux_Key_V3DK_1",
           "FreeCAD's button map points at the key command")
     check(params.get(("User parameter:BaseApp/Spaceball/Buttons/13", "Command")) == "Std_ViewFitAll",
           "the user's own button command is kept")
     check(srv.got[-1] == "app-buttons\t%d\tV3DK_1\tCreate sketch\tV3DK_2\tPart Design Modeling\t"
           "V3DK_6\tCreate a local coordinate system" % 0, "names sent: %r" % srv.got[-1])
-    commands["Tdxd_Key_V3DK_6"].Activated()
+    commands["SpaceMouse3DxLinux_Key_V3DK_6"].Activated()
     check(ran[-1] == ("PartDesign_CompDatums", 3), "key 6 runs the group command's entry 3")
-    commands["Tdxd_Key_V3DK_2"].Activated()
+    commands["SpaceMouse3DxLinux_Key_V3DK_2"].Activated()
     check(menus and menus[-1].title == "Part Design Modeling" and ran[-1] == ("PartDesign_Pad", None),
           "key 2 pops up the radial menu, its entry runs")
     check(menus[-1].items[2].enabled is False, "an entry FreeCAD lacks is greyed out (Pocket)")
     mw.workbenchActivated.f("SketcherWorkbench")  # no set: the default one
     check(srv.got[-1] == "app-buttons\t%d\tV3DK_1\tNew" % 0, "workbench change: %r" % srv.got[-1])
-    commands["Tdxd_Key_V3DK_1"].Activated()
+    commands["SpaceMouse3DxLinux_Key_V3DK_1"].Activated()
     check(ran[-1] == ("Std_New", None), "the default set's command")
-    # tdxd restarted (forgot the names): sent again, with a hint to restart FreeCAD
+    # 3dxlinuxd restarted (forgot the names): sent again, with a hint to restart FreeCAD
     warnings = []
     FakeConsole.PrintWarning = staticmethod(warnings.append)
     n = len(srv.got)
     addon.check_tdxd()
-    check(len(srv.got) == n + 1 and srv.got[-1] == "app-keys", "tdxd still has them: nothing sent")
+    check(len(srv.got) == n + 1 and srv.got[-1] == "app-keys", "3dxlinuxd still has them: nothing sent")
     srv.app_keys = "app -\n"
     addon.check_tdxd()
     check(srv.got[-1] == "app-buttons\t0\tV3DK_1\tNew" and len(warnings) == 1 and
-          "restart FreeCAD" in warnings[0], "resent after a tdxd restart: %r" % srv.got[-3:])
+          "restart FreeCAD" in warnings[0], "resent after a 3dxlinuxd restart: %r" % srv.got[-3:])
     addon.check_tdxd()
     check(len(warnings) == 1, "the hint once")
     srv.app_keys = "error: unknown command 'app-keys'\n"
     n = len(srv.got)
     addon.check_tdxd()
-    check(len(srv.got) == n + 1, "an older tdxd: nothing resent")
+    check(len(srv.got) == n + 1, "an older 3dxlinuxd: nothing resent")
     addon.stop()
-    check(srv.got[-1] == "app-buttons\t%d" % 0, "on exit the keys go back to tdxd")
+    check(srv.got[-1] == "app-buttons\t%d" % 0, "on exit the keys go back to 3dxlinuxd")
 
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0

@@ -1,10 +1,10 @@
 /*
- * tdx-lcdmgr - LCD Manager for the SpacePilot PRO's 320x240 LCD (Linux port of
+ * 3dxlinux-lcdmgr - LCD Manager for the SpacePilot PRO's 320x240 LCD (Linux port of
  * Logitech LCDMon.exe 3.06 as shipped with 3DxWare 10).
  *
- * Runs in the user's session (systemd --user). Takes the LCD from tdxd
- * ("lcd-release" on tdxd's control socket, held for as long as we run), serves
- * LCD applets over a Unix socket (lcdmgr_proto.h; libtdxlcd / tdxlcd.py on the
+ * Runs in the user's session (systemd --user). Takes the LCD from 3dxlinuxd
+ * ("lcd-release" on 3dxlinuxd's control socket, held for as long as we run), serves
+ * LCD applets over a Unix socket (lcdmgr_proto.h; lib3dxlinuxlcd / lcd_3dxlinux.py on the
  * applet side), decides which applet is shown (lcdmgr_core.c), runs the
  * on-LCD program list driven by the LCD's soft buttons, starts autostart
  * applets, and keeps LCDMon's settings database (lcdmgr_db.c).
@@ -49,7 +49,7 @@
 #define IDENTIFY_MS 3000
 
 static int verbose;
-#define LOG(lvl, ...) do { if (verbose >= (lvl)) fprintf(stderr, "tdx-lcdmgr: " __VA_ARGS__); } while (0)
+#define LOG(lvl, ...) do { if (verbose >= (lvl)) fprintf(stderr, "3dxlinux-lcdmgr: " __VA_ARGS__); } while (0)
 
 struct client {
 	int fd;
@@ -272,8 +272,8 @@ static void finder_load(void)
 	int n = 0;
 	if (assets_dir[0])
 		snprintf(cands[n++], sizeof cands[0], "%s", assets_dir);
-	if (getenv("TDX_UI_ASSETS"))
-		snprintf(cands[n++], sizeof cands[0], "%.255s", getenv("TDX_UI_ASSETS"));
+	if (getenv("DXLINUX_UI_ASSETS"))
+		snprintf(cands[n++], sizeof cands[0], "%.255s", getenv("DXLINUX_UI_ASSETS"));
 	if (home)
 		snprintf(cands[n++], sizeof cands[0], "%.200s/.local/share/3dxlinux/3dxware-ui", home);
 	snprintf(cands[n++], sizeof cands[0], "/usr/local/share/3dxlinux/3dxware-ui");
@@ -477,7 +477,7 @@ static void hold_tdxd(void)
 	if (fd < 0)
 		return;
 	if (connect(fd, (struct sockaddr *)&a, sizeof a) < 0) {
-		close(fd); /* tdxd not running: nothing to take over */
+		close(fd); /* 3dxlinuxd not running: nothing to take over */
 		return;
 	}
 	const char *cmd = "lcd-release\n";
@@ -490,12 +490,12 @@ static void hold_tdxd(void)
 		}
 	}
 	if (strncmp(rep, "ok", 2)) {
-		LOG(0, "tdxd did not release the LCD: %s\n", rep[0] ? rep : "no answer");
+		LOG(0, "3dxlinuxd did not release the LCD: %s\n", rep[0] ? rep : "no answer");
 		close(fd);
 		return;
 	}
 	hold_fd = fd;
-	LOG(1, "tdxd released the LCD\n");
+	LOG(1, "3dxlinuxd released the LCD\n");
 }
 
 static void lcd_try(void)
@@ -852,7 +852,7 @@ static void spawn(int prog)
 			if (!verbose)
 				dup2(nul, 2);
 		}
-		setenv("TDX_LCD_SOCKET", sock_path, 1); /* our socket, also when not the default */
+		setenv("DXLINUX_LCD_SOCKET", sock_path, 1); /* our socket, also when not the default */
 		execl(p->path, p->path, (char *)NULL);
 		_exit(127);
 	}
@@ -986,9 +986,9 @@ static void handle_admin(struct client *c, char *cmd)
 	if (!verb)
 		verb = "";
 	if (!strcmp(verb, "status")) {
-		o = addf(out, o, L, "tdx-lcdmgr %s\n", TDX_VERSION);
+		o = addf(out, o, L, "3dxlinux-lcdmgr %s\n", TDX_VERSION);
 		o = addf(out, o, L, "device %s %s\n", lcd_ok ? "present" : "absent", db.family_name);
-		o = addf(out, o, L, "owner %s\n", hold_fd >= 0 ? "taken-from-tdxd" : "direct");
+		o = addf(out, o, L, "owner %s\n", hold_fd >= 0 ? "taken-from-3dxlinuxd" : "direct");
 		o = addf(out, o, L,
 			 "settings brightness=%d contrast=%d alerts=%d algorithm=%d delay=%d "
 			 "quickswitch=%d invert=%d\n",
@@ -1129,14 +1129,14 @@ done:
 
 static void usage(void)
 {
-	puts("usage: tdx-lcdmgr [-v]... [-s SOCKET] [-d DATABASE] [-t TDXD_SOCKET] [-V]\n"
-	     "  LCD Manager for the SpacePilot PRO LCD: serves LCD applets (libtdxlcd,\n"
-	     "  tdxlcd.py) and takes the LCD over from tdxd while it runs.\n"
-	     "  -s  applet socket (default $XDG_RUNTIME_DIR/tdx-lcd.sock)\n"
+	puts("usage: 3dxlinux-lcdmgr [-v]... [-s SOCKET] [-d DATABASE] [-t DXLINUX_SOCKET] [-V]\n"
+	     "  LCD Manager for the SpacePilot PRO LCD: serves LCD applets (lib3dxlinuxlcd,\n"
+	     "  lcd_3dxlinux.py) and takes the LCD over from 3dxlinuxd while it runs.\n"
+	     "  -s  applet socket (default $XDG_RUNTIME_DIR/3dxlinux-lcd.sock)\n"
 	     "  -d  settings database (default ~/.config/3dxlinux/lcdmgr.ini)\n"
-	     "  -t  tdxd control socket (default /run/3dxlinux.sock)\n"
+	     "  -t  3dxlinuxd control socket (default /run/3dxlinux.sock)\n"
 	     "  -F  virtual LCD: write frames to FILE.ppm instead of the device (testing)\n"
-	     "  -A  3DxWare artwork directory (tdx-extract-3dxware-ui; default: the usual places)\n"
+	     "  -A  3DxWare artwork directory (3dxlinux-extract-3dxware-ui; default: the usual places)\n"
 	     "  -N  don't register the installed applets on first run");
 }
 
@@ -1154,16 +1154,16 @@ int main(int argc, char **argv)
 		case 'F': snprintf(fake_path, sizeof fake_path, "%s", optarg); break;
 		case 'A': snprintf(assets_dir, sizeof assets_dir, "%s", optarg); break;
 		case 'N': no_seed = 1; break;
-		case 'V': puts("tdx-lcdmgr " TDX_VERSION); return 0;
+		case 'V': puts("3dxlinux-lcdmgr " TDX_VERSION); return 0;
 		default: usage(); return opt == 'h' ? 0 : 2;
 		}
 	}
 	if (!sock_path[0]) {
 		const char *rt = getenv("XDG_RUNTIME_DIR");
 		if (rt && *rt)
-			snprintf(sock_path, sizeof sock_path, "%s/tdx-lcd.sock", rt);
+			snprintf(sock_path, sizeof sock_path, "%s/3dxlinux-lcd.sock", rt);
 		else
-			snprintf(sock_path, sizeof sock_path, "/tmp/tdx-lcd-%u.sock", (unsigned)getuid());
+			snprintf(sock_path, sizeof sock_path, "/tmp/3dxlinux-lcd-%u.sock", (unsigned)getuid());
 	}
 	for (int i = 0; i < MAX_CLIENTS; i++) {
 		cl[i].fd = -1;
@@ -1189,7 +1189,7 @@ int main(int argc, char **argv)
 	unlink(sock_path);
 	if (listen_fd < 0 || bind(listen_fd, (struct sockaddr *)&a, sizeof a) < 0 ||
 	    listen(listen_fd, 16) < 0) {
-		fprintf(stderr, "tdx-lcdmgr: %s: %s\n", sock_path, strerror(errno));
+		fprintf(stderr, "3dxlinux-lcdmgr: %s: %s\n", sock_path, strerror(errno));
 		return 1;
 	}
 	chmod(sock_path, 0600);
@@ -1258,13 +1258,13 @@ int main(int argc, char **argv)
 			if (hold_idx >= 0 && (pfd[hold_idx].revents & (POLLIN | POLLHUP | POLLERR))) {
 				char junk[64];
 				if (read(hold_fd, junk, sizeof junk) <= 0) {
-					close(hold_fd); /* tdxd restarted; re-hand the LCD over later */
+					close(hold_fd); /* 3dxlinuxd restarted; re-hand the LCD over later */
 					hold_fd = -1;
 				}
 			}
 		}
 		if (lcd_ok && hold_fd < 0 && !fake_path[0])
-			hold_tdxd(); /* tdxd came (back): make sure it leaves the LCD alone */
+			hold_tdxd(); /* 3dxlinuxd came (back): make sure it leaves the LCD alone */
 		render();
 	}
 	for (int i = 0; i < MAX_CLIENTS; i++)
@@ -1284,7 +1284,7 @@ int main(int argc, char **argv)
 	if (lcd_ok && !fake_path[0])
 		tdx_lcd_close(&lcd);
 	if (hold_fd >= 0)
-		close(hold_fd); /* tdxd takes the LCD back */
+		close(hold_fd); /* 3dxlinuxd takes the LCD back */
 	close(listen_fd);
 	unlink(sock_path);
 	return 0;

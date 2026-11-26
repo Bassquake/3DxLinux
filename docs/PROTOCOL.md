@@ -1,7 +1,7 @@
 # 3DxWare 10.9.14 (b745): reverse-engineering notes
 
 These notes cover what was recovered from `assets/3DxWare64_v10-9-14_b745.exe` and
-how the recovered behaviour maps onto `tdxd`. Each item is labelled:
+how the recovered behaviour maps onto `3dxlinuxd`. Each item is labelled:
 
 - **Observed**: read directly from a shipped file (INF, XML, or Ghidra 12.1.4 decompilation).
 - **Inferred**: concluded from observed code, not yet confirmed on real hardware.
@@ -58,7 +58,7 @@ parameters come from `3DxService` through custom IOCTLs:
 - `0x22A008`: 4-byte mode.
 - `0x22A010`: 0xA4-byte mapping block.
 
-`tdxd` re-implements the same options in user space (`sensitivity`, `scale_*`,
+`3dxlinuxd` re-implements the same options in user space (`sensitivity`, `scale_*`,
 `invert_*`, `map_*`, `dominant`, `disable_*`).
 
 ### 3.1 Calibration / re-zero (observed: `HIDDev.dll`, `3DxService.exe`)
@@ -85,16 +85,16 @@ byte (see `docs/HARDWARE_TESTS.md`).
 
 `3DxService.exe` and `HIDDev.dll` also read `AutoCalibrateEnabled`,
 `AutoCalibratePeriod` and `AutoCalibrateWindow` settings.
-- **Unknown:** what auto-calibration does. It was not traced, and `tdxd` does
+- **Unknown:** what auto-calibration does. It was not traced, and `3dxlinuxd` does
   not implement it.
 
-**What `tdxd` does:**
+**What `3dxlinuxd` does:**
 
 - It reads `bcdDevice` from sysfs and sends `{0x07, 0x00}` with
   `HIDIOCSFEATURE` under the same version check.
 - When the version is unknown, for example over Bluetooth, it sends the report
   anyway.
-- Triggers: `tdxctl calibrate`, `calibrate_button = V3DK_…`, or
+- Triggers: `3dxlinuxctl calibrate`, `calibrate_button = V3DK_…`, or
   `calibrate_on_start = yes`.
 
 ### 3.2 Per-application configuration
@@ -102,8 +102,8 @@ byte (see `docs/HARDWARE_TESTS.md`).
 3DxWare keeps one XML configuration per application, for example `Blender.xml`
 or `SolidWorks.xml` in `3DxWinCore64.msi`, and switches with the focused window.
 
-`tdxd` implements this as overlay files in `/etc/3dxlinux.d/*.conf`, chosen by
-process name. The focused application comes from `tdx-focus` (X11
+`3dxlinuxd` implements this as overlay files in `/etc/3dxlinux.d/*.conf`, chosen by
+process name. The focused application comes from `3dxlinux-focus` (X11
 `_NET_ACTIVE_WINDOW` → `_NET_WM_PID` → `/proc/PID/exe`, or sway's IPC), or else
 from the newest spacenavd client (`SO_PEERCRED`). The 3DxWare XML files are not
 imported. Their actions refer to Windows applications' commands.
@@ -186,13 +186,13 @@ IN direction (`0xC1`, IOCTL `0x220010`) and decremented by one.
 every LCD up to 100 times, 100 ms apart, until it succeeds. It then sleeps
 500 ms before re-enumerating.
 
-`tdxd` does the same through `tdx_lcd_wait_ready()`, with at most 20 tries
+`3dxlinuxd` does the same through `tdx_lcd_wait_ready()`, with at most 20 tries
 (2 s):
 
 - after opening the LCD;
 - again before retrying a failed frame write.
 
-`tdx-lcd ping` sends a single ping.
+`3dxlinux-lcd ping` sends a single ping.
 
 - **Inferred:** the brightness range is 0..100. The Windows default is 80 for the
   "Cartman" C250 prototype. The SpacePilot Pro's own default is read from the device.
@@ -209,7 +209,7 @@ every LCD up to 100 times, 100 ms apart, until it succeeds. It then sleeps
   The panel's starting value was 89. The exact thresholds in 31–39 and 61–74
   were not measured.
 - **Unknown:** the meaning of the other 8 data bytes. They are uninitialised stack on
-  Windows, and `tdxd` sends zeros, which the device accepted.
+  Windows, and `3dxlinuxd` sends zeros, which the device accepted.
 
 **Hardware status** (SpacePilot Pro, 2026-11-16):
 
@@ -219,7 +219,7 @@ every LCD up to 100 times, 100 ms apart, until it succeeds. It then sleeps
 - Brightness works within the three levels above.
 - The bulk OUT endpoint is `0x02` (512-byte packets).
 - Interface 0 also has an interrupt IN endpoint `0x81` (2 bytes). It is not
-  used by `tdxd`; it is probably the LCD soft-button channel of the G19 family.
+  used by `3dxlinuxd`; it is probably the LCD soft-button channel of the G19 family.
 
 ## 6. LEDs (observed: `HIDDev.dll`)
 
@@ -233,7 +233,7 @@ with `WriteFile` on the HID handle:
 
 Giotto (C63C, `-0x39c4`) branches to `FUN_180033cd0` instead. See 6.1.
 
-`tdxd` sends `{0x04, led}` when `led = yes|no` is set (all devices except Giotto).
+`3dxlinuxd` sends `{0x04, led}` when `led = yes|no` is set (all devices except Giotto).
 
 **Observed on hardware** (SpacePilot Pro, 2026-11-16):
 
@@ -271,7 +271,7 @@ How `FUN_180033cd0` applies the table:
 `FUN_180032e70` case 14 updates a single LED from a packed
 `idx | R<<8 | G<<16 | B<<24` and marks the table dirty; case 15 commits it.
 
-`tdxd` reproduces this in `tdx_rgb_plan()` and writes the reports with
+`3dxlinuxd` reproduces this in `tdx_rgb_plan()` and writes the reports with
 `HIDIOCSFEATURE(8)`.
 
 | Setting | Effect |
@@ -306,11 +306,11 @@ Evidence:
   - `Driver_LCDOn` sets the intensity to 100, or to the value saved before it was turned off.
   - `Driver_LCDOff` saves the current value and sets it to 0.
 
-`tdxd` sends `{0x11, lcd_brightness}` to an Enterprise on attach and on reload,
+`3dxlinuxd` sends `{0x11, lcd_brightness}` to an Enterprise on attach and on reload,
 when `lcd_brightness` is set. This is the same option that controls the
 SpacePilot Pro's backlight, which uses its own USB vendor request (section 5).
 
-- **Unknown:** whether the 3 s settle is needed. `tdxd` does not wait, because it
+- **Unknown:** whether the 3 s settle is needed. `3dxlinuxd` does not wait, because it
   does not drive the Enterprise's WinUSB LCD.
 
 For the SpacePilot Pro, `HIDDev.dll` `FUN_180034060` also notifies the Logitech LCD
@@ -373,25 +373,25 @@ constant 319×239.
 6. After the first frame following open (`0x15`), Windows logs "waiting for LCD
    to init" and sleeps 5 s.
 
-**What `tdxd` does** (`src/lcd_ent.c`, `src/deflate.c`):
+**What `3dxlinuxd` does** (`src/lcd_ent.c`, `src/deflate.c`):
 
 - It sends the same header and a raw-deflate stream. The stream is a single
   fixed-Huffman block with greedy hash-chain LZ77, which is the block type
   Windows forces. Worst case is 202 389 bytes for random data, within the
   Windows buffer.
-- Instead of blocking for 5 s, `tdxd` marks the panel busy and redraws from its
+- Instead of blocking for 5 s, `3dxlinuxd` marks the panel busy and redraws from its
   main loop once the 5 s are up.
 - Page updates are sent as delta frames (`0x18`).
-- `tdx-lcd` sends a single `0x15` frame and exits.
+- `3dxlinux-lcd` sends a single `0x15` frame and exits.
 
 **Inferred channel order.** The Windows code puts byte 2 in the top 5 bits.
 Whether that byte is red depends on how 3DxService writes the TIFF. Windows
-bitmaps are BGR in memory, which would make it standard RGB565. `tdxd` assumes
+bitmaps are BGR in memory, which would make it standard RGB565. `3dxlinuxd` assumes
 standard RGB565 (red in the top bits); `lcd_swap_rb = yes` flips it.
 
 ### 6.4 Giotto LCD (observed: `HIDDev.dll` `CWinUSBLCDMgr`)
 
-Giotto (256f:c63c) has a 1280×416 colour LCD on its WinUSB function. `tdxd` claims
+Giotto (256f:c63c) has a 1280×416 colour LCD on its WinUSB function. `3dxlinuxd` claims
 the first vendor-class interface (class `0xFF`) that has a bulk OUT endpoint,
 rather than assuming interface 0.
 
@@ -448,7 +448,7 @@ The slide animation (`FUN_180049fd0`) is described in 6.5.
 **Legacy path.** `FUN_18004a8a0` (`SendBMPFileToDevice_RGB888`) watches the file
 `sp4LCD.bmp` and sends it with a G19-style `0x13` header (see 6.8).
 
-**What `tdxd` does** (`src/lcd_giotto.c`):
+**What `3dxlinuxd` does** (`src/lcd_giotto.c`):
 
 - On attach it sends `24 {0}`, then each redraw follows the static-image
   sequence above.
@@ -507,7 +507,7 @@ u16 fields source y, source mx, destination y, destination mx, h, w.
   - The slide calls do not settle which x field is the source and which is the
     destination. Swapping them also gives a coherent slide, in the opposite
     direction, with the next page entering from the left.
-  - `tdxd` uses the conventional direction: as `x` increases the content moves
+  - `3dxlinuxd` uses the conventional direction: as `x` increases the content moves
     left and the next page enters from the right.
   - Both slide calls use equal source and destination y (60), so they cannot
     distinguish the y fields either. The vertical move (6.6) uses different
@@ -516,7 +516,7 @@ u16 fields source y, source mx, destination y, destination mx, h, w.
     this reading. It confirms the on-screen result at offsets 1, 320, 1279,
     1280, 1900 and the last page.
 
-**What `tdxd` does** (`tdx_gio_plan_slide` / `tdx_giolcd_slide`):
+**What `3dxlinuxd` does** (`tdx_gio_plan_slide` / `tdx_giolcd_slide`):
 
 - It follows the same sequence. Pages are uploaded only when they change. C is
   not uploaded at offset 0, because it isn't read there.
@@ -529,7 +529,7 @@ u16 fields source y, source mx, destination y, destination mx, h, w.
      without syncing them;
   2. rewrites only the 1280×60 title bar with a `0x21` rectangle write (6.7),
      so the page dots update.
-- `tdx-lcd slide P1.ppm P2.ppm [P3 P4]` animates arbitrary pages.
+- `3dxlinux-lcd slide P1.ppm P2.ppm [P3 P4]` animates arbitrary pages.
 
 Operation type 2 only logs; any other type logs "Unsupported image operation
 type".
@@ -573,24 +573,24 @@ back buffer A until something else presents it.
 **Restored rows.** The restored band `[prev, y)` is not offset by 60, while the
 image is drawn from `y + 60`. During the move, the 60 rows in `[y, y+60)` keep
 whatever buffer A held before. After a move to 416 the whole buffer is
-background. `tdxd` reproduces this as-is.
+background. `3dxlinuxd` reproduces this as-is.
 
-**What `tdxd` does** (`tdx_gio_plan_move` / `tdx_giolcd_move`):
+**What `3dxlinuxd` does** (`tdx_gio_plan_move` / `tdx_giolcd_move`):
 
 - **Windows-exact steps:** the planner emits exactly the steps above, including
   the edge cases, which are covered by tests.
-- **Present (`tdxd` addition):** since Windows never shows the result,
+- **Present (`3dxlinuxd` addition):** since Windows never shows the result,
   `tdx_giolcd_move(…, present = 1)` adds `24 {A}` after each step.
   `tdx_giolcd_move_finish()` then makes A the front buffer and copies it to the
   new back buffer (`22 {B, A}`).
 - **Device model:** the model in `tests/test_core.c` checks that, when
   presented, rows above `y` show the background and rows from `y + 60` show the
   moving image shifted down by `y`.
-- **CLI:** `tdx-lcd move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm` shows MOVING,
+- **CLI:** `3dxlinux-lcd move [-s PX] [-w] MOVING.ppm BACKGROUND.ppm` shows MOVING,
   then pushes it down off the panel, uncovering BACKGROUND. `-w` sends only the
   Windows commands, with no present.
-- **Daemon:** `tdxd` has no event that triggers this operation; it is
-  available through the library and `tdx-lcd`.
+- **Daemon:** `3dxlinuxd` has no event that triggers this operation; it is
+  available through the library and `3dxlinux-lcd`.
 
 ### 6.7 Giotto rectangle write (observed: `HIDDev.dll` `FUN_18004aee0`, `FUN_180048630`)
 
@@ -626,7 +626,7 @@ rest of A must already match B. That holds after static frames, which copy
 `22 {B, A}`. It does not hold after a slide (6.5), whose steps swap without
 syncing. `tdx_giolcd_sync_back()` sends `22 {B, A}` to restore it.
 
-**What `tdxd` does** (`tdx_gio_plan_rect` / `tdx_giolcd_show_rect`):
+**What `3dxlinuxd` does** (`tdx_gio_plan_rect` / `tdx_giolcd_show_rect`):
 
 - It follows this sequence. A full-panel rectangle falls back to the `0x20`
   path, as on Windows.
@@ -635,8 +635,8 @@ syncing. `tdx_giolcd_sync_back()` sends `22 {B, A}` to restore it.
   `0x21` payload into a simulated buffer. It checks that the rectangle appears at
   the right on-screen position, that nothing outside it changes, and that the
   back buffer and C end up in sync, including after a slide.
-- **Daemon:** `tdxd` uses it to refresh the title bar after a slide.
-- **CLI:** `tdx-lcd rect X Y W H IMAGE.ppm` rewrites any rectangle from a
+- **Daemon:** `3dxlinuxd` uses it to refresh the title bar after a slide.
+- **CLI:** `3dxlinux-lcd rect X Y W H IMAGE.ppm` rewrites any rectangle from a
   full-size image.
 
 ### 6.8 Giotto legacy BMP path (observed: `HIDDev.dll` `FUN_18004a8a0`, `FUN_180049c00`)
@@ -695,16 +695,16 @@ upside down.
 No buffer number and no `0x24` are involved. The legacy path writes the panel
 directly, without the A/B/C/D buffer protocol.
 
-**What `tdxd` does:**
+**What `3dxlinuxd` does:**
 
 - **Library:** `tdx_bmp_load`, `tdx_gio_bmp_control`, `tdx_gio_bmp_convert`
   and `tdx_giolcd_send_bmp` reproduce this, including both quirks.
 - **One safety change:** where Windows would read past a short BMP row,
-  `tdxd` stops copying that row instead.
+  `3dxlinuxd` stops copying that row instead.
 - **Tests:** for a 24 bpp bottom-up BMP, the converter's output is
   byte-identical to the `0x21` and `0x20` packers.
-- **CLI:** `tdx-lcd bmp FILE.bmp [CONTROL]` sends a file through this path.
-- **Daemon:** with `lcd_bmp_dir = DIR`, `tdxd` emulates the watcher with
+- **CLI:** `3dxlinux-lcd bmp FILE.bmp [CONTROL]` sends a file through this path.
+- **Daemon:** with `lcd_bmp_dir = DIR`, `3dxlinuxd` emulates the watcher with
   inotify (`IN_CLOSE_WRITE` / `IN_MOVED_TO`). When `DIR/sp4LCD.bmp` appears it
   sends the file to every attached Giotto, then deletes it. A file that is
   already there when a Giotto attaches is sent too. With no Giotto attached the
@@ -732,16 +732,16 @@ that device's collections.
   (0 = unknown), byte 1 bit 0 means charging. A connected CadMouse sends it
   about every 1.5 s while it is in use. Windows also asks for it with
   `HidD_GetInputReport`; on Linux `HIDIOCGINPUT` for 0x17 fails (EPIPE), so
-  tdxd learns the level only once the mouse sends it.
+  3dxlinuxd learns the level only once the mouse sends it.
 - **Connected or not:** the receiver does not say. Its pairing table, feature
   0x50 (`50 00 00 00 00 59 00 10`: the slot codes again) and the others stay
   the same while the CadMouse is switched off, and no report arrives. 3DxWare
   (`HIDDev.dll`'s ActiveState) marks a device active on its first input report
   and never times it out; only the same device turning up active on another
-  connection makes it inactive. `tdxd` does the same (`active yes|no`).
+  connection makes it inactive. `3dxlinuxd` does the same (`active yes|no`).
 - **CadMouse input** (report 0x1B on its interface): buttons (8 bits), X and Y
   (int16), wheel (int16), tilt (int8). `hid-generic` turns it into a normal
-  mouse, so `tdxd` only reads along.
+  mouse, so `3dxlinuxd` only reads along.
 
 - **CadMouse configuration:** feature report 0x10 (31 data bytes) on the
   mouse's interface. `HIDDev.dll`'s SBHID_SendPIDConfig_2DMouse builds it and
@@ -767,7 +767,7 @@ that device's collections.
   report in input report 0x03 instead (one bit per button, bit 0 = button 1)
   and move nothing ("sent only to 3DxService": the radial menu, keystrokes).
   Checked by sending 45 for Forward: it then arrived as `03 10`, while Back
-  (13) stayed the mouse's own Back. `tdxd` builds the map from the
+  (13) stayed the mouse's own Back. `3dxlinuxd` builds the map from the
   `key_V2DK_*` bindings and sends the keys of 0x03 buttons through a uinput
   keyboard. The
   values come from 3DxWare's own log (`<LogLevel>1005</LogLevel>` in the user's
@@ -812,14 +812,14 @@ input 0x1b                  1b 00 34 00 6d ff 00 00 00
 - the LCD frame format, ping and brightness (section 5).
 
 The SpacePilot Pro's HID descriptor also declares vendor feature reports
-`0x05`–`0x0b`, `0x13` and `0x14`. They are not used by `tdxd`.
+`0x05`–`0x0b`, `0x13` and `0x14`. They are not used by `3dxlinuxd`.
 - **Unknown:** the purpose of those feature reports.
 
 - **Unknown:** whether the Giotto LED reports work on real hardware. They match the
   decompiled `HIDDev.dll`, but no device was available to test them.
 - **Unknown:** whether the Enterprise `{0x11, n}` LCD intensity report works on
   real hardware. No device was available to test it.
-- **Unknown:** the colour channel order of the Enterprise LCD (see 6.3). `tdxd`
+- **Unknown:** the colour channel order of the Enterprise LCD (see 6.3). `3dxlinuxd`
   assumes standard RGB565 and offers `lcd_swap_rb = yes` if red and blue appear swapped.
 - **Unknown:** whether the Enterprise LCD transfer works on real hardware. Its
   deflate payload was checked against Python's zlib, but not against the device.
@@ -829,19 +829,19 @@ The SpacePilot Pro's HID descriptor also declares vendor feature reports
   (6.8) with the buffered `0x20`–`0x24` protocol, for example which buffer it
   lands in.
 - **Inferred:** the `0x23` field roles (6.5). The slide calls fix neither which x
-  field is source nor which y field is source; `tdxd` uses the conventional
+  field is source nor which y field is source; `3dxlinuxd` uses the conventional
   slide direction. Not confirmed on a real Giotto.
 - **Unknown:** how Windows makes the result of a vertical move (6.6) visible,
-  since it sends no `0x24` for it. `tdxd` presents buffer A itself.
+  since it sends no `0x24` for it. `3dxlinuxd` presents buffer A itself.
 - **Unknown:** a Giotto LCD brightness command. None was found in `HIDDev.dll`.
 - **Unknown:** whether the SpacePilot Pro firmware *requires* the ping before it
-  accepts frames. The Windows driver uses it only on resume. `tdxd` sends it on
+  accepts frames. The Windows driver uses it only on resume. `3dxlinuxd` sends it on
   attach as a precaution and continues if the device does not answer. On real
   hardware the panel answers the ping, but frames were always preceded by one,
   so whether it is needed is untested.
 - **Unknown:** the meaning of the 9 bytes the ping returns. They are ignored on
-  Windows and in `tdxd`.
+  Windows and in `3dxlinuxd`.
 - **Unknown:** LCD soft-button reads (`LCDExtDeviceManagerReadSoftButtonsEx`).
   The SpacePilot Pro reports its keys through HID instead.
-- **Untested:** a 3D mouse paired to the Universal Receiver. `tdxd` drives its
+- **Untested:** a 3D mouse paired to the Universal Receiver. `3dxlinuxd` drives its
   interface like the wired device, assuming it sends the same reports.

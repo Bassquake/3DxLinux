@@ -120,7 +120,7 @@ unsigned tdx_rcv_mouse_map(const struct tdx_config *cfg, const struct tdx_device
 		int fn = def[i];
 		const struct tdx_keymap *km = i >= 2 ? tdx_rcv_mouse_binding(cfg, dev, i) : NULL;
 		if (i >= 2 && tdx_rcv_mouse_action(cfg, dev, i) != TDX_ACT_NONE)
-			fn = 0; /* a driver action (or disabled): tdxd handles it */
+			fn = 0; /* a driver action (or disabled): 3dxlinuxd handles it */
 		else if (km)
 			fn = !km->keys[1] ? mouse_fn(km->keys[0]) : 0;
 		map[i] = (uint8_t)(fn ? 9 + fn : 40 + i + 1);

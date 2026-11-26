@@ -63,7 +63,7 @@ enum {
  *   (slot (2,1)) in C. For y in [0, 416] with previous y = prev (initially 0):
  *     if y < 356:   0x23 {src D, dst A, sy 60,   smx 0, dy y+60, dmx 0, h 356-y,  w 1280}
  *     if y > prev:  0x23 {src C, dst A, sy prev, smx 0, dy prev, dmx 0, h y-prev, w 1280}
- *   then prev = y. Windows sends no 0x24 here; tdxd can optionally present A.
+ *   then prev = y. Windows sends no 0x24 here; 3dxlinuxd can optionally present A.
  */
 #define TDX_GIO_MOVE_LIMIT 0x164 /* 356 */
 #define TDX_GIO_MOVE_MAX_Y 0x1A0 /* 416 */
@@ -187,7 +187,7 @@ int tdx_giolcd_slide(struct tdx_giolcd *l, int x);
 /* Upload the vertical-move images: @moving -> D, @background -> C; resets y to 0. */
 int tdx_giolcd_set_moving(struct tdx_giolcd *l, const uint32_t *moving, const uint32_t *background);
 /* Move the moving image to @y (0..416). With @present, also show buffer A
- * (0x24 {A}; a tdxd addition - Windows does not show it here). */
+ * (0x24 {A}; a 3dxlinuxd addition - Windows does not show it here). */
 int tdx_giolcd_move(struct tdx_giolcd *l, int y, int present);
 /* End a presented move: make the shown buffer the front (B) and sync the back. */
 int tdx_giolcd_move_finish(struct tdx_giolcd *l);

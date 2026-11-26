@@ -223,7 +223,7 @@ int tdx_config_load_user_base(struct tdx_config *c)
 	return rc == -ENOENT ? 0 : rc;
 }
 
-/* Never from a user's file: what is a path tdxd opens, or its own plumbing. */
+/* Never from a user's file: what is a path 3dxlinuxd opens, or its own plumbing. */
 static int user_denied(const char *k)
 {
 	static const char *const keys[] = {"uinput", "spnav", "spnav_socket", "control_socket",
@@ -283,7 +283,7 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 	FILE *f;
 	if (profile >= 2) {
 		/* a file from a user's own folder: no symlinks, only a plain file of
-		 * theirs (tdxd reads it as root) */
+		 * theirs (3dxlinuxd reads it as root) */
 		int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
 		struct stat st;
 		if (fd < 0)
@@ -496,7 +496,7 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			memcpy(m->step, step, sizeof step);
 			m->seq = ns > 1;
 		} else if (!strcmp(k, "mouse_osd")) {
-			/* tdx-osd's (the On-Screen Display): nothing for tdxd to do */
+			/* 3dxlinux-osd's (the On-Screen Display): nothing for 3dxlinuxd to do */
 		} else if (!strncmp(k, "radial_", 7) && strlen(k) < sizeof c->radial[0].key) {
 			/* a radial menu's line: later files (the profile) override */
 			struct tdx_kv *kv = NULL;

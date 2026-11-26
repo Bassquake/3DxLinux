@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: MIT
 """Extract the 3DxWare control-panel artwork from YOUR copy of the installer.
 
-tdx-settings looks like the 3DxWare 10 panel when these files are present.
-The artwork belongs to 3Dconnexion and is not shipped with tdxd; this tool
+3dxlinux-settings looks like the 3DxWare 10 panel when these files are present.
+The artwork belongs to 3Dconnexion and is not shipped with 3dxlinuxd; this tool
 copies it out of the installer you downloaded, for use on your own machine.
 
     tools/extract_3dxware_ui.py 3DxWare64_v10-9-14_b745.exe [OUTDIR]
@@ -11,8 +11,8 @@ copies it out of the installer you downloaded, for use on your own machine.
 OUTDIR defaults to ~/.local/share/3dxlinux/3dxware-ui (or, as root,
 /usr/local/share/3dxlinux/3dxware-ui). Needs 7z (p7zip-full / p7zip-plugins).
 With the default OUTDIR the programs' window icons (the 3Dconnexion logo, the
-LCD Manager's) also go into the hicolor icon theme as tdxd-3dxware and
-tdxd-lcdmanager, and tdx-settings.desktop is pointed at the logo, so the
+LCD Manager's) also go into the hicolor icon theme as 3dxlinux-3dxware and
+3dxlinux-lcdmanager, and 3dxlinux-settings.desktop is pointed at the logo, so the
 desktop's taskbar shows them like Windows does.
 
 What it does, without running any installer code:
@@ -461,8 +461,8 @@ def app_icons(exe, outdir, key):
     return sorted(sizes)
 
 
-# .desktop entry -> its icon (icon-theme name tdxd-<key>)
-DESKTOP_ICONS = {"tdx-settings": "3dxware", "tdx-lcdmanager": "lcdmanager",
+# .desktop entry -> its icon (icon-theme name 3dxlinux-<key>)
+DESKTOP_ICONS = {"3dxlinux-settings": "3dxware", "3dxlinux-lcdmanager": "lcdmanager",
                  "3dxlinux-lcd-functionkeys": "functionkeys", "3dxlinux-lcd-rss": "rss",
                  "3dxlinux-lcd-pictures": "pictures"}
 
@@ -485,16 +485,16 @@ def theme_icon_files(out):
 
 
 def install_theme_icons(out, theme_root, apps_dir, system_apps=("/usr/local/share", "/usr/share")):
-    """Put the window icons into the hicolor icon theme as tdxd-<key> and point
+    """Put the window icons into the hicolor icon theme as 3dxlinux-<key> and point
     the installed .desktop entries at the largest one. Wayland desktops (GNOME, KDE, WSLg)
     take a window's taskbar icon from the .desktop entry named like its app id
-    (tdx-settings, tdx-lcdmanager, 3dxlinux-lcd-rss, ...), never from the window."""
+    (3dxlinux-settings, 3dxlinux-lcdmanager, 3dxlinux-lcd-rss, ...), never from the window."""
     n = 0
     largest = {}  # key -> (size, installed path)
     for key, size, path in theme_icon_files(out):
         d = os.path.join(theme_root, "hicolor", "%dx%d" % (size, size), "apps")
         os.makedirs(d, exist_ok=True)
-        dst = os.path.join(d, "tdxd-%s.png" % key)
+        dst = os.path.join(d, "3dxlinux-%s.png" % key)
         shutil.copyfile(path, dst)
         if size > largest.get(key, (0, None))[0]:
             largest[key] = (size, os.path.abspath(dst))
@@ -543,13 +543,13 @@ def devices_json(base_xml):
 
 def freecad_buttons(navlib_xml):
     """3DxWare's FreeCAD key setup (FreeCAD_Navlib.xml, for FreeCAD 0.22+ through
-    NavLib) -> what the tdxd FreeCAD add-on needs:
+    NavLib) -> what the 3dxlinuxd FreeCAD add-on needs:
       banks:   workbench (FreeCAD's name, "Default" otherwise) -> {V3DK id: action id}
       actions: action id -> {name, command, index} (FreeCAD command, a group
                command's entry number) or {name, menu} (a radial menu)
       menus:   menu id -> {name, items: [action ids]}
     Only FreeCAD commands and radial menus: 3DxWare's own functions on a key
-    (or a key a workbench leaves out) stay with tdxd's configuration."""
+    (or a key a workbench leaves out) stay with 3dxlinuxd's configuration."""
     root = ET.parse(navlib_xml).getroot()
     names = {a.findtext("ID"): a.findtext("Name") or "" for a in root.iter("ButtonAction")}
     menu_of = {a.findtext("ID"): a.findtext("MenuID") for a in root.iter("ButtonAction")
@@ -591,7 +591,7 @@ def freecad_buttons(navlib_xml):
     return {"banks": banks, "actions": actions, "menus": menus}
 
 
-# ---- 3DxWare's application configurations -> tdxd profiles -------------------
+# ---- 3DxWare's application configurations -> 3dxlinuxd profiles -------------------
 
 # USB HID keyboard usage (what 3DxWare's macros store) -> Linux KEY_ name
 HID_KEYS = {0x28: "ENTER", 0x29: "ESC", 0x2A: "BACKSPACE", 0x2B: "TAB", 0x2C: "SPACE",
@@ -621,7 +621,7 @@ _SHIFTED.update(dict(zip('_+{}|:"<>?~', ["MINUS", "EQUAL", "LEFTBRACE", "RIGHTBR
 _PLAIN = {" ": "SPACE", "-": "MINUS", "=": "EQUAL", "[": "LEFTBRACE", "]": "RIGHTBRACE",
           "\\": "BACKSLASH", ";": "SEMICOLON", "'": "APOSTROPHE", ",": "COMMA", ".": "DOT",
           "/": "SLASH", "`": "GRAVE", "\n": "ENTER", "\t": "TAB"}
-# 3DxWare's keyboard keys (KB_*) and driver functions -> tdxd
+# 3DxWare's keyboard keys (KB_*) and driver functions -> 3dxlinuxd
 KB_KEYS = {"KB_Esc": "ESC", "KB_Alt": "LEFTALT", "KB_Ctrl": "LEFTCTRL", "KB_Shift": "LEFTSHIFT",
            "KB_Enter": "ENTER", "KB_Tab": "TAB", "KB_Space": "SPACE", "KB_Delete": "DELETE",
            "KB_Home": "HOME", "KB_End": "END", "KB_PageUp": "PAGEUP", "KB_PageDown": "PAGEDOWN",
@@ -632,7 +632,7 @@ DRIVER_ACTIONS = {"Driver_ShowDriverGUI": "settings", "Driver_ToggleRotations": 
                   "Driver_ToggleTranslations": "panzoom", "Driver_ToggleDominantFilter": "dominant",
                   "Driver_IncreaseAppScale": "speed_up", "Driver_DecreaseAppScale": "speed_down",
                   "Driver_RezeroDevice": "calibrate"}
-MAX_KEYS = 32  # tdxd's TDX_MAX_KEYS
+MAX_KEYS = 32  # 3dxlinuxd's TDX_MAX_KEYS
 # program names that on Linux are many programs (Creo and Cyclone run as java)
 GENERIC_EXES = {"java", "javaw", "javaws", "python", "pythonw", "dllhost", "rundll32",
                 "explorer", "desktop", "shellui", "applicationframehost"}
@@ -671,7 +671,7 @@ def _hid(code_text):
 
 def macro_chords(entry, macros, depth=0):
     """A 3DxWare MacroEntry -> list of chords (each a list of KEY_ names without
-    the KEY_ prefix), or None if tdxd can't send it (mouse clicks, odd keys)."""
+    the KEY_ prefix), or None if 3dxlinuxd can't send it (mouse clicks, odd keys)."""
     if depth > 4:
         return None
     ks = entry.find("KeyStroke")
@@ -722,7 +722,7 @@ def macro_chords(entry, macros, depth=0):
                 return None
             chords += subc
         elif tag == "Pause":
-            continue  # tdxd sends the chords at once
+            continue  # 3dxlinuxd sends the chords at once
         else:
             return None  # mouse buttons and moves
     if fresh and held:
@@ -751,7 +751,7 @@ def _match_names(root):
         n = re.sub(r"(?i)(\\\.|\.)exe\$?$", "", n).lstrip("^")
         n = n.replace("\\.", ".").replace(".*", "*").replace("\\ ", " ")
         if not n or re.search(r"[\\\[\]()|+?{}$^ ]", n):
-            continue  # a regex tdxd's name globs can't express, or a name with spaces
+            continue  # a regex 3dxlinuxd's name globs can't express, or a name with spaces
         n = n.lower()
         if len(n.replace("*", "")) < 3 or n in GENERIC_EXES:
             continue  # would catch other programs on Linux
@@ -767,9 +767,9 @@ def _profile_name(filename):
 
 def app_profiles(by_name):
     """Every application configuration in the installer -> {profile name:
-    (text of a tdxd profile, keys converted)}. What can't be done on Linux (the
+    (text of a 3dxlinuxd profile, keys converted)}. What can't be done on Linux (the
     application's own NavLib commands, 3DxWare's legacy SDK commands, menus,
-    mouse macros) is left out, so those keys keep tdxd's defaults."""
+    mouse macros) is left out, so those keys keep 3dxlinuxd's defaults."""
     strings, shared_macros = _string_table(by_name.get("en-US.xml"))
     roots, by_cfg_id = {}, {}
     for name, path in by_name.items():
@@ -861,12 +861,12 @@ def app_profiles(by_name):
                 got.append("lcd_label_%s = %s" % (key, name))
             lines += got
             if any(g.startswith("key_") and not g.endswith("= none") for g in got):
-                done += 1  # only 3DxWare's driver functions: tdxd's defaults already
+                done += 1  # only 3DxWare's driver functions: 3dxlinuxd's defaults already
         if not done:
             continue
         app = label((root.findtext("CfgProperties/Name") or "").strip()) or fname
         text = ("# %s: 3DxWare's key settings for %s, imported from your 3DxWare installer\n"
-                "# (%s) by tdx-extract-3dxware-ui. Your own profiles in /etc/3dxlinux.d win.\n"
+                "# (%s) by 3dxlinux-extract-3dxware-ui. Your own profiles in /etc/3dxlinux.d win.\n"
                 "match = %s\n" % (pname, strings.get((root.findtext("CfgProperties/Name") or "").strip(), app),
                                   fname, ", ".join(match)))
         text += "\n".join(lines) + "\n"
@@ -962,7 +962,7 @@ def main():
             with open(os.path.join(out, "devices.json"), "w") as f:
                 json.dump(devices_json(base), f, indent=1, sort_keys=True)
         nav = by_name.get("FreeCAD_Navlib.xml")
-        if nav:  # FreeCAD's per-workbench keys, for the tdxd FreeCAD add-on
+        if nav:  # FreeCAD's per-workbench keys, for the 3dxlinuxd FreeCAD add-on
             fc = freecad_buttons(nav)
             fc["source"] = os.path.basename(installer)
             os.makedirs(os.path.join(out, "freecad"), exist_ok=True)
@@ -970,7 +970,7 @@ def main():
                 json.dump(fc, f, indent=1, sort_keys=True)
             print("FreeCAD keys: %d workbenches, %d commands, %d menus"
                   % (len(fc["banks"]), len(fc["actions"]), len(fc["menus"])))
-        # every application's key settings, as tdxd profiles (tdxd reads them
+        # every application's key settings, as 3dxlinuxd profiles (3dxlinuxd reads them
         # after /etc/3dxlinux.d; see profile.h)
         prof = app_profiles(by_name)
         pdir = os.path.join(out, "profiles")
@@ -984,7 +984,7 @@ def main():
         print("%d application profiles (%d keys) in %s"
               % (len(prof), sum(n for _t, n in prof.values()), pdir))
         with open(os.path.join(out, "SOURCE"), "w") as f:
-            f.write("Extracted from %s for local use by tdx-settings.\n"
+            f.write("Extracted from %s for local use by 3dxlinux-settings.\n"
                     "Artwork (c) 3Dconnexion; do not redistribute.\n" % os.path.basename(installer))
     if default_out:  # the taskbar icons for the desktop's icon theme
         if os.geteuid() == 0:

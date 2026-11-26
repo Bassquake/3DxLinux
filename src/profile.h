@@ -5,12 +5,12 @@
  * A profile is <profile_dir>/<name>.conf: any 3dxlinux.conf options (except the
  * daemon-wide ones) layered on top of /etc/3dxlinux.conf, plus
  *   match = blender, blender-*        process names (case-insensitive globs)
- * which defaults to <name>. The active application comes from tdx-focus /
- * "tdxctl focus APP", or else from the spacenavd client that connected last.
+ * which defaults to <name>. The active application comes from 3dxlinux-focus /
+ * "3dxlinuxctl focus APP", or else from the spacenavd client that connected last.
  *
  * Profiles come from several folders, the first match wins: profile_dir
  * (/etc/3dxlinux.d, yours), then the ones imported from 3DxWare's application
- * configurations (tdx-extract-3dxware-ui: .../3dxware-ui/profiles), system
+ * configurations (3dxlinux-extract-3dxware-ui: .../3dxware-ui/profiles), system
  * wide and in the desktop user's own folder. A name already taken by an
  * earlier folder is skipped there.
  */
@@ -49,7 +49,7 @@ int tdx_profiles_key_union(const char *base_path, const struct tdx_profiles *ps,
 /* Application name of a process: basename of /proc/PID/exe (for an interpreter
  * such as python3, its script's name), else /proc/PID/comm. */
 int tdx_app_from_pid(int pid, char *out, size_t len);
-/* tdxd's own windows (settings panel, LCD Manager, applet dialogs): focusing
+/* 3dxlinuxd's own windows (settings panel, LCD Manager, applet dialogs): focusing
  * them keeps the application the device follows, as 3DxWare does for its own
  * panel. */
 int tdx_is_own_app(const char *app);

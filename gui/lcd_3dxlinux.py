@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MIT
-"""tdxlcd - Python client for tdx-lcdmgr (the Linux LCD Manager).
+"""lcd_3dxlinux - Python client for 3dxlinux-lcdmgr (the Linux LCD Manager).
 
 Applets: the same model as Logitech's lglcd API, in Python:
 
-    import tdxlcd
-    conn = tdxlcd.Connection("My Applet", persistent=True, autostart=True,
-                             capabilities=tdxlcd.APPLET_CAP_QVGA,
+    import lcd_3dxlinux
+    conn = lcd_3dxlinux.Connection("My Applet", persistent=True, autostart=True,
+                             capabilities=lcd_3dxlinux.APPLET_CAP_QVGA,
                              on_configure=..., on_notify=...)
-    dev = conn.open(tdxlcd.DEVICE_QVGA, on_buttons=lambda buttons: ...)
-    dev.update(bgra_bytes, tdxlcd.PRIORITY_NORMAL)   # 320*240*4 bytes, B G R A
+    dev = conn.open(lcd_3dxlinux.DEVICE_QVGA, on_buttons=lambda buttons: ...)
+    dev.update(bgra_bytes, lcd_3dxlinux.PRIORITY_NORMAL)   # 320*240*4 bytes, B G R A
     dev.update_rgb(rgb_bytes)                        # 320*240*3 bytes, R G B
     dev.set_foreground(True)
     dev.close(); conn.close()
@@ -51,11 +51,11 @@ class LcdError(Exception):
 
 
 def socket_path():
-    p = os.environ.get("TDX_LCD_SOCKET")
+    p = os.environ.get("DXLINUX_LCD_SOCKET")
     if p:
         return p
     rt = os.environ.get("XDG_RUNTIME_DIR")
-    return os.path.join(rt, "tdx-lcd.sock") if rt else "/tmp/tdx-lcd-%d.sock" % os.getuid()
+    return os.path.join(rt, "3dxlinux-lcd.sock") if rt else "/tmp/3dxlinux-lcd-%d.sock" % os.getuid()
 
 
 def _recv_exact(sock, n):
@@ -63,7 +63,7 @@ def _recv_exact(sock, n):
     while len(buf) < n:
         chunk = sock.recv(n - len(buf))
         if not chunk:
-            raise ConnectionError("tdx-lcdmgr closed the connection")
+            raise ConnectionError("3dxlinux-lcdmgr closed the connection")
         buf += chunk
     return bytes(buf)
 
@@ -258,7 +258,7 @@ def status(path=None):
             out[key] = {k: int(v) for k, v in (kv.split("=") for kv in rest.split())}
         elif key in ("shown", "manual"):
             out[key] = int(rest)
-        elif key in ("owner", "database", "tdx-lcdmgr"):
+        elif key in ("owner", "database", "3dxlinux-lcdmgr"):
             out[key] = rest
         elif key == "program":
             f = rest.split("\t")

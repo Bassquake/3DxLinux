@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tdx-numpad: 3DxWare's Virtual NumPad (3DxNumpad.exe) on Linux.
+"""3dxlinux-numpad: 3DxWare's Virtual NumPad (3DxNumpad.exe) on Linux.
 
 A number pad on the screen for keyboards without one: the radial menu's
 Virtual NumPad (Driver_Toggle_3DxNumPad) shows it, and shows it again to
@@ -7,7 +7,7 @@ hide it; a button can too (action_V2DK_... = numpad). Its keys are typed
 into the window you are working in, as 3DxNumpad's SendInput does:
 
     7 8 9 /    the keypad's keys (3DxWare: VK_NUMPAD7.., VK_DIVIDE ..);
-    4 5 6 *    tdxd puts Num Lock on for the digits if it is off, as
+    4 5 6 *    3dxlinuxd puts Num Lock on for the digits if it is off, as
     1 2 3 -    VK_NUMPAD0.. ignore it
     0 , . +    "," and "." the characters
     <-  Enter  Backspace and Enter
@@ -116,12 +116,12 @@ def save_prefs(p):
             json.dump(p, f, indent=1)
         os.replace(prefs_path() + ".tmp", prefs_path())
     except OSError as e:
-        print("tdx-numpad: %s" % e, file=sys.stderr)
+        print("3dxlinux-numpad: %s" % e, file=sys.stderr)
 
 
 def pidfile():
     run = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
-    return os.path.join(run, "tdx-numpad-%d.pid" % os.getuid())
+    return os.path.join(run, "3dxlinux-numpad-%d.pid" % os.getuid())
 
 
 def close_running():
@@ -130,7 +130,7 @@ def close_running():
         with open(pidfile()) as f:
             pid = int(f.read().strip())
         with open("/proc/%d/cmdline" % pid, "rb") as f:
-            if b"tdx-numpad" not in f.read():
+            if b"3dxlinux-numpad" not in f.read():
                 return False
         os.kill(pid, signal.SIGTERM)
         return True
@@ -247,7 +247,7 @@ class NumPad(Gtk.Window):
         self.pos_x, self.pos_y, self.warp = initial_place(self.prefs, at, mon, self.size, self.x11)
         if self.kind == "layer":
             GtkLayerShell.init_for_window(self)
-            GtkLayerShell.set_namespace(self, "tdx-numpad")
+            GtkLayerShell.set_namespace(self, "3dxlinux-numpad")
             GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
@@ -456,7 +456,7 @@ class NumPad(Gtk.Window):
     def send(self, keys):
         out = tdxd_request(self.sock, "keys " + keys)
         if not out.startswith("ok"):
-            print("tdx-numpad: " + out.strip(), file=sys.stderr)
+            print("3dxlinux-numpad: " + out.strip(), file=sys.stderr)
 
     # ---- drawing (3DxNumpad's look, scaled)
     def on_draw(self, _w, cr):
@@ -590,9 +590,9 @@ class NumPad(Gtk.Window):
 
 def main():
     ap = argparse.ArgumentParser(description="3DxWare's Virtual NumPad")
-    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="tdxd control socket")
+    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="3dxlinuxd control socket")
     ap.add_argument("--at", help="X,Y: the pointer where the radial menu opened")
-    ap.add_argument("-V", "--version", action="version", version="tdx-numpad " + APP_VERSION)
+    ap.add_argument("-V", "--version", action="version", version="3dxlinux-numpad " + APP_VERSION)
     args = ap.parse_args()
     if close_running():
         return 0

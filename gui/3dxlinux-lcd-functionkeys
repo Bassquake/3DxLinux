@@ -11,9 +11,9 @@ speed) and the text of every button - and draws it on three pages:
   2. the view keys (T/B, F/BK, R/L, ISO1/ISO2, Roll +/-)
   3. SHIFT ESC CTRL ALT MENU, speed -/+, Pan/Zoom, Dominant, Rotation, FIT
 
-LEFT / RIGHT switch pages. tdxd writes the file to /run/3dxlinux/LCDCfg.xml
+LEFT / RIGHT switch pages. 3dxlinuxd writes the file to /run/3dxlinux/LCDCfg.xml
 (lcd_cfg in 3dxlinux.conf). The artwork comes from the original applet when it has
-been extracted from the 3DxWare installer (tdx-extract-3dxware-ui).
+been extracted from the 3DxWare installer (3dxlinux-extract-3dxware-ui).
 """
 
 import math
@@ -62,7 +62,7 @@ FALLBACK_KEYS = {"V3DK_1": "1", "V3DK_6": "6", "V3DK_2": "2", "V3DK_7": "7", "V3
 
 
 def lcdcfg_path():
-    return os.environ.get("TDX_LCDCFG", "/run/3dxlinux/LCDCfg.xml")
+    return os.environ.get("DXLINUX_LCDCFG", "/run/3dxlinux/LCDCfg.xml")
 
 
 ICON_SIZES = ("32x32", "48x48", "64x64", "128x128", "256x256", "scalable", "24x24", "16x16")
@@ -74,7 +74,7 @@ def data_dirs():
     dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
     out = [home] + [d for d in dirs.split(":") if d]
     # Flatpak and Snap applications' menu entries and icons, which a user service
-    # (tdx-lcdmgr) may not have in its XDG_DATA_DIRS
+    # (3dxlinux-lcdmgr) may not have in its XDG_DATA_DIRS
     for d in (os.path.join(home, "flatpak", "exports", "share"), "/var/lib/flatpak/exports/share",
               "/var/lib/snapd/desktop"):
         if d not in out:

@@ -1,5 +1,5 @@
 /*
- * tdxd - Linux user-space driver for 3Dconnexion devices (SpacePilot Pro focus).
+ * 3dxlinuxd - Linux user-space driver for 3Dconnexion devices (SpacePilot Pro focus).
  *
  * Replaces, on Linux, the pieces of 3DxWare 10.9.14 that talk to hardware:
  *   3dxhid.sys + 3DxService.exe   -> hidraw reader, axis/button processing,
@@ -86,7 +86,7 @@ static int ndev;
 
 /* One interface of a wireless receiver. Interface N carries the device in
  * pairing slot N; its input reports (mouse motion, buttons, battery) also go to
- * hid-generic, so the mouse works without tdxd: tdxd only reads along for the
+ * hid-generic, so the mouse works without 3dxlinuxd: 3dxlinuxd only reads along for the
  * battery level and reports the pairing for the settings panel. */
 struct rcv_ctx {
 	struct tdx_hid_node node;
@@ -124,7 +124,7 @@ static struct tdx_spnav spnav = {.lfd = -1};
 static int cli_verbose;
 static struct tdx_profiles profiles;
 static int active_profile = -1;   /* index into profiles, -1 = base configuration */
-static char focus_app[64];        /* last application reported by tdx-focus / tdxctl */
+static char focus_app[64];        /* last application reported by 3dxlinux-focus / 3dxlinuxctl */
 static char info_pressed[128];    /* LCDCfg.xml InfoLine: the button just pressed */
 static int info_slider = -1;      /* ... and the speed after +/- */
 static int lcdcfg_dirty;
@@ -132,14 +132,14 @@ static long long info_until;      /* when to clear them again */
 static int focus_pid;
 static int focus_known;           /* a focus helper has reported at least once */
 /* Keys an application handles itself while it has the focus, with its names for
- * them (tdxctl app-buttons; the FreeCAD add-on, per workbench): tdxd shows the
+ * them (3dxlinuxctl app-buttons; the FreeCAD add-on, per workbench): 3dxlinuxd shows the
  * names on the LCD and leaves the keys to it - no shortcut, no action, only the
  * spacenav button event the application acts on. */
 static char appkeys_app[64];
 static struct tdx_named_label appkeys[TDX_MAX_NAMED_LABELS];
 static int nappkeys;
 static int ctl_fd = -1;
-static int lcdmgr_fd = -1; /* held "lcd-release" connection from tdx-lcdmgr */
+static int lcdmgr_fd = -1; /* held "lcd-release" connection from 3dxlinux-lcdmgr */
 static char ctl_path[108];
 static int key_union[3 * TDX_MAX_KEYMAP];
 static int nkey_union;
@@ -160,7 +160,7 @@ static long long now_ms(void)
 	return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-#define LOG(lvl, ...) do { if (cfg.verbose >= (lvl)) fprintf(stderr, "tdxd: " __VA_ARGS__); } while (0)
+#define LOG(lvl, ...) do { if (cfg.verbose >= (lvl)) fprintf(stderr, "3dxlinuxd: " __VA_ARGS__); } while (0)
 
 static void entlcd_redraw(struct dev_ctx *d)
 {
@@ -375,7 +375,7 @@ static void lcd_attach(struct dev_ctx *d)
 	if (!cfg.lcd_enable || d->node.bus != 3)
 		return;
 	if (lcdmgr_fd >= 0 && d->node.def->lcd == TDX_LCD_QVGA)
-		return; /* tdx-lcdmgr owns the SpacePilot Pro LCD */
+		return; /* 3dxlinux-lcdmgr owns the SpacePilot Pro LCD */
 	if (d->node.def->lcd == TDX_LCD_ENT640) {
 		entlcd_attach(d);
 		return;
@@ -767,7 +767,7 @@ static void rcv_read(struct rcv_ctx *r)
 	}
 }
 
-/* `tdxctl status` lines for the receivers: one per receiver, then one per
+/* `3dxlinuxctl status` lines for the receivers: one per receiver, then one per
  * paired device (slot, name, ids, battery, seconds since its last report).
  * "active": the device has sent something since the receiver was plugged in.
  * The receiver keeps its pairing table whether the device is on or off and
@@ -819,11 +819,11 @@ static size_t rcv_status(char *reply, size_t len, size_t o)
 }
 
 /* ---- the settings panel (3DxWare's Driver_ShowDriverGUI on MENU) ----
- * tdxd runs as root outside any desktop session, so it asks the session of
+ * 3dxlinuxd runs as root outside any desktop session, so it asks the session of
  * the user at the screen (logind's active session on seat0) to start
- * tdx-settings, through that user's own systemd manager: the panel gets the
+ * 3dxlinux-settings, through that user's own systemd manager: the panel gets the
  * session's display. A fixed unit name means a second press while the panel is
- * open starts no second one. Double fork: tdxd never waits or leaves zombies. */
+ * open starts no second one. Double fork: 3dxlinuxd never waits or leaves zombies. */
 #define SESSION_USER \
 	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n" \
 	"[ -n \"$s\" ] || exit 0\n" \
@@ -832,19 +832,19 @@ static size_t rcv_status(char *reply, size_t len, size_t o)
 
 static const char settings_script[] =
 	SESSION_USER
-	"exec systemd-run --user --machine=\"$u@\" --unit=tdx-settings-menu --collect --quiet "
-	"tdx-settings\n";
+	"exec systemd-run --user --machine=\"$u@\" --unit=3dxlinux-settings-menu --collect --quiet "
+	"3dxlinux-settings\n";
 
-/* 3DxWare's radial menu (3DxPieMenus.exe): tdx-radial at the pointer. A press
- * while it is open closes it. Started from a desktop's own terminal (tdxd
- * with a DISPLAY, as when testing), it runs there; tdx-radial itself closes
+/* 3DxWare's radial menu (3DxPieMenus.exe): 3dxlinux-radial at the pointer. A press
+ * while it is open closes it. Started from a desktop's own terminal (3dxlinuxd
+ * with a DISPLAY, as when testing), it runs there; 3dxlinux-radial itself closes
  * an open one then. */
-static const char toggle_script[] = /* $1: tdx-radial or tdx-numpad (its unit too);
-				     * $TDX_MENU: a user radial menu's ID */
+static const char toggle_script[] = /* $1: 3dxlinux-radial or 3dxlinux-numpad (its unit too);
+				     * $DXLINUX_MENU: a user radial menu's ID */
 	"s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null)\n"
 	"if [ -z \"$s\" ]; then\n"
 	"  [ -n \"$DISPLAY$WAYLAND_DISPLAY\" ] && "
-	"exec \"$1\" -s \"$TDX_SOCK\" ${TDX_MENU:+--menu \"$TDX_MENU\"}\n"
+	"exec \"$1\" -s \"$DXLINUX_SOCK\" ${DXLINUX_MENU:+--menu \"$DXLINUX_MENU\"}\n"
 	"  exit 0\n"
 	"fi\n"
 	"u=$(loginctl show-session \"$s\" -p Name --value 2>/dev/null)\n"
@@ -853,7 +853,7 @@ static const char toggle_script[] = /* $1: tdx-radial or tdx-numpad (its unit to
 	"  exec systemctl --user --machine=\"$u@\" stop \"$1\"\n"
 	"fi\n"
 	"exec systemd-run --user --machine=\"$u@\" --unit=\"$1\" --collect --quiet "
-	"\"$1\" -s \"$TDX_SOCK\" ${TDX_MENU:+--menu \"$TDX_MENU\"}\n";
+	"\"$1\" -s \"$DXLINUX_SOCK\" ${DXLINUX_MENU:+--menu \"$DXLINUX_MENU\"}\n";
 
 static void session_run(const char *script, const char *arg, const char *menu)
 {
@@ -870,11 +870,11 @@ static void session_run(const char *script, const char *arg, const char *menu)
 				if (!cli_verbose)
 					dup2(nul, 2);
 			}
-			setenv("TDX_SOCK", cfg.control_socket, 1); /* tdx-radial's Undo/Redo */
+			setenv("DXLINUX_SOCK", cfg.control_socket, 1); /* 3dxlinux-radial's Undo/Redo */
 			if (menu && *menu)
-				setenv("TDX_MENU", menu, 1);
+				setenv("DXLINUX_MENU", menu, 1);
 			else
-				unsetenv("TDX_MENU");
+				unsetenv("DXLINUX_MENU");
 			execl("/bin/sh", "sh", "-c", script, "sh", arg, (char *)NULL);
 			_exit(127);
 		}
@@ -883,7 +883,7 @@ static void session_run(const char *script, const char *arg, const char *menu)
 	waitpid(pid, NULL, 0);
 }
 
-/* The radial menu's and the NumPad's keys come from tdxd's keyboard device.
+/* The radial menu's and the NumPad's keys come from 3dxlinuxd's keyboard device.
  * Made on the first key, the desktop missed that key (a new keyboard's first
  * key is lost, as with a CadMouse's keystroke button): so it is made when the
  * menu or the NumPad opens, before anything in it is clicked. */
@@ -896,17 +896,17 @@ static void keys_ready(void)
 static void open_radial(void)
 {
 	keys_ready();
-	session_run(toggle_script, "tdx-radial", NULL);
+	session_run(toggle_script, "3dxlinux-radial", NULL);
 	LOG(1, "radial menu: asked the active session to show Common Tools\n");
 }
 
-/* A radial menu of the user's own (radial:ID): tdx-radial --menu ID */
+/* A radial menu of the user's own (radial:ID): 3dxlinux-radial --menu ID */
 static void open_menu(const char *menu)
 {
 	if (!menu || !*menu)
 		return;
 	keys_ready();
-	session_run(toggle_script, "tdx-radial", menu);
+	session_run(toggle_script, "3dxlinux-radial", menu);
 	LOG(1, "radial menu: asked the active session to show %s\n", menu);
 }
 
@@ -921,14 +921,14 @@ static const char *button_menu(const char *v3dk)
 static void open_numpad(void)
 {
 	keys_ready();
-	session_run(toggle_script, "tdx-numpad", NULL);
+	session_run(toggle_script, "3dxlinux-numpad", NULL);
 	LOG(1, "Virtual NumPad: asked the active session to show or hide it\n");
 }
 
 static void open_settings(void)
 {
 	session_run(settings_script, "", NULL);
-	LOG(1, "MENU: asked the active session to open tdx-settings\n");
+	LOG(1, "MENU: asked the active session to open 3dxlinux-settings\n");
 }
 
 /* ---- calibration (HIDDev.dll UdDevRezero) ---- */
@@ -960,7 +960,7 @@ static void apply_effective(int idx)
 	active_profile = idx;
 }
 
-/* The desktop user (whoever runs tdx-focus or saves in tdx-settings): their
+/* The desktop user (whoever runs 3dxlinux-focus or saves in 3dxlinux-settings): their
  * own settings and imported 3DxWare profiles are read too. -1: none yet. */
 static int session_uid = -1;
 static int nown_profiles; /* how many of them are profile_dir's */
@@ -985,10 +985,10 @@ static void load_all(void)
 	nuser_profiles = profiles.n;
 	int rc = tdx_profiles_add(cfg.profile_dir, &profiles, 0);
 	if (rc)
-		fprintf(stderr, "tdxd: cannot read %s: %s\n", cfg.profile_dir, strerror(-rc));
+		fprintf(stderr, "3dxlinuxd: cannot read %s: %s\n", cfg.profile_dir, strerror(-rc));
 	nown_profiles = profiles.n - nuser_profiles;
 	/* then the profiles imported from 3DxWare's application configurations
-	 * (tdx-extract-3dxware-ui); the first folder with a match wins */
+	 * (3dxlinux-extract-3dxware-ui); the first folder with a match wins */
 	static const char *const imported[] = {"/usr/local/share/3dxlinux/3dxware-ui/profiles",
 					       "/usr/share/3dxlinux/3dxware-ui/profiles"};
 	for (size_t i = 0; i < sizeof imported / sizeof imported[0]; i++)
@@ -1009,7 +1009,7 @@ static const char *profile_name(int idx)
 	return idx >= 0 ? profiles.p[idx].name : "default";
 }
 
-/* The application profiles follow: what tdx-focus reported, else the newest spnav client. */
+/* The application profiles follow: what 3dxlinux-focus reported, else the newest spnav client. */
 static const char *current_app(const char **source)
 {
 	if (focus_known) {
@@ -1177,7 +1177,7 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		if (fpid > 0 && tdx_app_from_pid(fpid, resolved, sizeof resolved) == 0)
 			app = resolved;
 		if (tdx_is_own_app(app)) { /* our own panel: keep the application */
-			snprintf(reply, len, "ok ignored (%s is tdxd's own) profile=%s\n", app,
+			snprintf(reply, len, "ok ignored (%s is 3dxlinuxd's own) profile=%s\n", app,
 				 profile_name(active_profile));
 			return;
 		}
@@ -1260,7 +1260,7 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		}
 	} else if (!strcmp(verb, "keys")) {
 		/* the radial menu's Undo/Redo: "keys KEY_LEFTCTRL+KEY_Z", tapped on a
-		 * keyboard device of tdxd's; only root or the desktop user may type */
+		 * keyboard device of 3dxlinuxd's; only root or the desktop user may type */
 		int uid = tdx_ctl_peer_uid();
 		char *chord = strtok_r(NULL, " \t", &save);
 		if (uid != 0 && uid != session_uid) {
@@ -1306,7 +1306,7 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 			snprintf(reply, len, "ok %d keys\n", n);
 		}
 	} else if (!strcmp(verb, "radial")) {
-		/* a user radial menu for tdx-radial: its radial_ID_* lines as
+		/* a user radial menu for 3dxlinux-radial: its radial_ID_* lines as
 		 * "name<TAB>value" (name without radial_ID_) */
 		char *id = strtok_r(NULL, " \t", &save);
 		size_t o = 0;
@@ -1443,7 +1443,7 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 		const char *src;
 		const char *app = current_app(&src);
 		size_t o = (size_t)snprintf(reply, len,
-					    "tdxd %s\nprofile %s\napplication %s (via %s)\ndevices %d\n",
+					    "3dxlinuxd %s\nprofile %s\napplication %s (via %s)\ndevices %d\n",
 #ifdef TDX_VERSION
 					    TDX_VERSION,
 #else
@@ -1454,7 +1454,7 @@ static void ctl_handler(char *cmd, char *reply, size_t len)
 				      "speed %.3f\npanzoom %s\nrotation %s\ndominant %s\nlcd %s\n",
 				      cfg.sensitivity, cfg.disable_translation ? "off" : "on",
 				      cfg.disable_rotation ? "off" : "on", cfg.dominant ? "on" : "off",
-				      lcdmgr_fd >= 0 ? "lcdmgr" : "tdxd");
+				      lcdmgr_fd >= 0 ? "lcdmgr" : "3dxlinuxd");
 		for (int i = 0; i < ndev && o < len; i++)
 			o += (size_t)snprintf(reply + o, len - o, "  %s [%04x:%04x] %s firmware %x.%02x\n",
 					      devs[i].node.def->name, devs[i].node.vid,
@@ -1644,7 +1644,7 @@ static void dev_read(struct dev_ctx *d)
 
 static void usage(void)
 {
-	puts("usage: tdxd [-c config] [-v]... [-l] [-V]\n"
+	puts("usage: 3dxlinuxd [-c config] [-v]... [-l] [-V]\n"
 	     "  -c FILE  configuration file (default " DEFAULT_CONF ")\n"
 	     "  -v       more logging (repeatable)\n"
 	     "  -l       list supported devices and exit\n"
@@ -1660,7 +1660,7 @@ int main(int argc, char **argv)
 	int opt, verbose = 0;
 	while ((opt = getopt(argc, argv, "c:vlhV")) != -1) {
 		switch (opt) {
-		case 'V': puts("tdxd " TDX_VERSION); return 0;
+		case 'V': puts("3dxlinuxd " TDX_VERSION); return 0;
 		case 'c': conf_path = optarg; break;
 		case 'v': verbose++; break;
 		case 'l':
@@ -1679,7 +1679,7 @@ int main(int argc, char **argv)
 
 	cli_verbose = verbose;
 	if (access(conf_path, R_OK) && strcmp(conf_path, DEFAULT_CONF))
-		fprintf(stderr, "tdxd: cannot read %s: %s\n", conf_path, strerror(errno));
+		fprintf(stderr, "3dxlinuxd: cannot read %s: %s\n", conf_path, strerror(errno));
 	load_all();
 	if (nown_profiles)
 		LOG(0, "%d per-application profile(s) in %s\n", nown_profiles, cfg.profile_dir);
@@ -1703,7 +1703,7 @@ int main(int argc, char **argv)
 		snprintf(ctl_path, sizeof ctl_path, "%s", cfg.control_socket);
 		ctl_fd = tdx_ctl_listen(ctl_path);
 		if (ctl_fd < 0)
-			LOG(0, "control socket %s: %s (tdxctl disabled)\n", ctl_path, strerror(-ctl_fd));
+			LOG(0, "control socket %s: %s (3dxlinuxctl disabled)\n", ctl_path, strerror(-ctl_fd));
 	}
 
 	long long last_scan = 0;
@@ -1794,7 +1794,7 @@ int main(int argc, char **argv)
 			if (read(lcdmgr_fd, junk, sizeof junk) <= 0) { /* manager gone: take the LCD back */
 				close(lcdmgr_fd);
 				lcdmgr_fd = -1;
-				LOG(0, "LCD manager disconnected; tdxd drives the LCD again\n");
+				LOG(0, "LCD manager disconnected; 3dxlinuxd drives the LCD again\n");
 				for (int i = 0; i < ndev; i++) {
 					lcd_attach(&devs[i]);
 					lcd_redraw(&devs[i]);
@@ -1804,7 +1804,7 @@ int main(int argc, char **argv)
 		if (ctl_idx >= 0 && (pfd[ctl_idx].revents & POLLIN)) {
 			int kept = tdx_ctl_serve(ctl_fd, ctl_handler);
 			if (lcdmgr_fd == -2)
-				lcdmgr_fd = kept; /* -1 if the client vanished: back to tdxd */
+				lcdmgr_fd = kept; /* -1 if the client vanished: back to 3dxlinuxd */
 			if (lcdmgr_fd == -1 && kept < 0) {
 				for (int i = 0; i < ndev; i++)
 					if (!devs[i].lcd && devs[i].node.def->lcd == TDX_LCD_QVGA) {

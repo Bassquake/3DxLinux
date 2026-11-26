@@ -30,7 +30,7 @@ _here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; instal
 sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
 import lcdapplet as la  # noqa: E402
 
-UA = "Mozilla/5.0 (compatible; tdxd RSS Feeds applet for Linux)"
+UA = "Mozilla/5.0 (compatible; 3dxlinuxd RSS Feeds applet for Linux)"
 DARK = la.rgb(0x1E1E1E)
 MID = la.rgb(0x505050)
 

@@ -70,7 +70,7 @@ static int open_keyboard(const struct tdx_device_def *dev, const struct tdx_conf
 	s.id.vendor = dev ? dev->vid : 0;
 	s.id.product = dev ? dev->pid : 0;
 	s.id.version = 1;
-	snprintf(s.name, sizeof s.name, "3Dconnexion %s (tdxd keys)", dev ? dev->name : "device");
+	snprintf(s.name, sizeof s.name, "3Dconnexion %s (3dxlinuxd keys)", dev ? dev->name : "device");
 	if (ioctl(fd, UI_DEV_SETUP, &s) < 0 || ioctl(fd, UI_DEV_CREATE) < 0) {
 		close(fd);
 		return -1;
@@ -111,7 +111,7 @@ int tdx_uinput_open(struct tdx_uinput *u, const struct tdx_device_def *dev,
 	s.id.vendor = dev ? dev->vid : 0;
 	s.id.product = dev ? dev->pid : 0;
 	s.id.version = 1;
-	snprintf(s.name, sizeof s.name, "3Dconnexion %s (tdxd)", dev ? dev->name : "device");
+	snprintf(s.name, sizeof s.name, "3Dconnexion %s (3DxLinux)", dev ? dev->name : "device");
 	if (ioctl(u->fd, UI_DEV_SETUP, &s) < 0 || ioctl(u->fd, UI_DEV_CREATE) < 0) {
 		int e = -errno;
 		close(u->fd);
