@@ -12,10 +12,11 @@
   </developer>
   <description>
     <p>
-      3DxLinux (tdxd) drives 3Dconnexion 3D mice on Linux: the SpacePilot PRO,
-      SpaceMouse Enterprise, SpaceMouse Pro and Wireless, and others. It moves the
-      view in spacenavd-compatible applications such as Blender and FreeCAD,
-      sends the keys' shortcuts, and runs the LCD and LEDs.
+      3DxLinux drives 3Dconnexion 3D mice on Linux: the SpacePilot PRO,
+      SpaceMouse Enterprise, SpaceMouse Pro and Wireless, and others, and the
+      CadMouse with its Universal Receiver. It moves the view in
+      spacenavd-compatible applications such as Blender and FreeCAD, sends the
+      keys' shortcuts, and runs the LCD and LEDs.
     </p>
     <p>
       3Dconnexion Settings sets the speed, axes and buttons, per application,

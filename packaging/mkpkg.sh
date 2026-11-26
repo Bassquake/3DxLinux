@@ -19,12 +19,14 @@ arm64)  DEB_ARCH=arm64; RPM_ARCH=aarch64; TRIPLET=aarch64-linux-gnu ;;
 esac
 HOMEPAGE=https://github.com/Bassquake/3DxLinux
 SUMMARY="3Dconnexion driver: SpacePilot PRO, SpaceMouse, LCD Manager and applets"
-DESC="tdxd drives 3Dconnexion 3D mice (SpacePilot PRO, SpaceMouse Enterprise,
-SpaceMouse Pro/Wireless, Giotto, ...) on Linux: motion and buttons for
-spacenavd-compatible applications (Blender, FreeCAD, ...) and as an evdev
-device, LCD and LED support, per-application profiles, a GTK port of the
-3DxWare control panel (tdx-settings), and a port of Logitech's LCD Manager
-with the Function Keys, RSS Feeds and Picture Viewer applets."
+DESC="3DxLinux drives 3Dconnexion 3D mice (SpacePilot PRO, SpaceMouse Enterprise,
+SpaceMouse Pro/Wireless, Giotto, ...) and the CadMouse with its Universal
+Receiver on Linux: motion and buttons for spacenavd-compatible applications
+(Blender, FreeCAD, ...) and as an evdev device, LCD and LED support,
+per-application profiles, 3Dconnexion Settings (a port of the 3DxWare control
+panel, with its radial menus, Virtual NumPad and On-Screen Display), and a port
+of Logitech's LCD Manager with the Function Keys, RSS Feeds and Picture Viewer
+applets."
 
 # ---- stage the files once, as installed under /usr ----------------------
 # (on a Linux filesystem: a Windows drive would report every file as 0777)
