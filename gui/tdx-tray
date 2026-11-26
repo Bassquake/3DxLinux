@@ -367,7 +367,7 @@ class Tray:
              "IconThemePath": ("s", ""), "AttentionIconName": ("s", ""),
              "OverlayIconName": ("s", ""), "ItemIsMenu": ("b", False),
              "Menu": ("o", MENU_PATH),
-             "ToolTip": ("(sa(iiay)ss)", (self.icon, [], TITLE, "3Dconnexion 3D mouse"))}.get(prop)
+             "ToolTip": ("(sa(iiay)ss)", (self.icon, [], TITLE, ""))}.get(prop)  # title only
         return GLib.Variant(*v) if v else None
 
     def on_sni_call(self, _bus, _sender, _path, _iface, method, _params, inv):
