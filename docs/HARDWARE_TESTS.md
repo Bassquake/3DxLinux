@@ -522,3 +522,4 @@ CadMouse Compact Wireless (c658) paired to it.
 | CadMouse On-Screen Display (Kubuntu 26.04 / KDE Plasma Wayland) | `0.3.4+115`: the dock showed only after restarting the panel (it was started before the box was saved, read it as unticked and ended). **Pass** with `3DxLinux.0.3.4+116+g6356247`: ticking shows the dock at once, unticking hides it, ticking again brings it back. |
 | On-Screen Display tooltips (Kubuntu 26.04 / KDE Plasma Wayland, `3DxLinux.0.3.4+118+gb5858af`) | **Pass:** each dock button shows its own function's name on hover, as on Windows. |
 | Tray Quit (Kubuntu 26.04 / KDE Plasma Wayland) | `0.3.4+118`: Quit left the On-Screen Display showing. **Pass** with `3DxLinux.0.3.4+120+g447566c`: Quit closes the dock and the rest; opening Settings brings them back. |
+| Tray tooltip (Kubuntu 26.04 / KDE Plasma Wayland, `3DxLinux.0.3.4+124+g556f0db`) | **Pass:** hovering the tray icon shows just "3Dconnexion Settings". |
