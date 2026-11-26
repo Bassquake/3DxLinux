@@ -1008,6 +1008,20 @@ def osd_tests(d):
     del os.environ["XDG_CONFIG_HOME"]
 
 
+def about_tests():
+    """About's Devices, as 3DxWare's: the CadMouse (PID), the receiver, the 3D mice."""
+    st = {"devices": [{"name": "SpacePilot PRO", "firmware": "4.11", "pid": "c629"}],
+          "receivers": [{"name": "Universal Receiver", "firmware": "1.06", "pid": "c652",
+                         "paired": [{"name": "CadMouse Compact Wireless", "serial": "Y1224194699",
+                                     "pid": "c658", "active": True},
+                                    {"name": "SpaceMouse Wireless", "serial": "X1", "pid": "c63a",
+                                     "active": False}]}]}
+    rows = [(r["name"], r["what"], r["value"]) for r in ts.about_devices(st)]
+    check(rows == [("CadMouse Compact Wireless", "PID", "Y1224194699"),
+                   ("Universal Receiver", "FW", "1.06"), ("SpacePilot PRO", "FW", "4.11")] and
+          ts.about_devices({}) == [], "About: the devices as 3DxWare lists them")
+
+
 def icon_tests(d):
     """A radial menu's icon: Select your icon, and where it is shown."""
     check(ts.icon_file(None) is None and ts.icon_file(os.path.join(d, "none.png")) is None and
@@ -1049,6 +1063,7 @@ def main():
         icon_tests(d)
         own_settings_tests(d)
         osd_tests(d)
+        about_tests()
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

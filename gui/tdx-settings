@@ -4730,14 +4730,14 @@ class AboutPanel(Panel):
             "3DxWare installer (.exe).")
         for c in self.devbox.get_children():
             self.devbox.remove(c)
-        devs = st.get("devices", [])
+        devs = about_devices(st)
         if not devs:
             self.devbox.add(lab("None connected", "tdx-dim"))
         for d in devs:
             row = Gtk.Box(spacing=5)
-            row.pack_start(lab("<span foreground='#555555'><b>%s</b> FW: %s</span>" % (
-                GLib.markup_escape_text(d["name"]), d["firmware"]), markup=True),
-                False, False, 0)
+            row.pack_start(lab("<span foreground='#555555'><b>%s</b> %s: %s</span>" % (
+                GLib.markup_escape_text(d["name"]), d["what"],
+                GLib.markup_escape_text(d["value"])), markup=True), False, False, 0)
             sup = SUPPORT_TEXT.get(ASSETS.device(d.get("pid")).get("support"))
             if sup:
                 ic = image_widget(ASSETS.ui("SmartUI_Alert_Icon_grey"))
@@ -4746,6 +4746,24 @@ class AboutPanel(Panel):
                 row.pack_start(lab(sup, "tdx-dim"), False, False, 0)
             self.devbox.add(row)
         self.devbox.show_all()
+
+
+def about_devices(st):
+    """About's Devices, as 3DxWare lists them: each receiver's paired devices
+    that have been heard from (PID: their serial), the receiver (FW), then the
+    3D mice (FW). Rows {name, what, value, pid}."""
+    out = []
+    for r in st.get("receivers", []):
+        for p in r.get("paired", []):
+            if p.get("active"):
+                out.append({"name": p["name"], "what": "PID",
+                            "value": p.get("serial") or p.get("id") or "-", "pid": p.get("pid")})
+        out.append({"name": r["name"], "what": "FW", "value": r.get("firmware") or "-",
+                    "pid": r.get("pid")})
+    for d in st.get("devices", []):
+        out.append({"name": d["name"], "what": "FW", "value": d.get("firmware") or "-",
+                    "pid": d.get("pid")})
+    return out
 
 
 # --------------------------------------------------------------------------
