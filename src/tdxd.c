@@ -147,7 +147,6 @@ static int nkey_union;
 static void on_sig(int s) { if (s == SIGHUP) g_reload = 1; else g_quit = 1; }
 static void open_settings(void);
 static void open_radial(void);
-static void socket_alias(int on);
 static void open_numpad(void);
 static void open_menu(const char *menu);
 static struct tdx_uinput *keys_device(void);
@@ -972,22 +971,16 @@ static void load_all(void)
 {
 	struct passwd *pw = session_uid > 0 ? getpwuid((uid_t)session_uid) : NULL;
 	char ubase[512] = "";
-	if (pw && pw->pw_dir) {
-		char old[512];
+	if (pw && pw->pw_dir)
 		snprintf(ubase, sizeof ubase, "%s/.config/3dxlinux/3dxlinux.conf", pw->pw_dir);
-		snprintf(old, sizeof old, "%s/.config/tdxd/tdxd.conf", pw->pw_dir); /* before 0.3.5 */
-		snprintf(ubase, sizeof ubase, "%s", tdx_compat_path(ubase, old));
-	}
 	tdx_config_set_user(pw ? session_uid : -1, ubase);
 	tdx_config_compose(&cfg, conf_path, &profiles, -1); /* profile_dir lives in the base */
 	/* the user's own profiles first: theirs win over /etc/3dxlinux.d's of the same name */
 	profiles.n = 0;
 	if (pw && pw->pw_dir) {
 		char dir[512];
-		char old[512];
 		snprintf(dir, sizeof dir, "%s/.config/3dxlinux/profiles", pw->pw_dir);
-		snprintf(old, sizeof old, "%s/.config/tdxd/profiles", pw->pw_dir);
-		tdx_profiles_add(tdx_compat_path(dir, old), &profiles, 2);
+		tdx_profiles_add(dir, &profiles, 2);
 	}
 	nuser_profiles = profiles.n;
 	int rc = tdx_profiles_add(cfg.profile_dir, &profiles, 0);
@@ -997,16 +990,13 @@ static void load_all(void)
 	/* then the profiles imported from 3DxWare's application configurations
 	 * (tdx-extract-3dxware-ui); the first folder with a match wins */
 	static const char *const imported[] = {"/usr/local/share/3dxlinux/3dxware-ui/profiles",
-					       "/usr/share/3dxlinux/3dxware-ui/profiles",
-					       "/usr/local/share/tdxd/3dxware-ui/profiles"};
+					       "/usr/share/3dxlinux/3dxware-ui/profiles"};
 	for (size_t i = 0; i < sizeof imported / sizeof imported[0]; i++)
 		tdx_profiles_add(imported[i], &profiles, 0);
 	if (pw && pw->pw_dir) {
 		char dir[512];
-		char old[512];
 		snprintf(dir, sizeof dir, "%s/.local/share/3dxlinux/3dxware-ui/profiles", pw->pw_dir);
-		snprintf(old, sizeof old, "%s/.local/share/tdxd/3dxware-ui/profiles", pw->pw_dir);
-		tdx_profiles_add(tdx_compat_path(dir, old), &profiles, 1);
+		tdx_profiles_add(dir, &profiles, 1);
 	}
 	nkey_union = tdx_profiles_key_union(conf_path, &profiles, key_union,
 					    (int)(sizeof key_union / sizeof key_union[0]));
@@ -1150,31 +1140,6 @@ static void uinput_open_dev(struct dev_ctx *d)
 	free(u);
 	if (rc)
 		LOG(0, "uinput disabled: %s\n", strerror(-rc));
-}
-
-/* The control socket was /run/tdxd.sock before 0.3.5: the other standard name
- * links to the one opened, so clients of either age (a FreeCAD add-on loader,
- * tdxctl, scripts) reach it. Only a link of ours is removed. */
-static void socket_alias(int on)
-{
-	static const char *const names[] = {"/run/3dxlinux.sock", "/run/tdxd.sock"};
-	static const char *alias;
-	if (!on) {
-		struct stat st;
-		if (alias && !lstat(alias, &st) && S_ISLNK(st.st_mode))
-			unlink(alias);
-		alias = NULL;
-		return;
-	}
-	for (int i = 0; i < 2; i++)
-		if (!strcmp(ctl_path, names[i])) {
-			const char *other = names[1 - i];
-			struct stat st;
-			if (!lstat(other, &st) && (S_ISLNK(st.st_mode) || S_ISSOCK(st.st_mode)))
-				unlink(other); /* a stale socket or link, not a file */
-			if (lstat(other, &st) && !symlink(strrchr(ctl_path, '/') + 1, other))
-				alias = other;
-		}
 }
 
 /* A keyboard device for keys that come from no button (the radial menu's):
@@ -1713,8 +1678,6 @@ int main(int argc, char **argv)
 	}
 
 	cli_verbose = verbose;
-	if (!strcmp(conf_path, DEFAULT_CONF))  /* /etc/tdxd.conf before 0.3.5 */
-		conf_path = tdx_compat_path(DEFAULT_CONF, "/etc/tdxd.conf");
 	if (access(conf_path, R_OK) && strcmp(conf_path, DEFAULT_CONF))
 		fprintf(stderr, "tdxd: cannot read %s: %s\n", conf_path, strerror(errno));
 	load_all();
@@ -1739,7 +1702,6 @@ int main(int argc, char **argv)
 	if (cfg.control_socket[0]) {
 		snprintf(ctl_path, sizeof ctl_path, "%s", cfg.control_socket);
 		ctl_fd = tdx_ctl_listen(ctl_path);
-		socket_alias(1);
 		if (ctl_fd < 0)
 			LOG(0, "control socket %s: %s (tdxctl disabled)\n", ctl_path, strerror(-ctl_fd));
 	}
@@ -1880,7 +1842,6 @@ int main(int argc, char **argv)
 	if (ctl_fd >= 0) {
 		close(ctl_fd);
 		unlink(ctl_path);
-		socket_alias(0);
 	}
 	return 0;
 }

@@ -370,62 +370,6 @@ def user_settings_dir():
     return os.path.join(base, "3dxlinux")
 
 
-def compat_path(path, old):
-    """@path, or @old (its name before 0.3.5, tdxd's) while only that exists."""
-    return old if not os.path.exists(path) and os.path.exists(old) else path
-
-
-def default_config():
-    return compat_path("/etc/3dxlinux.conf", "/etc/tdxd.conf")
-
-
-def migrate_user_files():
-    """Before 0.3.5 your own files were in ~/.config/tdxd (tdxd.conf, the
-    profiles, the LCD Manager's and applets' settings) and ~/.local/share/tdxd
-    (the imported 3DxWare look, radial menu icons): move them once to the
-    3dxlinux names, and the paths in them (a radial menu's icon) with them.
-    The tray does it at login, the panel when it starts. True if it moved any."""
-    cfg_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    moved = False
-    for home in (cfg_home, data_home):
-        old, new = os.path.join(home, "tdxd"), os.path.join(home, "3dxlinux")
-        if os.path.isdir(old) and not os.path.islink(old) and not os.path.exists(new):
-            try:
-                os.rename(old, new)
-                moved = True
-            except OSError:
-                pass
-    new_cfg = os.path.join(cfg_home, "3dxlinux")
-    if os.path.isfile(os.path.join(new_cfg, "tdxd.conf")) and \
-            not os.path.exists(os.path.join(new_cfg, "3dxlinux.conf")):
-        os.rename(os.path.join(new_cfg, "tdxd.conf"), os.path.join(new_cfg, "3dxlinux.conf"))
-        moved = True
-    if not moved:
-        return False
-    old_data, new_data = os.path.join(data_home, "tdxd"), os.path.join(data_home, "3dxlinux")
-    files = [os.path.join(new_cfg, "3dxlinux.conf")]
-    for d in (new_cfg, os.path.join(new_cfg, "profiles"),
-              os.path.join(data_home, "applications")):
-        try:
-            files += [os.path.join(d, f) for f in os.listdir(d)
-                      if f.endswith((".conf", ".json", ".ini", ".desktop"))]
-        except OSError:
-            pass
-    for p in files:
-        try:
-            with open(p, encoding="utf-8") as f:
-                s = f.read()
-            t = s.replace(old_data + "/", new_data + "/")
-            if os.path.basename(p).startswith("tdx-") and p.endswith(".desktop"):
-                t = t.replace("/share/tdxd/", "/share/3dxlinux/")
-            if t != s:
-                with open(p, "w", encoding="utf-8") as f:
-                    f.write(t)
-        except (OSError, UnicodeDecodeError):
-            pass
-    return True
-
 
 class LayeredConf:
     """/etc/3dxlinux.conf with your ~/.config/3dxlinux/3dxlinux.conf over it, as tdxd reads
@@ -895,8 +839,8 @@ def read_settings_archive(path):
                 continue
             if info.file_size > 1048576:
                 raise ValueError("%s is too large" % name)
-            pre = next((p for p in ("3dxlinux.d/", "tdxd.d/") if name.startswith(p)), None)
-            if name in ("3dxlinux.conf", "tdxd.conf"):  # (tdxd's names: exported before 0.3.5)
+            pre = "3dxlinux.d/" if name.startswith("3dxlinux.d/") else None
+            if name == "3dxlinux.conf":
                 base = z.read(info).decode("utf-8", "replace")
             elif pre and name.endswith(".conf") and \
                     PROFILE_NAME.match(name[len(pre):-5]) and "/" not in name[len(pre):]:
@@ -1198,9 +1142,7 @@ def asset_dirs():
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
         os.path.join(here, "..", "share", "3dxlinux", "3dxware-ui"),
-        "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui",
-        # imported before 0.3.5 (tdxd's folders), until moved
-        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"), "/usr/local/share/tdxd/3dxware-ui"]
+        "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui"]
 
 
 class Assets:
@@ -5067,8 +5009,7 @@ class App:
         # /etc/3dxlinux.conf isn't yours to write: your own settings, no password
         self.store = Store(args.config, args.profile_dir,
                            None if writable(args.config) else user_settings_dir())
-        sock = args.socket or self.store.base.get("control_socket") or \
-            compat_path("/run/3dxlinux.sock", "/run/tdxd.sock")
+        sock = args.socket or self.store.base.get("control_socket", "/run/3dxlinux.sock")
         self.daemon = Daemon(sock, args.status_file)
         self.status = self.daemon.status()
         self.panels = []
@@ -5573,8 +5514,7 @@ def main():
     global ASSETS
     GLib.set_prgname("tdx-settings")  # Wayland app id = tdx-settings.desktop (taskbar icon)
     ap = argparse.ArgumentParser(description="Settings panel for the tdxd 3Dconnexion driver")
-    ap.add_argument("-c", "--config", default=None,
-                    help="base configuration file (default /etc/3dxlinux.conf)")
+    ap.add_argument("-c", "--config", default="/etc/3dxlinux.conf", help="base configuration file")
     ap.add_argument("--profile-dir", help="per-application profiles (default: profile_dir)")
     ap.add_argument("-p", "--profile", help="edit this profile instead of the active one "
                                             "('' for the default settings)")
@@ -5591,9 +5531,6 @@ def main():
                     help="open the Buttons window too (the On-Screen Display's click)")
     ap.add_argument("-V", "--version", action="version", version="tdx-settings " + APP_VERSION)
     args = ap.parse_args()
-    if args.config is None:
-        args.config = default_config()
-    migrate_user_files()  # tdxd's folder names before 0.3.5
     ASSETS = Assets(args.assets) if not args.no_assets else Assets("/nonexistent")
     install_css(ASSETS)
     if args.snapshot:

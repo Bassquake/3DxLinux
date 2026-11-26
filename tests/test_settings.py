@@ -1037,50 +1037,6 @@ def about_tests():
           ts.about_devices({}) == [], "About: the devices as 3DxWare lists them")
 
 
-def rename_tests(d):
-    """The paths were tdxd's before 0.3.5: your files move once, the paths in
-    them too, and settings exported then still import."""
-    cfg, data = os.path.join(d, "mv-cfg"), os.path.join(d, "mv-data")
-    os.makedirs(os.path.join(cfg, "tdxd", "profiles"))
-    os.makedirs(os.path.join(data, "tdxd", "radial-icons"))
-    icon = os.path.join(data, "tdxd", "radial-icons", "mine.png")
-    open(icon, "w").close()
-    with open(os.path.join(cfg, "tdxd", "tdxd.conf"), "w") as f:
-        f.write("sensitivity = 2\nradial_r1_image = %s\n" % icon)
-    with open(os.path.join(cfg, "tdxd", "profiles", "gimp.conf"), "w") as f:
-        f.write("match = gimp\n")
-    env = {"XDG_CONFIG_HOME": cfg, "XDG_DATA_HOME": data}
-    old = {k: os.environ.get(k) for k in env}
-    os.environ.update(env)
-    try:
-        moved = ts.migrate_user_files()
-        new_conf = os.path.join(cfg, "3dxlinux", "3dxlinux.conf")
-        c = ts.ConfFile(new_conf)
-        check(moved and not os.path.exists(os.path.join(cfg, "tdxd")) and
-              os.path.isfile(os.path.join(cfg, "3dxlinux", "profiles", "gimp.conf")) and
-              c.get("sensitivity") == "2" and
-              c.get("radial_r1_image") == os.path.join(data, "3dxlinux", "radial-icons", "mine.png")
-              and os.path.isfile(c.get("radial_r1_image")),
-              "rename: your files moved to ~/.config/3dxlinux, ~/.local/share/3dxlinux, paths too")
-        check(ts.migrate_user_files() is False, "rename: only once")
-    finally:
-        for k, v in old.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
-    import zipfile
-    zp = os.path.join(d, "old-export.zip")
-    with zipfile.ZipFile(zp, "w") as z:
-        z.writestr("tdxd.conf", "sensitivity = 3\n")
-        z.writestr("tdxd.d/blender.conf", "match = blender\n")
-    base, profs = ts.read_settings_archive(zp)
-    check(base == "sensitivity = 3\n" and list(profs) == ["blender"],
-          "rename: settings exported before 0.3.5 still import")
-    check(ts.compat_path(os.path.join(d, "none-new"), zp) == zp and
-          ts.compat_path(zp, os.path.join(d, "x")) == zp, "rename: the old path while only it exists")
-
-
 def icon_tests(d):
     """A radial menu's icon: Select your icon, and where it is shown."""
     check(ts.icon_file(None) is None and ts.icon_file(os.path.join(d, "none.png")) is None and
@@ -1123,7 +1079,6 @@ def main():
         own_settings_tests(d)
         osd_tests(d)
         about_tests()
-        rename_tests(d)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

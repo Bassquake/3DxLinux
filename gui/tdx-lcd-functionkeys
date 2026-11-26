@@ -62,12 +62,7 @@ FALLBACK_KEYS = {"V3DK_1": "1", "V3DK_6": "6", "V3DK_2": "2", "V3DK_7": "7", "V3
 
 
 def lcdcfg_path():
-    p = os.environ.get("TDX_LCDCFG")
-    if p:
-        return p
-    p = "/run/3dxlinux/LCDCfg.xml"  # /run/tdxd/ from a tdxd before 0.3.5
-    return "/run/tdxd/LCDCfg.xml" if not os.path.exists(p) and \
-        os.path.exists("/run/tdxd/LCDCfg.xml") else p
+    return os.environ.get("TDX_LCDCFG", "/run/3dxlinux/LCDCfg.xml")
 
 
 ICON_SIZES = ("32x32", "48x48", "64x64", "128x128", "256x256", "scalable", "24x24", "16x16")

@@ -37,9 +37,7 @@ void tdx_config_defaults(struct tdx_config *c)
 	for (int i = 0; i < TDX_MAX_LABELS; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
 	c->lcd_slide_step = 80; /* px per 25 ms step: a 1280 px slide takes 0.4 s */
-	/* named tdxd before 0.3.5: the old folder while it hasn't been moved */
-	snprintf(c->profile_dir, sizeof c->profile_dir, "%s",
-		 tdx_compat_path("/etc/3dxlinux.d", "/etc/tdxd.d"));
+	snprintf(c->profile_dir, sizeof c->profile_dir, "/etc/3dxlinux.d");
 	snprintf(c->control_socket, sizeof c->control_socket, "/run/3dxlinux.sock");
 	snprintf(c->lcd_cfg, sizeof c->lcd_cfg, "/run/3dxlinux/LCDCfg.xml");
 }
@@ -48,11 +46,6 @@ static const char *const action_names[TDX_ACT_COUNT] = {
 	"none", "speed_up", "speed_down", "dominant", "rotation", "panzoom", "calibrate", "lcd_next",
 	"settings", "disabled", "commontools", "numpad", "radial",
 };
-
-const char *tdx_compat_path(const char *path, const char *old)
-{
-	return access(path, F_OK) && !access(old, F_OK) ? old : path;
-}
 
 const char *tdx_action_name(int action)
 {

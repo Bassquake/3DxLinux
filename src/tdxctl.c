@@ -18,7 +18,6 @@
  */
 #define _GNU_SOURCE
 #include <errno.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -49,8 +48,6 @@ int main(int argc, char **argv)
 	if (argc > 2 && !strcmp(argv[1], "-s")) {
 		sock = argv[2];
 		ai = 3;
-	} else if (access(sock, F_OK) && !access("/run/tdxd.sock", F_OK)) {
-		sock = "/run/tdxd.sock"; /* a tdxd from before 0.3.5 */
 	}
 	if (ai >= argc)
 		return usage();

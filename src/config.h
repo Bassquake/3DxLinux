@@ -53,8 +53,6 @@ struct tdx_button_action {
 };
 
 const char *tdx_action_name(int action);
-/* @path, or @old (its name before 0.3.5, tdxd's) while only that exists */
-const char *tdx_compat_path(const char *path, const char *old);
 int tdx_action_from_name(const char *name);
 
 #define TDX_MAX_LEDCOLOR 64

@@ -1404,12 +1404,6 @@ static void test_receiver(void)
 	      (vend & 0x10));
 	CHECK(tdx_key_from_name("KEY_SHIFT") == KEY_LEFTSHIFT && tdx_key_from_name("ctrl") == KEY_LEFTCTRL &&
 	      tdx_key_from_name("KEY_ALT") == KEY_LEFTALT && tdx_key_from_name("KEY_SHIFTX") < 0);
-	/* the paths were tdxd's before 0.3.5: the old one while only it exists */
-	write_file("test_old_name.conf", "sensitivity = 1\n");
-	CHECK(!strcmp(tdx_compat_path("test_new_name.conf", "test_old_name.conf"), "test_old_name.conf"));
-	CHECK(!strcmp(tdx_compat_path("test_old_name.conf", "test_new_name.conf"), "test_old_name.conf"));
-	unlink("test_old_name.conf");
-	CHECK(!strcmp(tdx_compat_path("test_new_name.conf", "test_old_name.conf"), "test_new_name.conf"));
 	CHECK(tdx_action_from_name("numpad") == TDX_ACT_NUMPAD &&
 	      !strcmp(tdx_action_name(TDX_ACT_NUMPAD), "numpad"));
 	{

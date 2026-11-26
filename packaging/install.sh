@@ -84,22 +84,6 @@ for d in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pi
 done
 sed "s#/usr/local/lib/3dxlinux#$PREFIX/lib/3dxlinux#" org.tdxd.settings.policy \
 	| install -Dm644 /dev/stdin /usr/share/polkit-1/actions/org.tdxd.settings.policy
-# named after tdxd before 0.3.5: the settings move to the new names (once)
-if [ -f /etc/tdxd.conf ] && [ ! -e /etc/3dxlinux.conf ]; then
-	sed -e "s#/etc/tdxd\.d#/etc/3dxlinux.d#g" -e "s#/run/tdxd\.sock#/run/3dxlinux.sock#g" 	    -e "s#/run/tdxd/#/run/3dxlinux/#g" /etc/tdxd.conf > /etc/3dxlinux.conf &&
-		chmod 644 /etc/3dxlinux.conf && rm -f /etc/tdxd.conf
-fi
-if [ -d /etc/tdxd.d ] && [ ! -L /etc/tdxd.d ]; then
-	mkdir -p /etc/3dxlinux.d
-	for f in /etc/tdxd.d/*; do
-		if [ -e "$f" ] && [ ! -e "/etc/3dxlinux.d/${f##*/}" ]; then mv "$f" /etc/3dxlinux.d/; fi
-	done
-	rm -f /etc/tdxd.d/blender.conf.example
-	rmdir /etc/tdxd.d 2>/dev/null || true
-fi
-if [ -d /usr/local/share/tdxd ] && [ ! -e /usr/local/share/3dxlinux ]; then
-	mv /usr/local/share/tdxd /usr/local/share/3dxlinux
-fi
 mkdir -p /etc/systemd/user /etc/3dxlinux.d
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-focus.service > /etc/systemd/user/tdx-focus.service
 chmod 644 /etc/systemd/user/tdx-focus.service

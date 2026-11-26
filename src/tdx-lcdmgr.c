@@ -268,7 +268,7 @@ static void finder_load(void)
 		return;
 	finder.loaded = 1;
 	const char *home = getenv("HOME");
-	char cands[6][LM_PATH_MAX + 64];
+	char cands[5][LM_PATH_MAX + 64];
 	int n = 0;
 	if (assets_dir[0])
 		snprintf(cands[n++], sizeof cands[0], "%s", assets_dir);
@@ -278,8 +278,6 @@ static void finder_load(void)
 		snprintf(cands[n++], sizeof cands[0], "%.200s/.local/share/3dxlinux/3dxware-ui", home);
 	snprintf(cands[n++], sizeof cands[0], "/usr/local/share/3dxlinux/3dxware-ui");
 	snprintf(cands[n++], sizeof cands[0], "/usr/share/3dxlinux/3dxware-ui");
-	if (home && n < 6) /* imported before 0.3.5, not moved yet */
-		snprintf(cands[n++], sizeof cands[0], "%.200s/.local/share/tdxd/3dxware-ui", home);
 	for (int i = 0; i < n; i++) {
 		char d[LM_PATH_MAX + 96], p[LM_PATH_MAX + 160];
 		snprintf(d, sizeof d, "%.300s/lcdapplets/finder", cands[i]);
@@ -474,9 +472,7 @@ static void hold_tdxd(void)
 	if (hold_fd >= 0)
 		return;
 	struct sockaddr_un a = {.sun_family = AF_UNIX};
-	snprintf(a.sun_path, sizeof a.sun_path, "%s", !strcmp(tdxd_sock, "/run/3dxlinux.sock") &&
-		 access(tdxd_sock, F_OK) && !access("/run/tdxd.sock", F_OK)
-		 ? "/run/tdxd.sock" : tdxd_sock); /* a tdxd from before 0.3.5 */
+	snprintf(a.sun_path, sizeof a.sun_path, "%s", tdxd_sock);
 	int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (fd < 0)
 		return;

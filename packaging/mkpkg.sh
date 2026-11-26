@@ -89,47 +89,7 @@ stage() { # stage LIBDIR -> $STAGE/root
 # upgrade after the settings panel had changed them stopped at a keep-or-replace
 # question. Instead the package carries the defaults in /usr/share/3dxlinux/defaults
 # and puts each one in place only where it is missing - your settings stay.
-SETTINGS='# the paths were named after tdxd before 0.3.5: move the settings and what refers
-# to them (once; anything already under the new name stays)
-if [ -f /etc/tdxd.conf ] && [ ! -e /etc/3dxlinux.conf ]; then
-	sed -e "s#/etc/tdxd\.d#/etc/3dxlinux.d#g" -e "s#/run/tdxd\.sock#/run/3dxlinux.sock#g" \
-	    -e "s#/run/tdxd/#/run/3dxlinux/#g" -e "s#^\(\s*lcd_bmp_dir\s*=\s*\)/run/tdxd\s*\$#\1/run/3dxlinux#" \
-	    /etc/tdxd.conf > /etc/3dxlinux.conf && chmod 644 /etc/3dxlinux.conf && rm -f /etc/tdxd.conf
-fi
-if [ -d /etc/tdxd.d ] && [ ! -L /etc/tdxd.d ]; then
-	mkdir -p /etc/3dxlinux.d
-	for f in /etc/tdxd.d/*; do
-		if [ -e "$f" ] && [ ! -e "/etc/3dxlinux.d/${f##*/}" ]; then mv "$f" /etc/3dxlinux.d/; fi
-	done
-	rm -f /etc/tdxd.d/blender.conf.example
-	rmdir /etc/tdxd.d 2>/dev/null || true
-fi
-if [ -d /usr/local/share/tdxd ] && [ ! -e /usr/local/share/3dxlinux ]; then
-	mv /usr/local/share/tdxd /usr/local/share/3dxlinux
-fi
-for e in /usr/local/share/applications/tdx-*.desktop; do
-	if [ -f "$e" ]; then sed -i "s#/share/tdxd/#/share/3dxlinux/#g" "$e" || true; fi
-done
-getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
-	case "$uid" in ""|*[!0-9]*) continue ;; esac
-	[ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ] || continue
-	case "$home" in /?*) ;; *) continue ;; esac
-	case "$home" in *..*) continue ;; esac
-	[ -d "$home" ] || continue
-	# the FreeCAD add-on loaders (tdx-freecad-addon) find the add-on here now
-	fp="$home/.var/app/org.freecad.FreeCAD/data/FreeCAD"
-	for m in "$home/.local/share/FreeCAD/Mod" "$home"/.local/share/FreeCAD/v*/Mod "$fp/Mod" "$fp"/v*/Mod; do
-		g="$m/TdxdSpaceMouse/InitGui.py"
-		if [ -f "$g" ] && [ ! -L "$g" ]; then
-			sed -i "s#share/tdxd/freecad#share/3dxlinux/freecad#g" "$g" || true
-		fi
-	done
-	# and the Flatpak FreeCAD may reach the socket under its new name
-	o="$home/.local/share/flatpak/overrides/org.freecad.FreeCAD"
-	if [ -f "$o" ] && [ ! -L "$o" ]; then sed -i "s#/run/tdxd\.sock#/run/3dxlinux.sock#g" "$o" || true; fi
-	# (~/.config/tdxd and ~/.local/share/tdxd: moved by the tray and the panel, as the user)
-done
-D=/usr/share/3dxlinux/defaults
+SETTINGS='D=/usr/share/3dxlinux/defaults
 if [ -d "$D" ]; then
 	mkdir -p /etc/3dxlinux.d
 	[ -e /etc/3dxlinux.conf ] || install -m 644 "$D/3dxlinux.conf" /etc/3dxlinux.conf
@@ -212,11 +172,10 @@ if command -v udevadm >/dev/null 2>&1; then udevadm control --reload-rules 2>/de
 # tdxd behind, settings included - the user's choice. Never on an upgrade. Only
 # tdxd's own, exactly named files: the settings and profiles, and what the
 # 3DxWare-look importer wrote system-wide (as root) and in each home.
-CLEANUP='for n in 3dxlinux tdxd; do  # (tdxd: the names before 0.3.5)
-	rm -f /etc/$n.conf /etc/$n.conf.rpmsave /etc/$n.conf.rpmnew /etc/$n.conf.dpkg-old \
-		/etc/$n.conf.dpkg-dist /etc/$n.conf.dpkg-new /etc/$n.conf.tdx-settings.tmp
-	rm -rf /etc/$n.d /usr/local/share/$n
-done
+CLEANUP='rm -f /etc/3dxlinux.conf /etc/3dxlinux.conf.rpmsave /etc/3dxlinux.conf.rpmnew \
+	/etc/3dxlinux.conf.dpkg-old /etc/3dxlinux.conf.dpkg-dist /etc/3dxlinux.conf.dpkg-new \
+	/etc/3dxlinux.conf.tdx-settings.tmp
+rm -rf /etc/3dxlinux.d /usr/local/share/3dxlinux
 # Python bytecode caches written when the programs ran (not package files):
 # without this /usr/lib/3dxlinux stays behind
 rm -rf /usr/lib/3dxlinux/python/__pycache__
@@ -231,7 +190,7 @@ getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
 	case "$home" in /?*) ;; *) continue ;; esac
 	case "$home" in *..*) continue ;; esac
 	[ -d "$home" ] || continue
-	rm -rf "$home/.config/3dxlinux" "$home/.local/share/3dxlinux" "$home/.config/tdxd" "$home/.local/share/tdxd"
+	rm -rf "$home/.config/3dxlinux" "$home/.local/share/3dxlinux"
 	# "Start with the Desktop" turned off: the masks of tdxd services in each home
 	for u in tdx-tray tdx-lcdmgr tdx-focus; do
 		m="$home/.config/systemd/user/$u.service"
@@ -245,7 +204,7 @@ getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
 	done
 	# and the Flatpak FreeCAD permission for tdxd socket it added
 	o="$home/.local/share/flatpak/overrides/org.freecad.FreeCAD"
-	[ -f "$o" ] && sed -i "s|/run/3dxlinux.sock;||; s|/run/tdxd.sock;||; /^filesystems=\$/d" "$o"
+	[ -f "$o" ] && sed -i "s|/run/3dxlinux.sock;||; /^filesystems=\$/d" "$o"
 	rm -f "$home"/.local/share/icons/hicolor/*/apps/tdxd-*.png
 	for e in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
 		rm -f "$home/.local/share/applications/$e.desktop"

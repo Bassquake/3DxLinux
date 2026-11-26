@@ -35,7 +35,6 @@ def asset_dirs():
     return ([env] if env else []) + [
         os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
         "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui",
-        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),  # (before 0.3.5)
         # FreeCAD as a Flatpak sees the host's /usr here
         "/run/host/usr/local/share/3dxlinux/3dxware-ui", "/run/host/usr/share/3dxlinux/3dxware-ui"]
 
