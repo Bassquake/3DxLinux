@@ -97,7 +97,7 @@ if [ -d "$D" ]; then
 	install -m 644 "$D/blender.conf.example" /etc/3dxlinux.d/blender.conf.example  # an example: always current
 fi'
 POST_INSTALL='modprobe uinput 2>/dev/null || true
-# the settings panel was "3D Mouse Settings (tdxd)" before 0.3.5: the copies of
+# the settings panel was "3D Mouse Settings (tdxd)" before 1.0: the copies of
 # its menu entry that the 3DxWare-look importer made (they win over this
 # package entry) get the new name; only that exact line of tdxd own entry
 for e in /usr/local/share/applications/tdx-settings.desktop \
@@ -105,7 +105,7 @@ for e in /usr/local/share/applications/tdx-settings.desktop \
 	[ -f "$e" ] && [ ! -L "$e" ] || continue
 	sed -i "s/^Name=3D Mouse Settings (tdxd)\$/Name=3Dconnexion Settings/" "$e" 2>/dev/null || true
 done
-# the LCD Manager window is opened from 3Dconnexion Settings since 0.3.5, not
+# the LCD Manager window is opened from 3Dconnexion Settings since 1.0, not
 # the menu: hide the importer copies of its entry too
 for e in /usr/local/share/applications/tdx-lcdmanager.desktop \
 	$(getent passwd | cut -d: -f6 | sed "s|$|/.local/share/applications/tdx-lcdmanager.desktop|"); do
