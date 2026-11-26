@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Picture Viewer (tdxd LCD applet)
+Name=Picture Viewer (3DxLinux LCD applet)
 Comment=Settings of the Picture Viewer applet on the SpacePilot PRO LCD
-Exec=tdx-lcd-pictures --configure
-TryExec=tdx-lcd-pictures
+Exec=3dxlinux-lcd-pictures --configure
+TryExec=3dxlinux-lcd-pictures
 Icon=input-mouse
 Terminal=false
 NoDisplay=true

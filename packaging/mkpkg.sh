@@ -36,7 +36,7 @@ stage() { # stage LIBDIR -> $STAGE/root
 	local R=$STAGE/root L=$1
 	rm -rf "$R"
 	for b in tdxd tdx-lcd tdxctl tdx-lcdmgr tdx-lcd-demo tdx-focus tdx-tray tdx-radial tdx-numpad tdx-osd tdx-settings tdx-lcdmanager \
-		 tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures tdx-extract-3dxware-ui; do
+		 3dxlinux-lcd-functionkeys 3dxlinux-lcd-rss 3dxlinux-lcd-pictures tdx-extract-3dxware-ui; do
 		install -Dm755 "$DIST/bin/$b" "$R/usr/bin/$b"
 	done
 	install -Dm755 "$DIST/lib/tdx-settings-helper" "$R/usr/lib/3dxlinux/tdx-settings-helper"
@@ -181,7 +181,7 @@ rm -rf /etc/3dxlinux.d /usr/local/share/3dxlinux
 rm -rf /usr/lib/3dxlinux/python/__pycache__
 rmdir /usr/lib/3dxlinux/python /usr/lib/3dxlinux 2>/dev/null || true
 rm -f /usr/local/share/icons/hicolor/*/apps/tdxd-*.png
-for e in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+for e in tdx-settings tdx-lcdmanager 3dxlinux-lcd-functionkeys 3dxlinux-lcd-rss 3dxlinux-lcd-pictures; do
 	rm -f "/usr/local/share/applications/$e.desktop"
 done
 getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
@@ -206,7 +206,7 @@ getent passwd | while IFS=: read -r _name _pw uid _gid _gecos home _shell; do
 	o="$home/.local/share/flatpak/overrides/org.freecad.FreeCAD"
 	[ -f "$o" ] && sed -i "s|/run/3dxlinux.sock;||; /^filesystems=\$/d" "$o"
 	rm -f "$home"/.local/share/icons/hicolor/*/apps/tdxd-*.png
-	for e in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+	for e in tdx-settings tdx-lcdmanager 3dxlinux-lcd-functionkeys 3dxlinux-lcd-rss 3dxlinux-lcd-pictures; do
 		rm -f "$home/.local/share/applications/$e.desktop"
 	done
 done'

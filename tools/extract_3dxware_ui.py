@@ -463,8 +463,8 @@ def app_icons(exe, outdir, key):
 
 # .desktop entry -> its icon (icon-theme name tdxd-<key>)
 DESKTOP_ICONS = {"tdx-settings": "3dxware", "tdx-lcdmanager": "lcdmanager",
-                 "tdx-lcd-functionkeys": "functionkeys", "tdx-lcd-rss": "rss",
-                 "tdx-lcd-pictures": "pictures"}
+                 "3dxlinux-lcd-functionkeys": "functionkeys", "3dxlinux-lcd-rss": "rss",
+                 "3dxlinux-lcd-pictures": "pictures"}
 
 
 def theme_icon_files(out):
@@ -488,7 +488,7 @@ def install_theme_icons(out, theme_root, apps_dir, system_apps=("/usr/local/shar
     """Put the window icons into the hicolor icon theme as tdxd-<key> and point
     the installed .desktop entries at the largest one. Wayland desktops (GNOME, KDE, WSLg)
     take a window's taskbar icon from the .desktop entry named like its app id
-    (tdx-settings, tdx-lcdmanager, tdx-lcd-rss, ...), never from the window."""
+    (tdx-settings, tdx-lcdmanager, 3dxlinux-lcd-rss, ...), never from the window."""
     n = 0
     largest = {}  # key -> (size, installed path)
     for key, size, path in theme_icon_files(out):

@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=RSS Feeds (tdxd LCD applet)
+Name=RSS Feeds (3DxLinux LCD applet)
 Comment=Settings of the RSS Feeds applet on the SpacePilot PRO LCD
-Exec=tdx-lcd-rss --configure
-TryExec=tdx-lcd-rss
+Exec=3dxlinux-lcd-rss --configure
+TryExec=3dxlinux-lcd-rss
 Icon=input-mouse
 Terminal=false
 NoDisplay=true

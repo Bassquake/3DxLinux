@@ -862,9 +862,9 @@ static void spawn(int prog)
 }
 
 static const struct { const char *exe, *name; } builtin_apps[] = {
-	{"tdx-lcd-functionkeys", "Function Keys"},
-	{"tdx-lcd-rss", "RSS Feeds"},
-	{"tdx-lcd-pictures", "Picture Viewer"},
+	{"3dxlinux-lcd-functionkeys", "Function Keys"},
+	{"3dxlinux-lcd-rss", "RSS Feeds"},
+	{"3dxlinux-lcd-pictures", "Picture Viewer"},
 };
 
 /* Where an applet port is installed: next to us, the source tree's gui/ when

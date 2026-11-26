@@ -141,14 +141,14 @@ install: all
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-lcdmanager | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-lcdmanager
 	install -Dm644 gui/tdxlcd.py $(DESTDIR)$(PREFIX)/lib/3dxlinux/python/tdxlcd.py
 	install -Dm644 gui/lcdapplet.py $(DESTDIR)$(PREFIX)/lib/3dxlinux/python/lcdapplet.py
-	for a in tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do \
+	for a in 3dxlinux-lcd-functionkeys 3dxlinux-lcd-rss 3dxlinux-lcd-pictures; do \
 	  install -Dm755 gui/$$a $(DESTDIR)$(PREFIX)/bin/$$a; done
 	install -Dm644 $(BUILD)/libtdxlcd.a $(DESTDIR)$(PREFIX)/lib/libtdxlcd.a
 	install -Dm755 $(BUILD)/libtdxlcd.so $(DESTDIR)$(PREFIX)/lib/libtdxlcd.so.1
 	ln -sf libtdxlcd.so.1 $(DESTDIR)$(PREFIX)/lib/libtdxlcd.so
 	install -Dm644 src/tdxlcd.h $(DESTDIR)$(PREFIX)/include/tdxlcd.h
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-lcdmgr.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-lcdmgr.service
-	for d in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do \
+	for d in tdx-settings tdx-lcdmanager 3dxlinux-lcd-functionkeys 3dxlinux-lcd-rss 3dxlinux-lcd-pictures; do \
 	  install -Dm644 gui/$$d.desktop $(DESTDIR)$(PREFIX)/share/applications/$$d.desktop; done
 	sed 's#/usr/local/lib/3dxlinux#$(PREFIX)/lib/3dxlinux#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
@@ -190,7 +190,7 @@ dist:
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-lcdmanager > $(DIST)/bin/tdx-lcdmanager
 	mkdir -p $(DIST)/lib/python $(DIST)/include
 	cp gui/tdxlcd.py gui/lcdapplet.py $(DIST)/lib/python/
-	cp gui/tdx-lcd-functionkeys gui/tdx-lcd-rss gui/tdx-lcd-pictures $(DIST)/bin/
+	cp gui/3dxlinux-lcd-functionkeys gui/3dxlinux-lcd-rss gui/3dxlinux-lcd-pictures $(DIST)/bin/
 	cp $(BUILD)/libtdxlcd.a $(DIST)/lib/
 	cp $(BUILD)/libtdxlcd.so $(DIST)/lib/libtdxlcd.so.1
 	cp src/tdxlcd.h $(DIST)/include/

@@ -23,14 +23,14 @@ if [ "${1:-}" = "--remove" ]; then
 	      "$PREFIX/bin/tdx-extract-3dxware-ui" \
 	      "$PREFIX/bin/tdx-lcdmgr" "$PREFIX/bin/tdx-lcdmanager" "$PREFIX/bin/tdx-lcd-demo" \
 	      "$PREFIX/lib/3dxlinux/python/tdxlcd.py" "$PREFIX/lib/3dxlinux/python/lcdapplet.py" \
-	      "$PREFIX/bin/tdx-lcd-functionkeys" "$PREFIX/bin/tdx-lcd-rss" "$PREFIX/bin/tdx-lcd-pictures" \
+	      "$PREFIX/bin/3dxlinux-lcd-functionkeys" "$PREFIX/bin/3dxlinux-lcd-rss" "$PREFIX/bin/3dxlinux-lcd-pictures" \
 	      "$PREFIX/lib/libtdxlcd.a" "$PREFIX/lib/libtdxlcd.so" \
 	      "$PREFIX/lib/libtdxlcd.so.1" "$PREFIX/include/tdxlcd.h" /etc/systemd/user/tdx-lcdmgr.service \
 	      "$PREFIX/share/applications/tdx-settings.desktop" \
 	      "$PREFIX/share/applications/tdx-lcdmanager.desktop" \
-	      "$PREFIX/share/applications/tdx-lcd-functionkeys.desktop" \
-	      "$PREFIX/share/applications/tdx-lcd-rss.desktop" \
-	      "$PREFIX/share/applications/tdx-lcd-pictures.desktop" \
+	      "$PREFIX/share/applications/3dxlinux-lcd-functionkeys.desktop" \
+	      "$PREFIX/share/applications/3dxlinux-lcd-rss.desktop" \
+	      "$PREFIX/share/applications/3dxlinux-lcd-pictures.desktop" \
 	      /usr/share/polkit-1/actions/org.tdxd.settings.policy \
 	      /etc/udev/rules.d/70-3dconnexion-tdxd.rules /etc/udev/rules.d/99-3dconnexion-tdxd.rules \
 	      /etc/systemd/system/tdxd.service \
@@ -69,7 +69,7 @@ install -Dm755 bin/tdx-lcdmanager "$PREFIX/bin/tdx-lcdmanager"
 install -Dm755 bin/tdx-lcd-demo "$PREFIX/bin/tdx-lcd-demo"
 install -Dm644 lib/python/tdxlcd.py "$PREFIX/lib/3dxlinux/python/tdxlcd.py"
 install -Dm644 lib/python/lcdapplet.py "$PREFIX/lib/3dxlinux/python/lcdapplet.py"
-for a in tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+for a in 3dxlinux-lcd-functionkeys 3dxlinux-lcd-rss 3dxlinux-lcd-pictures; do
 	install -Dm755 "bin/$a" "$PREFIX/bin/$a"
 done
 install -Dm644 lib/libtdxlcd.a "$PREFIX/lib/libtdxlcd.a"
@@ -79,7 +79,7 @@ install -Dm644 include/tdxlcd.h "$PREFIX/include/tdxlcd.h"
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-lcdmgr.service > /etc/systemd/user/tdx-lcdmgr.service
 chmod 644 /etc/systemd/user/tdx-lcdmgr.service
 ldconfig 2>/dev/null || true
-for d in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
+for d in tdx-settings tdx-lcdmanager 3dxlinux-lcd-functionkeys 3dxlinux-lcd-rss 3dxlinux-lcd-pictures; do
 	install -Dm644 "$d.desktop" "$PREFIX/share/applications/$d.desktop"
 done
 sed "s#/usr/local/lib/3dxlinux#$PREFIX/lib/3dxlinux#" org.tdxd.settings.policy \

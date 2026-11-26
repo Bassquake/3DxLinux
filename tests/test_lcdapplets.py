@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the LCD applet ports (gui/tdx-lcd-functionkeys, -rss, -pictures):
+"""Tests for the LCD applet ports (gui/3dxlinux-lcd-functionkeys, -rss, -pictures):
 feed parsing, LCDCfg.xml reading, picture scanning, transitions and rendering,
 with and without the extracted artwork (TDX_UI_ASSETS).
 
@@ -59,7 +59,7 @@ def main():
     real_assets = os.environ.get("TDX_UI_ASSETS")
     os.environ["TDX_UI_ASSETS"] = os.path.join(d, "no-assets")
 
-    rss = load("tdx-lcd-rss")
+    rss = load("3dxlinux-lcd-rss")
     t, logo, items = rss.parse_feed(RSS2)
     check(t == "News & Views" and logo == "http://x/logo.png" and len(items) == 2, "RSS 2.0 channel")
     check(items[0] == ("One", "Mon, 17 Nov 2026", "Hello world", "http://x/1"), "RSS 2.0 item: %r" % (items[0],))
@@ -84,8 +84,8 @@ def main():
     for name, data in saved.items():
         json.dump(data, open(os.path.join(d, "3dxlinux", name), "w"))
     started = []
-    for mod, cls in ((rss, "Rss"), (load("tdx-lcd-pictures"), "Pictures"),
-                     (load("tdx-lcd-functionkeys"), "FunctionKeys")):
+    for mod, cls in ((rss, "Rss"), (load("3dxlinux-lcd-pictures"), "Pictures"),
+                     (load("3dxlinux-lcd-functionkeys"), "FunctionKeys")):
         try:
             started.append(getattr(mod, cls)().cfg)
         except Exception as e:  # noqa: BLE001
@@ -110,7 +110,7 @@ def main():
     check(os.path.getsize(os.path.join(d, "rss.png")) > 1000, "RSS renders without artwork")
 
     # Function Keys from the LCDCfg.xml tdxd writes
-    fk = load("tdx-lcd-functionkeys")
+    fk = load("3dxlinux-lcd-functionkeys")
     xml = os.path.join(d, "LCDCfg.xml")
     open(xml, "w").write("""<?xml version="1.0"?><LCDCfg><Device><Name>SpacePilot PRO</Name>
 <Filters><Rotation>true</Rotation><PanZoom>false</PanZoom><Dominant>false</Dominant></Filters>
@@ -185,7 +185,7 @@ def main():
         os.environ["XDG_DATA_DIRS"] = old_dirs
 
     # Picture Viewer
-    pv = load("tdx-lcd-pictures")
+    pv = load("3dxlinux-lcd-pictures")
     pics = os.path.join(d, "pics")
     os.makedirs(os.path.join(pics, "sub"))
     import cairo
@@ -241,11 +241,11 @@ def main():
     os.makedirs(os.path.join(inst, "lib", "3dxlinux", "python"))
     for m in ("tdxlcd.py", "lcdapplet.py"):
         shutil.copy(os.path.join(ROOT, "gui", m), os.path.join(inst, "lib", "3dxlinux", "python", m))
-    progs = ("tdx-lcd-functionkeys", "tdx-lcd-rss", "tdx-lcd-pictures", "tdx-lcdmanager", "tdx-settings")
+    progs = ("3dxlinux-lcd-functionkeys", "3dxlinux-lcd-rss", "3dxlinux-lcd-pictures", "tdx-lcdmanager", "tdx-settings")
     for p in progs:
         shutil.copy(os.path.join(ROOT, "gui", p), os.path.join(inst, "bin", p))
     for p in progs:
-        args = (["--snapshot", os.path.join(d, p + "-inst.png")] if p.startswith("tdx-lcd-")
+        args = (["--snapshot", os.path.join(d, p + "-inst.png")] if p.startswith("3dxlinux-lcd-")
                 else ["--version"])
         r = subprocess.run([sys.executable, "-B", os.path.join(inst, "bin", p)] + args,
                            capture_output=True, text=True, timeout=60)
@@ -269,7 +269,7 @@ def main():
         env = dict(os.environ, TDX_LCD_SOCKET=sock)
         procs = [subprocess.Popen([sys.executable, os.path.join(ROOT, "gui", n)], env=env,
                                   stderr=subprocess.DEVNULL)
-                 for n in ("tdx-lcd-functionkeys", "tdx-lcd-rss", "tdx-lcd-pictures")]
+                 for n in ("3dxlinux-lcd-functionkeys", "3dxlinux-lcd-rss", "3dxlinux-lcd-pictures")]
         import tdxlcd
         end = time.time() + 15
         names = []
@@ -349,7 +349,7 @@ def main():
         # /usr/bin): its entry follows it instead of listing a dead program
         d3 = os.path.join(d, "moved")
         os.makedirs(d3)
-        old = os.path.join(d3, "gone", "tdx-lcd-rss")
+        old = os.path.join(d3, "gone", "3dxlinux-lcd-rss")
         with open(os.path.join(d3, "db.ini"), "w") as fh:
             fh.write('[ClientApplications]\n0="%s","RSS Feeds",E1,A0,S1,L1,C2\n' % old)
         mgr3 = subprocess.Popen([mgr_bin, "-s", os.path.join(d3, "lcd.sock"),
@@ -364,7 +364,7 @@ def main():
                 time.sleep(0.2)
         mgr3.terminate()
         mgr3.wait(timeout=10)
-        want = os.path.realpath(os.path.join(ROOT, "gui", "tdx-lcd-rss"))
+        want = os.path.realpath(os.path.join(ROOT, "gui", "3dxlinux-lcd-rss"))
         check([(q["name"], q["path"]) for q in progs] == [("RSS Feeds", want)],
               "a moved applet's entry follows it: %s" % [(q["name"], q["path"]) for q in progs])
         for q in procs:

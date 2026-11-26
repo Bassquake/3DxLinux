@@ -224,7 +224,7 @@ int tdx_app_from_pid(int pid, char *out, size_t len)
 int tdx_is_own_app(const char *app)
 {
 	static const char *const own[] = {"tdx-settings", "tdx-settings-helper", "tdx-lcdmanager",
-					  "tdx-lcd-functionkeys", "tdx-lcd-rss", "tdx-lcd-pictures",
+					  "3dxlinux-lcd-functionkeys", "3dxlinux-lcd-rss", "3dxlinux-lcd-pictures",
 					  "tdx-lcd-demo", "tdx-extract-3dxware-ui", NULL};
 	for (int i = 0; app && own[i]; i++)
 		if (!strcasecmp(app, own[i]))
