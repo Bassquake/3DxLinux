@@ -231,17 +231,20 @@ def log_sections(tdxctl=None):
          ("Session messages (LCD Manager, focus, tray)",
           run(["journalctl", "--user", "-b", "-u", "tdx-lcdmgr.service", "-u", "tdx-focus.service",
                "-u", "tdx-tray.service", "-n", "300", "--no-pager"])),
-         ("/etc/tdxd.conf", read("/etc/tdxd.conf"))]
-    for p in sorted(glob.glob("/etc/tdxd.d/*.conf")):
+         ("/etc/3dxlinux.conf", read("/etc/3dxlinux.conf"))]
+    for p in sorted(glob.glob("/etc/3dxlinux.d/*.conf")):
         s.append((p, read(p)))
+    for p in ["/etc/tdxd.conf"] + sorted(glob.glob("/etc/tdxd.d/*.conf")):  # before 0.3.5
+        if os.path.isfile(p):
+            s.append((p, read(p)))
     own = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
-                       "tdxd")  # your own settings (tdx-settings, no password)
-    for p in [os.path.join(own, "tdxd.conf")] + sorted(glob.glob(os.path.join(own, "profiles",
+                       "3dxlinux")  # your own settings (tdx-settings, no password)
+    for p in [os.path.join(own, "3dxlinux.conf")] + sorted(glob.glob(os.path.join(own, "profiles",
                                                                               "*.conf"))):
         if os.path.isfile(p):
             s.append((p, read(p)))
-    imp = sorted(glob.glob(os.path.expanduser("~/.local/share/tdxd/3dxware-ui/profiles/*.conf")) +
-                 glob.glob("/usr/local/share/tdxd/3dxware-ui/profiles/*.conf"))
+    imp = sorted(glob.glob(os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui/profiles/*.conf")) +
+                 glob.glob("/usr/local/share/3dxlinux/3dxware-ui/profiles/*.conf"))
     s.append(("Imported 3DxWare profiles", "%d: %s" % (
         len(imp), " ".join(os.path.basename(p)[:-5] for p in imp)) if imp else "none"))
     s.append(("udev rule", read("/usr/lib/udev/rules.d/70-3dconnexion-tdxd.rules")
@@ -533,6 +536,54 @@ def quit_settings(bus):
         pass  # not open
 
 
+def migrate_user_files():
+    """Before 0.3.5 your own files were in ~/.config/tdxd (tdxd.conf, the
+    profiles, the LCD Manager's and applets' settings) and ~/.local/share/tdxd
+    (the imported 3DxWare look, radial menu icons): move them once to the
+    3dxlinux names, and the paths in them (a radial menu's icon) with them.
+    The tray does it at login, the panel when it starts. True if it moved any."""
+    cfg_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    moved = False
+    for home in (cfg_home, data_home):
+        old, new = os.path.join(home, "tdxd"), os.path.join(home, "3dxlinux")
+        if os.path.isdir(old) and not os.path.islink(old) and not os.path.exists(new):
+            try:
+                os.rename(old, new)
+                moved = True
+            except OSError:
+                pass
+    new_cfg = os.path.join(cfg_home, "3dxlinux")
+    if os.path.isfile(os.path.join(new_cfg, "tdxd.conf")) and \
+            not os.path.exists(os.path.join(new_cfg, "3dxlinux.conf")):
+        os.rename(os.path.join(new_cfg, "tdxd.conf"), os.path.join(new_cfg, "3dxlinux.conf"))
+        moved = True
+    if not moved:
+        return False
+    old_data, new_data = os.path.join(data_home, "tdxd"), os.path.join(data_home, "3dxlinux")
+    files = [os.path.join(new_cfg, "3dxlinux.conf")]
+    for d in (new_cfg, os.path.join(new_cfg, "profiles"),
+              os.path.join(data_home, "applications")):
+        try:
+            files += [os.path.join(d, f) for f in os.listdir(d)
+                      if f.endswith((".conf", ".json", ".ini", ".desktop"))]
+        except OSError:
+            pass
+    for p in files:
+        try:
+            with open(p, encoding="utf-8") as f:
+                s = f.read()
+            t = s.replace(old_data + "/", new_data + "/")
+            if os.path.basename(p).startswith("tdx-") and p.endswith(".desktop"):
+                t = t.replace("/share/tdxd/", "/share/3dxlinux/")
+            if t != s:
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(t)
+        except (OSError, UnicodeDecodeError):
+            pass
+    return True
+
+
 def start_osd():
     """The CadMouse's On-Screen Display (tdx-osd), in a unit of its own: it ends
     itself at once unless "Always show On-Screen Display" is ticked."""
@@ -567,6 +618,7 @@ def main():
     except GLib.Error as e:
         print("tdx-tray: no session bus (%s)" % e.message, file=sys.stderr)
         return 0  # nothing to show the icon in
+    migrate_user_files()  # tdxd's folder names before 0.3.5, before anything reads them
     loop = GLib.MainLoop()
     Tray(bus, loop)
     start_osd()

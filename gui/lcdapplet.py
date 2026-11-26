@@ -31,7 +31,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Pango, PangoCairo  # noqa: E402
 
 _here = os.path.dirname(os.path.realpath(__file__))
-sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
 import tdxlcd  # noqa: E402
 
 W, H = 320, 240
@@ -45,14 +45,17 @@ LEFT, RIGHT, OK, CANCEL, UP, DOWN, MENU = (tdxlcd.BUTTON_LEFT, tdxlcd.BUTTON_RIG
 def asset_dirs():
     env = os.environ.get("TDX_UI_ASSETS")
     return ([env] if env else []) + [
-        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
-        os.path.join(_here, "..", "share", "tdxd", "3dxware-ui"),
-        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+        os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
+        os.path.join(_here, "..", "share", "3dxlinux", "3dxware-ui"),
+        "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui",
+        # imported before 0.3.5 (tdxd's folders), until moved
+        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"), "/usr/local/share/tdxd/3dxware-ui"]
 
 
 def config_dir():
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(base, "tdxd")
+    new, old = os.path.join(base, "3dxlinux"), os.path.join(base, "tdxd")
+    return old if not os.path.exists(new) and os.path.isdir(old) else new  # (before 0.3.5)
 
 
 class Art:
@@ -153,7 +156,7 @@ def default_header(cr, title, h=36):
 class Applet:
     NAME = "LCD Applet"
     ART = None              # artwork subdirectory (functionkeys, rss, pictures)
-    CONFIG = None           # config file name in ~/.config/tdxd
+    CONFIG = None           # config file name in ~/.config/3dxlinux
     CONFIG_DEFAULTS = {}
     FPS = 4
 

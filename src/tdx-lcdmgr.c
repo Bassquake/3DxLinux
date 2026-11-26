@@ -74,7 +74,7 @@ struct client {
 
 static struct client cl[MAX_CLIENTS];
 static int listen_fd = -1;
-static char sock_path[108], db_path[LM_PATH_MAX], tdxd_sock[108] = "/run/tdxd.sock";
+static char sock_path[108], db_path[LM_PATH_MAX], tdxd_sock[108] = "/run/3dxlinux.sock";
 static char fake_path[LM_PATH_MAX];
 static int no_seed; /* -F: virtual LCD written to a PPM file (tests, preview) */
 static struct lm_db db;
@@ -268,16 +268,18 @@ static void finder_load(void)
 		return;
 	finder.loaded = 1;
 	const char *home = getenv("HOME");
-	char cands[5][LM_PATH_MAX + 64];
+	char cands[6][LM_PATH_MAX + 64];
 	int n = 0;
 	if (assets_dir[0])
 		snprintf(cands[n++], sizeof cands[0], "%s", assets_dir);
 	if (getenv("TDX_UI_ASSETS"))
 		snprintf(cands[n++], sizeof cands[0], "%.255s", getenv("TDX_UI_ASSETS"));
 	if (home)
+		snprintf(cands[n++], sizeof cands[0], "%.200s/.local/share/3dxlinux/3dxware-ui", home);
+	snprintf(cands[n++], sizeof cands[0], "/usr/local/share/3dxlinux/3dxware-ui");
+	snprintf(cands[n++], sizeof cands[0], "/usr/share/3dxlinux/3dxware-ui");
+	if (home && n < 6) /* imported before 0.3.5, not moved yet */
 		snprintf(cands[n++], sizeof cands[0], "%.200s/.local/share/tdxd/3dxware-ui", home);
-	snprintf(cands[n++], sizeof cands[0], "/usr/local/share/tdxd/3dxware-ui");
-	snprintf(cands[n++], sizeof cands[0], "/usr/share/tdxd/3dxware-ui");
 	for (int i = 0; i < n; i++) {
 		char d[LM_PATH_MAX + 96], p[LM_PATH_MAX + 160];
 		snprintf(d, sizeof d, "%.300s/lcdapplets/finder", cands[i]);
@@ -472,7 +474,9 @@ static void hold_tdxd(void)
 	if (hold_fd >= 0)
 		return;
 	struct sockaddr_un a = {.sun_family = AF_UNIX};
-	snprintf(a.sun_path, sizeof a.sun_path, "%s", tdxd_sock);
+	snprintf(a.sun_path, sizeof a.sun_path, "%s", !strcmp(tdxd_sock, "/run/3dxlinux.sock") &&
+		 access(tdxd_sock, F_OK) && !access("/run/tdxd.sock", F_OK)
+		 ? "/run/tdxd.sock" : tdxd_sock); /* a tdxd from before 0.3.5 */
 	int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (fd < 0)
 		return;
@@ -1133,8 +1137,8 @@ static void usage(void)
 	     "  LCD Manager for the SpacePilot PRO LCD: serves LCD applets (libtdxlcd,\n"
 	     "  tdxlcd.py) and takes the LCD over from tdxd while it runs.\n"
 	     "  -s  applet socket (default $XDG_RUNTIME_DIR/tdx-lcd.sock)\n"
-	     "  -d  settings database (default ~/.config/tdxd/lcdmgr.ini)\n"
-	     "  -t  tdxd control socket (default /run/tdxd.sock)\n"
+	     "  -d  settings database (default ~/.config/3dxlinux/lcdmgr.ini)\n"
+	     "  -t  tdxd control socket (default /run/3dxlinux.sock)\n"
 	     "  -F  virtual LCD: write frames to FILE.ppm instead of the device (testing)\n"
 	     "  -A  3DxWare artwork directory (tdx-extract-3dxware-ui; default: the usual places)\n"
 	     "  -N  don't register the installed applets on first run");

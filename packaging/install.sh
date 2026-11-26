@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install a prebuilt tdxd package (run from the unpacked directory, as root).
 #   sudo ./install.sh            install / upgrade
-#   sudo ./install.sh --remove   uninstall (keeps /etc/tdxd.conf)
+#   sudo ./install.sh --remove   uninstall (keeps /etc/3dxlinux.conf)
 set -eu
 cd "$(dirname "$0")"
 PREFIX=${PREFIX:-/usr/local}
@@ -13,16 +13,16 @@ fi
 
 if [ "${1:-}" = "--remove" ]; then
 	systemctl disable --now tdxd 2>/dev/null || true
-	rm -rf "$PREFIX/share/tdxd/freecad"
+	rm -rf "$PREFIX/share/3dxlinux/freecad"
 	rm -f "$PREFIX/bin/tdxd" "$PREFIX/bin/tdx-lcd" "$PREFIX/bin/tdxctl" "$PREFIX/bin/tdx-focus" \
 	      "$PREFIX/bin/tdx-tray" "$PREFIX/bin/tdx-radial" "$PREFIX/bin/tdx-numpad" "$PREFIX/bin/tdx-osd" /etc/systemd/user/tdx-tray.service \
 	      "$PREFIX/share/metainfo/io.github.bassquake.tdxd.metainfo.xml" \
 	      "$PREFIX/bin/tdx-freecad-addon" \
-	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/tdxd/tdx-settings-helper" \
-	      "$PREFIX/lib/tdxd/tdx-focus-kwin" \
+	      "$PREFIX/bin/tdx-settings" "$PREFIX/lib/3dxlinux/tdx-settings-helper" \
+	      "$PREFIX/lib/3dxlinux/tdx-focus-kwin" \
 	      "$PREFIX/bin/tdx-extract-3dxware-ui" \
 	      "$PREFIX/bin/tdx-lcdmgr" "$PREFIX/bin/tdx-lcdmanager" "$PREFIX/bin/tdx-lcd-demo" \
-	      "$PREFIX/lib/tdxd/python/tdxlcd.py" "$PREFIX/lib/tdxd/python/lcdapplet.py" \
+	      "$PREFIX/lib/3dxlinux/python/tdxlcd.py" "$PREFIX/lib/3dxlinux/python/lcdapplet.py" \
 	      "$PREFIX/bin/tdx-lcd-functionkeys" "$PREFIX/bin/tdx-lcd-rss" "$PREFIX/bin/tdx-lcd-pictures" \
 	      "$PREFIX/lib/libtdxlcd.a" "$PREFIX/lib/libtdxlcd.so" \
 	      "$PREFIX/lib/libtdxlcd.so.1" "$PREFIX/include/tdxlcd.h" /etc/systemd/user/tdx-lcdmgr.service \
@@ -34,11 +34,11 @@ if [ "${1:-}" = "--remove" ]; then
 	      /usr/share/polkit-1/actions/org.tdxd.settings.policy \
 	      /etc/udev/rules.d/70-3dconnexion-tdxd.rules /etc/udev/rules.d/99-3dconnexion-tdxd.rules \
 	      /etc/systemd/system/tdxd.service \
-	      /etc/systemd/user/tdx-focus.service /etc/tdxd.d/blender.conf.example
-	rmdir "$PREFIX/lib/tdxd/python" "$PREFIX/lib/tdxd" 2>/dev/null || true
+	      /etc/systemd/user/tdx-focus.service /etc/3dxlinux.d/blender.conf.example
+	rmdir "$PREFIX/lib/3dxlinux/python" "$PREFIX/lib/3dxlinux" 2>/dev/null || true
 	udevadm control --reload 2>/dev/null || true
 	systemctl daemon-reload 2>/dev/null || true
-	echo "removed (kept /etc/tdxd.conf and any profiles in /etc/tdxd.d)"
+	echo "removed (kept /etc/3dxlinux.conf and any profiles in /etc/3dxlinux.d)"
 	exit 0
 fi
 
@@ -56,19 +56,19 @@ sed -e "s/@VERSION@/$(cut -d" " -f1 VERSION | sed s/^v//)/" -e "s/@DATE@/$(date 
 # FreeCAD add-on: the keys follow the active workbench (tdx-freecad-addon puts
 # its loader into each user's FreeCAD folder, at login via tdx-focus)
 install -Dm755 bin/tdx-freecad-addon "$PREFIX/bin/tdx-freecad-addon"
-install -Dm644 freecad/tdxd_freecad.py "$PREFIX/share/tdxd/freecad/tdxd_freecad.py"
-install -Dm644 freecad/TdxdSpaceMouse/InitGui.py "$PREFIX/share/tdxd/freecad/TdxdSpaceMouse/InitGui.py"
+install -Dm644 freecad/tdxd_freecad.py "$PREFIX/share/3dxlinux/freecad/tdxd_freecad.py"
+install -Dm644 freecad/TdxdSpaceMouse/InitGui.py "$PREFIX/share/3dxlinux/freecad/TdxdSpaceMouse/InitGui.py"
 # settings panel (Python 3 + GTK 3: python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)
 install -Dm755 bin/tdx-settings "$PREFIX/bin/tdx-settings"
-install -Dm755 lib/tdx-settings-helper "$PREFIX/lib/tdxd/tdx-settings-helper"
-install -Dm755 lib/tdx-focus-kwin "$PREFIX/lib/tdxd/tdx-focus-kwin"   # focus tracking on KDE Plasma
+install -Dm755 lib/tdx-settings-helper "$PREFIX/lib/3dxlinux/tdx-settings-helper"
+install -Dm755 lib/tdx-focus-kwin "$PREFIX/lib/3dxlinux/tdx-focus-kwin"   # focus tracking on KDE Plasma
 install -Dm755 bin/tdx-extract-3dxware-ui "$PREFIX/bin/tdx-extract-3dxware-ui"
 # LCD Manager (Linux LCDMon), its window, the applet library and a demo applet
 install -Dm755 bin/tdx-lcdmgr "$PREFIX/bin/tdx-lcdmgr"
 install -Dm755 bin/tdx-lcdmanager "$PREFIX/bin/tdx-lcdmanager"
 install -Dm755 bin/tdx-lcd-demo "$PREFIX/bin/tdx-lcd-demo"
-install -Dm644 lib/python/tdxlcd.py "$PREFIX/lib/tdxd/python/tdxlcd.py"
-install -Dm644 lib/python/lcdapplet.py "$PREFIX/lib/tdxd/python/lcdapplet.py"
+install -Dm644 lib/python/tdxlcd.py "$PREFIX/lib/3dxlinux/python/tdxlcd.py"
+install -Dm644 lib/python/lcdapplet.py "$PREFIX/lib/3dxlinux/python/lcdapplet.py"
 for a in tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
 	install -Dm755 "bin/$a" "$PREFIX/bin/$a"
 done
@@ -82,20 +82,36 @@ ldconfig 2>/dev/null || true
 for d in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do
 	install -Dm644 "$d.desktop" "$PREFIX/share/applications/$d.desktop"
 done
-sed "s#/usr/local/lib/tdxd#$PREFIX/lib/tdxd#" org.tdxd.settings.policy \
+sed "s#/usr/local/lib/3dxlinux#$PREFIX/lib/3dxlinux#" org.tdxd.settings.policy \
 	| install -Dm644 /dev/stdin /usr/share/polkit-1/actions/org.tdxd.settings.policy
-mkdir -p /etc/systemd/user /etc/tdxd.d
+# named after tdxd before 0.3.5: the settings move to the new names (once)
+if [ -f /etc/tdxd.conf ] && [ ! -e /etc/3dxlinux.conf ]; then
+	sed -e "s#/etc/tdxd\.d#/etc/3dxlinux.d#g" -e "s#/run/tdxd\.sock#/run/3dxlinux.sock#g" 	    -e "s#/run/tdxd/#/run/3dxlinux/#g" /etc/tdxd.conf > /etc/3dxlinux.conf &&
+		chmod 644 /etc/3dxlinux.conf && rm -f /etc/tdxd.conf
+fi
+if [ -d /etc/tdxd.d ] && [ ! -L /etc/tdxd.d ]; then
+	mkdir -p /etc/3dxlinux.d
+	for f in /etc/tdxd.d/*; do
+		if [ -e "$f" ] && [ ! -e "/etc/3dxlinux.d/${f##*/}" ]; then mv "$f" /etc/3dxlinux.d/; fi
+	done
+	rm -f /etc/tdxd.d/blender.conf.example
+	rmdir /etc/tdxd.d 2>/dev/null || true
+fi
+if [ -d /usr/local/share/tdxd ] && [ ! -e /usr/local/share/3dxlinux ]; then
+	mv /usr/local/share/tdxd /usr/local/share/3dxlinux
+fi
+mkdir -p /etc/systemd/user /etc/3dxlinux.d
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-focus.service > /etc/systemd/user/tdx-focus.service
 chmod 644 /etc/systemd/user/tdx-focus.service
 sed "s#/usr/local/bin#$PREFIX/bin#" tdx-tray.service > /etc/systemd/user/tdx-tray.service
 chmod 644 /etc/systemd/user/tdx-tray.service
-install -Dm644 blender.conf.example /etc/tdxd.d/blender.conf.example
-[ -e /etc/tdxd.d/freecad.conf ] || install -Dm644 freecad.conf /etc/tdxd.d/freecad.conf  # FreeCAD's view keys
+install -Dm644 blender.conf.example /etc/3dxlinux.d/blender.conf.example
+[ -e /etc/3dxlinux.d/freecad.conf ] || install -Dm644 freecad.conf /etc/3dxlinux.d/freecad.conf  # FreeCAD's view keys
 install -Dm644 70-3dconnexion-tdxd.rules /etc/udev/rules.d/70-3dconnexion-tdxd.rules
 rm -f /etc/udev/rules.d/99-3dconnexion-tdxd.rules   # its name before 0.3.2: too late for uaccess
 sed "s#/usr/local/bin/tdxd#$PREFIX/bin/tdxd#" tdxd.service > /etc/systemd/system/tdxd.service
 chmod 644 /etc/systemd/system/tdxd.service
-[ -e /etc/tdxd.conf ] || install -Dm644 tdxd.conf /etc/tdxd.conf
+[ -e /etc/3dxlinux.conf ] || install -Dm644 3dxlinux.conf /etc/3dxlinux.conf
 
 modprobe uinput 2>/dev/null || true
 udevadm control --reload
@@ -116,7 +132,7 @@ echo "  try it in the foreground:  sudo $PREFIX/bin/tdxd -v -v"
 echo "  or as a service:           sudo systemctl enable --now tdxd"
 echo "  (stop spacenavd first if it is running: sudo systemctl disable --now spacenavd)"
 echo "  calibrate (re-zero) the cap:   tdxctl calibrate"
-echo "  per-application profiles:      /etc/tdxd.d/*.conf (see blender.conf.example)"
+echo "  per-application profiles:      /etc/3dxlinux.d/*.conf (see blender.conf.example)"
 echo "  focus tracking (KDE Plasma, sway, X11), as your user:  systemctl --user enable --now tdx-focus"
 echo "  the icon in the system tray, as your user:            systemctl --user enable --now tdx-tray"
 echo "  settings panel:                tdx-settings   (needs python3-gi, gir1.2-gtk-3.0, python3-gi-cairo)"

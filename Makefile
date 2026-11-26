@@ -126,21 +126,21 @@ install: all
 	install -Dm755 $(BUILD)/tdxctl   $(DESTDIR)$(PREFIX)/bin/tdxctl
 	install -Dm755 packaging/tdx-focus $(DESTDIR)$(PREFIX)/bin/tdx-focus
 	install -Dm755 packaging/tdx-freecad-addon $(DESTDIR)$(PREFIX)/bin/tdx-freecad-addon
-	install -Dm644 packaging/freecad/tdxd_freecad.py $(DESTDIR)$(PREFIX)/share/tdxd/freecad/tdxd_freecad.py
-	install -Dm644 packaging/freecad/TdxdSpaceMouse/InitGui.py $(DESTDIR)$(PREFIX)/share/tdxd/freecad/TdxdSpaceMouse/InitGui.py
+	install -Dm644 packaging/freecad/tdxd_freecad.py $(DESTDIR)$(PREFIX)/share/3dxlinux/freecad/tdxd_freecad.py
+	install -Dm644 packaging/freecad/TdxdSpaceMouse/InitGui.py $(DESTDIR)$(PREFIX)/share/3dxlinux/freecad/TdxdSpaceMouse/InitGui.py
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-settings | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-settings
-	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-settings-helper
+	install -Dm755 gui/tdx-settings-helper $(DESTDIR)$(PREFIX)/lib/3dxlinux/tdx-settings-helper
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-tray | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-tray
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-radial | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-radial
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-numpad | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-numpad
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-osd | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-osd
-	install -Dm755 packaging/tdx-focus-kwin $(DESTDIR)$(PREFIX)/lib/tdxd/tdx-focus-kwin
+	install -Dm755 packaging/tdx-focus-kwin $(DESTDIR)$(PREFIX)/lib/3dxlinux/tdx-focus-kwin
 	install -Dm755 tools/extract_3dxware_ui.py $(DESTDIR)$(PREFIX)/bin/tdx-extract-3dxware-ui
 	install -Dm755 $(BUILD)/tdx-lcdmgr $(DESTDIR)$(PREFIX)/bin/tdx-lcdmgr
 	install -Dm755 $(BUILD)/tdx-lcd-demo $(DESTDIR)$(PREFIX)/bin/tdx-lcd-demo
 	sed 's/^APP_VERSION = .*/APP_VERSION = "$(VERSION)"/' gui/tdx-lcdmanager | install -Dm755 /dev/stdin $(DESTDIR)$(PREFIX)/bin/tdx-lcdmanager
-	install -Dm644 gui/tdxlcd.py $(DESTDIR)$(PREFIX)/lib/tdxd/python/tdxlcd.py
-	install -Dm644 gui/lcdapplet.py $(DESTDIR)$(PREFIX)/lib/tdxd/python/lcdapplet.py
+	install -Dm644 gui/tdxlcd.py $(DESTDIR)$(PREFIX)/lib/3dxlinux/python/tdxlcd.py
+	install -Dm644 gui/lcdapplet.py $(DESTDIR)$(PREFIX)/lib/3dxlinux/python/lcdapplet.py
 	for a in tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do \
 	  install -Dm755 gui/$$a $(DESTDIR)$(PREFIX)/bin/$$a; done
 	install -Dm644 $(BUILD)/libtdxlcd.a $(DESTDIR)$(PREFIX)/lib/libtdxlcd.a
@@ -150,16 +150,16 @@ install: all
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-lcdmgr.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-lcdmgr.service
 	for d in tdx-settings tdx-lcdmanager tdx-lcd-functionkeys tdx-lcd-rss tdx-lcd-pictures; do \
 	  install -Dm644 gui/$$d.desktop $(DESTDIR)$(PREFIX)/share/applications/$$d.desktop; done
-	sed 's#/usr/local/lib/tdxd#$(PREFIX)/lib/tdxd#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
+	sed 's#/usr/local/lib/3dxlinux#$(PREFIX)/lib/3dxlinux#' gui/org.tdxd.settings.policy | install -Dm644 /dev/stdin $(DESTDIR)/usr/share/polkit-1/actions/org.tdxd.settings.policy
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-focus.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-focus.service
 	sed 's#/usr/local/bin#$(PREFIX)/bin#' packaging/tdx-tray.service | install -Dm644 /dev/stdin $(DESTDIR)/etc/systemd/user/tdx-tray.service
-	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/tdxd.d/blender.conf.example
-	test -e $(DESTDIR)/etc/tdxd.d/freecad.conf || install -Dm644 packaging/profiles/freecad.conf $(DESTDIR)/etc/tdxd.d/freecad.conf
+	install -Dm644 packaging/profiles/blender.conf.example $(DESTDIR)/etc/3dxlinux.d/blender.conf.example
+	test -e $(DESTDIR)/etc/3dxlinux.d/freecad.conf || install -Dm644 packaging/profiles/freecad.conf $(DESTDIR)/etc/3dxlinux.d/freecad.conf
 	sed -e 's/@VERSION@/$(VERSION)/' -e "s/@DATE@/$$(date -u +%Y-%m-%d)/" packaging/io.github.bassquake.tdxd.metainfo.xml | install -Dm644 /dev/stdin $(DESTDIR)$(PREFIX)/share/metainfo/io.github.bassquake.tdxd.metainfo.xml
 	install -Dm644 packaging/70-3dconnexion-tdxd.rules $(DESTDIR)/etc/udev/rules.d/70-3dconnexion-tdxd.rules
 	rm -f $(DESTDIR)/etc/udev/rules.d/99-3dconnexion-tdxd.rules  # old name, too late for uaccess
 	install -Dm644 packaging/tdxd.service $(DESTDIR)/etc/systemd/system/tdxd.service
-	test -e $(DESTDIR)/etc/tdxd.conf || install -Dm644 packaging/tdxd.conf $(DESTDIR)/etc/tdxd.conf
+	test -e $(DESTDIR)/etc/3dxlinux.conf || install -Dm644 packaging/3dxlinux.conf $(DESTDIR)/etc/3dxlinux.conf
 
 # Prebuilt package for testing on another machine:
 #   make dist                 -> build/dist/3DxLinux-<version>-linux-<arch>.tar.gz (static)
@@ -195,7 +195,7 @@ dist:
 	cp $(BUILD)/libtdxlcd.so $(DIST)/lib/libtdxlcd.so.1
 	cp src/tdxlcd.h $(DIST)/include/
 	$(STRIP) $(DIST)/bin/tdxd $(DIST)/bin/tdx-lcd $(DIST)/bin/tdxctl
-	cp packaging/70-3dconnexion-tdxd.rules packaging/tdxd.service packaging/tdxd.conf \
+	cp packaging/70-3dconnexion-tdxd.rules packaging/tdxd.service packaging/3dxlinux.conf \
 	   packaging/tdx-focus.service packaging/tdx-tray.service packaging/profiles/blender.conf.example packaging/profiles/freecad.conf \
 	   packaging/install.sh packaging/tdx-lcdmgr.service gui/*.desktop gui/org.tdxd.settings.policy \
 	   packaging/io.github.bassquake.tdxd.metainfo.xml README.md docs/PROTOCOL.md $(DIST)/

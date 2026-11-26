@@ -34,7 +34,7 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango, PangoCairo  # n
 import cairo  # noqa: E402
 
 _here = os.path.dirname(os.path.realpath(__file__))
-sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
 import tdxlcd  # noqa: E402
 
 APP_VERSION = "dev"  # set by make install / make dist
@@ -53,9 +53,11 @@ def asset_dirs():
     env = os.environ.get("TDX_UI_ASSETS")
     here = os.path.dirname(os.path.realpath(__file__))
     return ([env] if env else []) + [
-        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
-        os.path.join(here, "..", "share", "tdxd", "3dxware-ui"),
-        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+        os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
+        os.path.join(here, "..", "share", "3dxlinux", "3dxware-ui"),
+        "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui",
+        # imported before 0.3.5 (tdxd's folders), until moved
+        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"), "/usr/local/share/tdxd/3dxware-ui"]
 
 
 class Art:

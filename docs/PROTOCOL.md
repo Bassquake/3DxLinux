@@ -102,7 +102,7 @@ byte (see `docs/HARDWARE_TESTS.md`).
 3DxWare keeps one XML configuration per application, for example `Blender.xml`
 or `SolidWorks.xml` in `3DxWinCore64.msi`, and switches with the focused window.
 
-`tdxd` implements this as overlay files in `/etc/tdxd.d/*.conf`, chosen by
+`tdxd` implements this as overlay files in `/etc/3dxlinux.d/*.conf`, chosen by
 process name. The focused application comes from `tdx-focus` (X11
 `_NET_ACTIVE_WINDOW` → `_NET_WM_PID` → `/proc/PID/exe`, or sway's IPC), or else
 from the newest spacenavd client (`SO_PEERCRED`). The 3DxWare XML files are not

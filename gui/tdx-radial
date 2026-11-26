@@ -71,9 +71,11 @@ def asset_dirs():
     env = os.environ.get("TDX_UI_ASSETS")
     here = os.path.dirname(os.path.realpath(__file__))
     return ([env] if env else []) + [
-        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
-        os.path.join(here, "..", "share", "tdxd", "3dxware-ui"),
-        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+        os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
+        os.path.join(here, "..", "share", "3dxlinux", "3dxware-ui"),
+        "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui",
+        # imported before 0.3.5 (tdxd's folders), until moved
+        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"), "/usr/local/share/tdxd/3dxware-ui"]
 
 
 def icon_path(name):
@@ -482,7 +484,7 @@ class RadialMenu(Gtk.Window):
 
 def main():
     ap = argparse.ArgumentParser(description="3DxWare's Common Tools radial menu")
-    ap.add_argument("-s", "--socket", default="/run/tdxd.sock", help="tdxd control socket")
+    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="tdxd control socket")
     ap.add_argument("--menu", help="a radial menu of your own (its ID), instead of Common Tools")
     ap.add_argument("-V", "--version", action="version", version="tdx-radial " + APP_VERSION)
     args = ap.parse_args()
@@ -494,7 +496,7 @@ def main():
     except OSError:
         pass
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
-    sock = args.socket or "/run/tdxd.sock"
+    sock = args.socket or "/run/3dxlinux.sock"
     items = COMMON_TOOLS
     title = "Common Tools"
     if args.menu:

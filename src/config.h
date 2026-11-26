@@ -53,6 +53,8 @@ struct tdx_button_action {
 };
 
 const char *tdx_action_name(int action);
+/* @path, or @old (its name before 0.3.5, tdxd's) while only that exists */
+const char *tdx_compat_path(const char *path, const char *old);
 int tdx_action_from_name(const char *name);
 
 #define TDX_MAX_LEDCOLOR 64
@@ -130,7 +132,7 @@ int tdx_config_load_profile(struct tdx_config *c, const char *path);
  * only match, key_*, action_* and lcd_label_* are taken. */
 int tdx_config_load_user_profile(struct tdx_config *c, const char *path);
 /* The desktop user's own settings (tdx-settings saves them, no password):
- * ~/.config/tdxd/tdxd.conf over /etc/tdxd.conf, and their own profiles. Read
+ * ~/.config/3dxlinux/3dxlinux.conf over /etc/3dxlinux.conf, and their own profiles. Read
  * only if they are plain files of @uid's, and without the options that are
  * paths or tdxd's own plumbing (uinput, sockets, folders ...). */
 void tdx_config_set_user(int uid, const char *user_base);

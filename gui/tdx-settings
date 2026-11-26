@@ -4,11 +4,11 @@
 
 The window layout follows the 3DxWare 10 control panel (main window,
 Advanced Settings, Buttons, LCD Manager, About), but everything it changes is
-plain tdxd configuration: your own ~/.config/tdxd/tdxd.conf over /etc/tdxd.conf,
-and your own per-application profiles (~/.config/tdxd/profiles) before those in
-/etc/tdxd.d, so no password is needed (tdxd reads them while you are at the
+plain tdxd configuration: your own ~/.config/3dxlinux/3dxlinux.conf over /etc/3dxlinux.conf,
+and your own per-application profiles (~/.config/3dxlinux/profiles) before those in
+/etc/3dxlinux.d, so no password is needed (tdxd reads them while you are at the
 screen). Files are edited in place (comments are kept), then the daemon is told
-to reload (`tdxctl reload`). With an /etc/tdxd.conf you can write (root), /etc
+to reload (`tdxctl reload`). With an /etc/3dxlinux.conf you can write (root), /etc
 is edited directly; `pkexec tdx-settings-helper` remains for files there.
 
 All artwork (device illustration, axis glyphs, key caps) is drawn here with
@@ -126,7 +126,7 @@ SPP_LAYOUT = [
      ("V3DK_ROLL_CW", "↻", "Roll +"), ("V3DK_ROLL_CCW", "↺", "Roll −")],
 ]
 
-# Shipped defaults for the base file (packaging/tdxd.conf), used by "Restore Defaults"
+# Shipped defaults for the base file (packaging/3dxlinux.conf), used by "Restore Defaults"
 DEFAULT_KEYS = {"V3DK_ESC": "KEY_ESC", "V3DK_ALT": "KEY_LEFTALT",
                 "V3DK_SHIFT": "KEY_LEFTSHIFT", "V3DK_CTRL": "KEY_LEFTCTRL",
                 # keys 1-12: 3DxWare's defaults for every application (SharedCfg.xml)
@@ -365,13 +365,70 @@ class ConfFile:
 
 def user_settings_dir():
     """Your own settings, saved without a password (tdxd reads them over
-    /etc/tdxd.conf while you are at the screen)."""
+    /etc/3dxlinux.conf while you are at the screen)."""
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(base, "tdxd")
+    return os.path.join(base, "3dxlinux")
+
+
+def compat_path(path, old):
+    """@path, or @old (its name before 0.3.5, tdxd's) while only that exists."""
+    return old if not os.path.exists(path) and os.path.exists(old) else path
+
+
+def default_config():
+    return compat_path("/etc/3dxlinux.conf", "/etc/tdxd.conf")
+
+
+def migrate_user_files():
+    """Before 0.3.5 your own files were in ~/.config/tdxd (tdxd.conf, the
+    profiles, the LCD Manager's and applets' settings) and ~/.local/share/tdxd
+    (the imported 3DxWare look, radial menu icons): move them once to the
+    3dxlinux names, and the paths in them (a radial menu's icon) with them.
+    The tray does it at login, the panel when it starts. True if it moved any."""
+    cfg_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    moved = False
+    for home in (cfg_home, data_home):
+        old, new = os.path.join(home, "tdxd"), os.path.join(home, "3dxlinux")
+        if os.path.isdir(old) and not os.path.islink(old) and not os.path.exists(new):
+            try:
+                os.rename(old, new)
+                moved = True
+            except OSError:
+                pass
+    new_cfg = os.path.join(cfg_home, "3dxlinux")
+    if os.path.isfile(os.path.join(new_cfg, "tdxd.conf")) and \
+            not os.path.exists(os.path.join(new_cfg, "3dxlinux.conf")):
+        os.rename(os.path.join(new_cfg, "tdxd.conf"), os.path.join(new_cfg, "3dxlinux.conf"))
+        moved = True
+    if not moved:
+        return False
+    old_data, new_data = os.path.join(data_home, "tdxd"), os.path.join(data_home, "3dxlinux")
+    files = [os.path.join(new_cfg, "3dxlinux.conf")]
+    for d in (new_cfg, os.path.join(new_cfg, "profiles"),
+              os.path.join(data_home, "applications")):
+        try:
+            files += [os.path.join(d, f) for f in os.listdir(d)
+                      if f.endswith((".conf", ".json", ".ini", ".desktop"))]
+        except OSError:
+            pass
+    for p in files:
+        try:
+            with open(p, encoding="utf-8") as f:
+                s = f.read()
+            t = s.replace(old_data + "/", new_data + "/")
+            if os.path.basename(p).startswith("tdx-") and p.endswith(".desktop"):
+                t = t.replace("/share/tdxd/", "/share/3dxlinux/")
+            if t != s:
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(t)
+        except (OSError, UnicodeDecodeError):
+            pass
+    return True
 
 
 class LayeredConf:
-    """/etc/tdxd.conf with your ~/.config/tdxd/tdxd.conf over it, as tdxd reads
+    """/etc/3dxlinux.conf with your ~/.config/3dxlinux/3dxlinux.conf over it, as tdxd reads
     them: a value of yours wins; changes go to your file only (no password).
     Removing a key /etc sets: "none" for a key or an action (no binding, not
     /etc's); other options fall back to /etc's value (the admin's default)."""
@@ -433,17 +490,17 @@ class LayeredConf:
 class Store:
     """The base config plus one per-application profile being edited.
 
-    With @user_dir (you can't write /etc/tdxd.conf): your own settings, saved
-    without a password. The base is /etc/tdxd.conf with yours over it; profiles
-    are yours (~/.config/tdxd/profiles) before /etc/tdxd.d's, and changing one
+    With @user_dir (you can't write /etc/3dxlinux.conf): your own settings, saved
+    without a password. The base is /etc/3dxlinux.conf with yours over it; profiles
+    are yours (~/.config/3dxlinux/profiles) before /etc/3dxlinux.d's, and changing one
     of /etc's saves your own copy."""
 
     def __init__(self, base_path, profile_dir=None, user_dir=None):
         system = ConfFile(base_path)
         self.user_dir = user_dir
-        self.base = LayeredConf(system, ConfFile(os.path.join(user_dir, "tdxd.conf"))) \
+        self.base = LayeredConf(system, ConfFile(os.path.join(user_dir, "3dxlinux.conf"))) \
             if user_dir else system
-        self.profile_dir = profile_dir or system.get("profile_dir", "/etc/tdxd.d")
+        self.profile_dir = profile_dir or system.get("profile_dir", "/etc/3dxlinux.d")
         self.own_dir = os.path.join(user_dir, "profiles") if user_dir else None
         self.profile = None  # ConfFile or None (= editing the base file)
         self.listeners = []
@@ -467,7 +524,7 @@ class Store:
         return os.path.join(self.profile_dir, name + ".conf")
 
     def profile_source(self, name):
-        """The file profile @name is read from: yours, else /etc/tdxd.d's."""
+        """The file profile @name is read from: yours, else /etc/3dxlinux.d's."""
         p = self.profile_path(name)
         return p if os.path.isfile(p) else self.system_profile_path(name)
 
@@ -475,8 +532,8 @@ class Store:
     def import_dirs():
         """Where tdxd finds the profiles imported from 3DxWare (after profile_dir),
         in tdxd's order (profile.h)."""
-        return ["/usr/local/share/tdxd/3dxware-ui/profiles", "/usr/share/tdxd/3dxware-ui/profiles",
-                os.path.expanduser("~/.local/share/tdxd/3dxware-ui/profiles")]
+        return ["/usr/local/share/3dxlinux/3dxware-ui/profiles", "/usr/share/3dxlinux/3dxware-ui/profiles",
+                os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui/profiles")]
 
     def imported_path(self, name):
         for d in self.import_dirs():
@@ -487,10 +544,10 @@ class Store:
 
     def shipped_path(self, name):
         """The settings profile @name came with, for Restore Defaults: tdxd's own
-        (freecad.conf, kept in /usr/share/tdxd/defaults by the packages) or the
+        (freecad.conf, kept in /usr/share/3dxlinux/defaults by the packages) or the
         one imported from 3DxWare. None for a profile you made yourself."""
         here = os.path.dirname(os.path.realpath(__file__))
-        for d in ("/usr/share/tdxd/defaults", "/usr/local/share/tdxd/defaults",
+        for d in ("/usr/share/3dxlinux/defaults", "/usr/local/share/3dxlinux/defaults",
                   os.path.join(here, "..", "packaging", "profiles")):
             p = os.path.join(d, name + ".conf")
             if os.path.isfile(p):
@@ -519,7 +576,7 @@ class Store:
         f = ConfFile(self.profile_path(name))
         if not f.exists:
             f.lines = ["# tdxd per-application profile, created by tdx-settings.",
-                       "# Settings here override /etc/tdxd.conf while a matching "
+                       "# Settings here override /etc/3dxlinux.conf while a matching "
                        "application is focused.",
                        "match = %s" % match, ""]
             f.dirty = True
@@ -630,8 +687,8 @@ def find_program(name):
     here = os.path.dirname(os.path.realpath(__file__))
     for cand in (os.path.join(here, name),
                  os.path.join(here, "..", "build", os.uname().machine, name),
-                 os.path.join(here, "..", "lib", "tdxd", name),
-                 "/usr/local/lib/tdxd/" + name, "/usr/lib/tdxd/" + name):
+                 os.path.join(here, "..", "lib", "3dxlinux", name),
+                 "/usr/local/lib/3dxlinux/" + name, "/usr/lib/3dxlinux/" + name):
         if os.path.isfile(cand) and os.access(cand, os.X_OK):
             return os.path.realpath(cand)
     return shutil.which(name)
@@ -809,21 +866,21 @@ PROFILE_NAME = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]*$")
 
 def export_settings(store, path):
     """More > Export settings: the base file and every profile in profile_dir,
-    as a zip (tdxd.conf, tdxd.d/NAME.conf). The number of profiles."""
+    as a zip (3dxlinux.conf, 3dxlinux.d/NAME.conf). The number of profiles."""
     import zipfile
     names = store.profile_names()
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("tdxd.conf", store.base.merged_text() if isinstance(store.base, LayeredConf)
+        z.writestr("3dxlinux.conf", store.base.merged_text() if isinstance(store.base, LayeredConf)
                    else store.base.text())
         for n in names:
             with open(store.profile_source(n), encoding="utf-8", errors="replace") as f:
-                z.writestr("tdxd.d/%s.conf" % n, f.read())
+                z.writestr("3dxlinux.d/%s.conf" % n, f.read())
     return len(names)
 
 
 def read_settings_archive(path):
     """An exported settings zip -> (base text or None, {profile name: text});
-    only tdxd.conf and tdxd.d/NAME.conf, each under 1 MiB. ValueError if it
+    only 3dxlinux.conf and 3dxlinux.d/NAME.conf, each under 1 MiB. ValueError if it
     isn't one."""
     import zipfile
     try:
@@ -838,11 +895,12 @@ def read_settings_archive(path):
                 continue
             if info.file_size > 1048576:
                 raise ValueError("%s is too large" % name)
-            if name == "tdxd.conf":
+            pre = next((p for p in ("3dxlinux.d/", "tdxd.d/") if name.startswith(p)), None)
+            if name in ("3dxlinux.conf", "tdxd.conf"):  # (tdxd's names: exported before 0.3.5)
                 base = z.read(info).decode("utf-8", "replace")
-            elif name.startswith("tdxd.d/") and name.endswith(".conf") and \
-                    PROFILE_NAME.match(name[7:-5]) and "/" not in name[7:]:
-                profiles[name[7:-5]] = z.read(info).decode("utf-8", "replace")
+            elif pre and name.endswith(".conf") and \
+                    PROFILE_NAME.match(name[len(pre):-5]) and "/" not in name[len(pre):]:
+                profiles[name[len(pre):-5]] = z.read(info).decode("utf-8", "replace")
     if base is None and not profiles:
         raise ValueError("no tdxd settings in it")
     return base, profiles
@@ -866,10 +924,10 @@ def import_settings(store, base, profiles):
 
 
 def shipped_default(name):
-    """The default copy of a settings file the package came with (tdxd.conf,
+    """The default copy of a settings file the package came with (3dxlinux.conf,
     freecad.conf ...), or None."""
     here = os.path.dirname(os.path.realpath(__file__))
-    for d in ("/usr/share/tdxd/defaults", "/usr/local/share/tdxd/defaults",
+    for d in ("/usr/share/3dxlinux/defaults", "/usr/local/share/3dxlinux/defaults",
               os.path.join(here, "..", "packaging"), os.path.join(here, "..", "packaging", "profiles")):
         p = os.path.join(d, name)
         if os.path.isfile(p):
@@ -889,7 +947,7 @@ def reset_settings(store):
                 if err:
                     errors.append(err)
         return errors
-    src = shipped_default("tdxd.conf")
+    src = shipped_default("3dxlinux.conf")
     if src:
         f = ConfFile(store.base.path)
         f.lines = ConfFile(src).lines[:]
@@ -1138,9 +1196,11 @@ def asset_dirs():
     env = os.environ.get("TDX_UI_ASSETS")
     here = os.path.dirname(os.path.realpath(__file__))
     return ([env] if env else []) + [
-        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"),
-        os.path.join(here, "..", "share", "tdxd", "3dxware-ui"),
-        "/usr/local/share/tdxd/3dxware-ui", "/usr/share/tdxd/3dxware-ui"]
+        os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui"),
+        os.path.join(here, "..", "share", "3dxlinux", "3dxware-ui"),
+        "/usr/local/share/3dxlinux/3dxware-ui", "/usr/share/3dxlinux/3dxware-ui",
+        # imported before 0.3.5 (tdxd's folders), until moved
+        os.path.expanduser("~/.local/share/tdxd/3dxware-ui"), "/usr/local/share/tdxd/3dxware-ui"]
 
 
 class Assets:
@@ -2971,14 +3031,14 @@ def start_osd(sock=None):
 
 def custom_icon_dir():
     base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    return os.path.join(base, "tdxd", "radial-icons")
+    return os.path.join(base, "3dxlinux", "radial-icons")
 
 
 class IconSelector:
     """3DxWare's "Select your icon" (3DxSmartUi's IconSelector) for a radial
     menu. Icon gallery: 3DxWare shows Segoe Fluent Icons' glyphs, a Windows
     font; here the desktop's own icon theme, its symbolic icons. Custom icon:
-    an image file, dropped or chosen, copied to ~/.local/share/tdxd/radial-icons."""
+    an image file, dropped or chosen, copied to ~/.local/share/3dxlinux/radial-icons."""
     W, H = 880, 680
     CELL, COLS = 50, 16
     FORMATS = "SVG, ICO, PNG, GIF, BMP and TIFF"
@@ -3646,7 +3706,7 @@ class MouseButtonsPanel(BindingRows, Panel):
     the mouse itself (tdxd sends it the button map); a keystroke button
     reports apart and tdxd sends the keys. "Application Specific Settings":
     the shown application's profile gets its own CadMouse buttons; off, it
-    uses the global ones (tdxd.conf)."""
+    uses the global ones (3dxlinux.conf)."""
     title = "Buttons"
     subtitle = "Buttons"
     size = (552, 407)
@@ -4906,7 +4966,7 @@ def confirm(parent, text, secondary, ok_label):
 
 def import_look(parent, app):
     """Pick the 3DxWare installer and extract its artwork for this user
-    (~/.local/share/tdxd/3dxware-ui, no password), then restart the LCD
+    (~/.local/share/3dxlinux/3dxware-ui, no password), then restart the LCD
     Manager and this panel so both show it."""
     cmd = find_extractor()
     if not cmd:
@@ -5004,10 +5064,11 @@ def import_look(parent, app):
 class App:
     def __init__(self, args):
         self.args = args
-        # /etc/tdxd.conf isn't yours to write: your own settings, no password
+        # /etc/3dxlinux.conf isn't yours to write: your own settings, no password
         self.store = Store(args.config, args.profile_dir,
                            None if writable(args.config) else user_settings_dir())
-        sock = args.socket or self.store.base.get("control_socket", "/run/tdxd.sock")
+        sock = args.socket or self.store.base.get("control_socket") or \
+            compat_path("/run/3dxlinux.sock", "/run/tdxd.sock")
         self.daemon = Daemon(sock, args.status_file)
         self.status = self.daemon.status()
         self.panels = []
@@ -5512,14 +5573,15 @@ def main():
     global ASSETS
     GLib.set_prgname("tdx-settings")  # Wayland app id = tdx-settings.desktop (taskbar icon)
     ap = argparse.ArgumentParser(description="Settings panel for the tdxd 3Dconnexion driver")
-    ap.add_argument("-c", "--config", default="/etc/tdxd.conf", help="base configuration file")
+    ap.add_argument("-c", "--config", default=None,
+                    help="base configuration file (default /etc/3dxlinux.conf)")
     ap.add_argument("--profile-dir", help="per-application profiles (default: profile_dir)")
     ap.add_argument("-p", "--profile", help="edit this profile instead of the active one "
                                             "('' for the default settings)")
     ap.add_argument("-s", "--socket", help="tdxd control socket (default: control_socket)")
     ap.add_argument("--assets", help="3DxWare artwork from tools/extract_3dxware_ui.py "
-                                     "(default: ~/.local/share/tdxd/3dxware-ui, "
-                                     "/usr/local/share/tdxd/3dxware-ui)")
+                                     "(default: ~/.local/share/3dxlinux/3dxware-ui, "
+                                     "/usr/local/share/3dxlinux/3dxware-ui)")
     ap.add_argument("--no-assets", action="store_true", help="use the built-in drawings")
     ap.add_argument("--snapshot", metavar="DIR", help="render every window to DIR/*.png and exit")
     ap.add_argument("--status-file", help=argparse.SUPPRESS)  # canned `tdxctl status` (tests)
@@ -5529,6 +5591,9 @@ def main():
                     help="open the Buttons window too (the On-Screen Display's click)")
     ap.add_argument("-V", "--version", action="version", version="tdx-settings " + APP_VERSION)
     args = ap.parse_args()
+    if args.config is None:
+        args.config = default_config()
+    migrate_user_files()  # tdxd's folder names before 0.3.5
     ASSETS = Assets(args.assets) if not args.no_assets else Assets("/nonexistent")
     install_css(ASSETS)
     if args.snapshot:

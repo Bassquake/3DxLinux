@@ -95,7 +95,7 @@ def main():
     path = t.write_log(os.path.join(d, "Desktop"), tdxctl=fake_ctl)
     text = open(path).read()
     check(os.path.basename(path).startswith("tdxd-log-") and path.endswith(".txt"), "log name %s" % path)
-    check("==== tdxctl status ====\nfake tdxctl status" in text and "==== /etc/tdxd.conf ====" in text
+    check("==== tdxctl status ====\nfake tdxctl status" in text and "==== /etc/3dxlinux.conf ====" in text
           and "==== tdxd messages (this boot) ====" in text, "log sections")
     again = t.write_log(os.path.join(d, "Desktop"), tdxctl=fake_ctl)
     check(again != path and os.path.exists(path), "a second log in the same second: its own file")

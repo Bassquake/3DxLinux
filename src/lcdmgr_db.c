@@ -274,8 +274,13 @@ int lm_db_add(struct lm_db *db, const char *path, const char *name, int caps, in
 void lm_db_default_path(char *out, unsigned len)
 {
 	const char *x = getenv("XDG_CONFIG_HOME"), *h = getenv("HOME");
+	char base[LM_PATH_MAX + 32], old[LM_PATH_MAX + 64];
 	if (x && *x)
-		snprintf(out, len, "%s/tdxd/lcdmgr.ini", x);
+		snprintf(base, sizeof base, "%.200s", x);
 	else
-		snprintf(out, len, "%s/.config/tdxd/lcdmgr.ini", h && *h ? h : "/tmp");
+		snprintf(base, sizeof base, "%.200s/.config", h && *h ? h : "/tmp");
+	snprintf(out, len, "%s/3dxlinux/lcdmgr.ini", base);
+	snprintf(old, sizeof old, "%s/tdxd/lcdmgr.ini", base); /* before 0.3.5 */
+	if (access(out, F_OK) && !access(old, F_OK))
+		snprintf(out, len, "%s", old);
 }

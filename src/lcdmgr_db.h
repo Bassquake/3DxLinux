@@ -15,7 +15,7 @@
  *   [Application_N]  0=F<family>,I<device id>,E<enabled on that device>
  *
  * Algorithm: 1 manual (device controls), 2 rotate every Delay s, 3 Klever-VU.
- * Stored at $XDG_CONFIG_HOME/tdxd/lcdmgr.ini (default ~/.config/tdxd/lcdmgr.ini).
+ * Stored at $XDG_CONFIG_HOME/3dxlinux/lcdmgr.ini (default ~/.config/3dxlinux/lcdmgr.ini).
  */
 #ifndef TDX_LCDMGR_DB_H
 #define TDX_LCDMGR_DB_H

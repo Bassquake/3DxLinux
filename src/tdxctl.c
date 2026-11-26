@@ -5,7 +5,7 @@
  *   tdxctl profiles            list per-application profiles
  *   tdxctl focus APP [PID]     tell tdxd which application is focused
  *   tdxctl calibrate           re-zero every device (like 3DxWare's "Calibrate")
- *   tdxctl reload              re-read /etc/tdxd.conf and the profiles
+ *   tdxctl reload              re-read /etc/3dxlinux.conf and the profiles
  *   tdxctl buttons             each key's number (the spacenav button) and V3DK id
  *   tdxctl app-keys            the names the application gave its keys (app-buttons)
  *   tdxctl app-buttons PID [V3DK NAME]...
@@ -14,10 +14,11 @@
  *   tdxctl keys KEY_A+KEY_B    type a key combination (the radial menu's, the NumPad's)
  *   tdxctl action NAME         do a button function: speed_up, settings, numpad ...
  *   tdxctl radial ID           a radial menu of your own, as tdx-radial reads it
- *   tdxctl -s SOCKET ...       use another control socket (default /run/tdxd.sock)
+ *   tdxctl -s SOCKET ...       use another control socket (default /run/3dxlinux.sock)
  */
 #define _GNU_SOURCE
 #include <errno.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -39,7 +40,7 @@ static int usage(void)
 
 int main(int argc, char **argv)
 {
-	const char *sock = "/run/tdxd.sock";
+	const char *sock = "/run/3dxlinux.sock";
 	int ai = 1;
 	if (argc > 1 && (!strcmp(argv[1], "-V") || !strcmp(argv[1], "--version"))) {
 		puts("tdxctl " TDX_VERSION);
@@ -48,6 +49,8 @@ int main(int argc, char **argv)
 	if (argc > 2 && !strcmp(argv[1], "-s")) {
 		sock = argv[2];
 		ai = 3;
+	} else if (access(sock, F_OK) && !access("/run/tdxd.sock", F_OK)) {
+		sock = "/run/tdxd.sock"; /* a tdxd from before 0.3.5 */
 	}
 	if (ai >= argc)
 		return usage();

@@ -24,7 +24,7 @@ make it bigger or smaller; the gear shows its options, the X closes it:
     Auto hide   fades out once the pointer has left it (3DxWare: a click
         outside it); back over it in time, it stays
 
-Options, place and size are kept in ~/.config/tdxd/numpad.json.
+Options, place and size are kept in ~/.config/3dxlinux/numpad.json.
 """
 import argparse
 import json
@@ -95,7 +95,7 @@ OPTION_TIPS = {
 
 def prefs_path():
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(base, "tdxd", "numpad.json")
+    return os.path.join(base, "3dxlinux", "numpad.json")
 
 
 def load_prefs():
@@ -590,7 +590,7 @@ class NumPad(Gtk.Window):
 
 def main():
     ap = argparse.ArgumentParser(description="3DxWare's Virtual NumPad")
-    ap.add_argument("-s", "--socket", default="/run/tdxd.sock", help="tdxd control socket")
+    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="tdxd control socket")
     ap.add_argument("--at", help="X,Y: the pointer where the radial menu opened")
     ap.add_argument("-V", "--version", action="version", version="tdx-numpad " + APP_VERSION)
     args = ap.parse_args()
@@ -607,7 +607,7 @@ def main():
             at = tuple(int(float(v)) for v in args.at.split(",")[:2])
         except ValueError:
             pass
-    pad = NumPad(args.socket or "/run/tdxd.sock", at)
+    pad = NumPad(args.socket or "/run/3dxlinux.sock", at)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: pad.close_pad() or False)
     pad.connect("destroy", lambda *_: Gtk.main_quit())
     pad.show_all()

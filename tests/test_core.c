@@ -159,7 +159,7 @@ static void test_config(void)
 	CHECK(c.enable_spnav == 0);
 	/* the shipped example config must parse cleanly */
 	tdx_config_defaults(&c);
-	CHECK(tdx_config_load(&c, "packaging/tdxd.conf") == 0);
+	CHECK(tdx_config_load(&c, "packaging/3dxlinux.conf") == 0);
 	CHECK(c.enable_uinput == 1 && c.enable_spnav == 1 && c.lcd_brightness == 80);
 	/* ESC ALT SHIFT CTRL + keys 1-12 with 3DxWare's defaults (SharedCfg.xml) */
 	CHECK(c.nkeymap == 16 && !strcmp(c.lcd_label[0], "New") && !strcmp(c.lcd_label[9], "Undo"));
@@ -887,7 +887,7 @@ static void test_profiles(void)
 }
 
 /* Profiles imported from 3DxWare (tdx-extract-3dxware-ui): chords one after
- * another, folders after /etc/tdxd.d, and a user's folder limited to keys. */
+ * another, folders after /etc/3dxlinux.d, and a user's folder limited to keys. */
 static void test_imported_profiles(void)
 {
 	static struct tdx_config c;
@@ -915,7 +915,7 @@ static void test_imported_profiles(void)
 	CHECK(strstr(t, ", ") && strstr(t, "+"));  /* "Alt+V, T" */
 	remove("test_seq.conf");
 
-	/* folders: /etc/tdxd.d first, a name taken there is skipped later */
+	/* folders: /etc/3dxlinux.d first, a name taken there is skipped later */
 	mkdir("test_etc.d", 0755);
 	mkdir("test_imp.d", 0755);
 	mkdir("test_user.d", 0755);
@@ -945,7 +945,7 @@ static void test_imported_profiles(void)
 	CHECK(!strcmp(t, "Arrange"));
 	CHECK(tdx_config_load_user_profile(&c, "test_user.d/3dx-link.conf") < 0); /* no symlinks */
 
-	/* the desktop user's own settings (no password): ~/.config/tdxd/tdxd.conf
+	/* the desktop user's own settings (no password): ~/.config/3dxlinux/3dxlinux.conf
 	 * over the base, their own profiles first; paths and plumbing not taken */
 	mkdir("test_own.d", 0755);
 	write_file("test_own_base.conf", "sensitivity = 2.5\ncontrol_socket = /tmp/evil.sock\n"
@@ -1404,6 +1404,12 @@ static void test_receiver(void)
 	      (vend & 0x10));
 	CHECK(tdx_key_from_name("KEY_SHIFT") == KEY_LEFTSHIFT && tdx_key_from_name("ctrl") == KEY_LEFTCTRL &&
 	      tdx_key_from_name("KEY_ALT") == KEY_LEFTALT && tdx_key_from_name("KEY_SHIFTX") < 0);
+	/* the paths were tdxd's before 0.3.5: the old one while only it exists */
+	write_file("test_old_name.conf", "sensitivity = 1\n");
+	CHECK(!strcmp(tdx_compat_path("test_new_name.conf", "test_old_name.conf"), "test_old_name.conf"));
+	CHECK(!strcmp(tdx_compat_path("test_old_name.conf", "test_new_name.conf"), "test_old_name.conf"));
+	unlink("test_old_name.conf");
+	CHECK(!strcmp(tdx_compat_path("test_new_name.conf", "test_old_name.conf"), "test_new_name.conf"));
 	CHECK(tdx_action_from_name("numpad") == TDX_ACT_NUMPAD &&
 	      !strcmp(tdx_action_name(TDX_ACT_NUMPAD), "numpad"));
 	{

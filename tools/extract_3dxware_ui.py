@@ -8,8 +8,8 @@ copies it out of the installer you downloaded, for use on your own machine.
 
     tools/extract_3dxware_ui.py 3DxWare64_v10-9-14_b745.exe [OUTDIR]
 
-OUTDIR defaults to ~/.local/share/tdxd/3dxware-ui (or, as root,
-/usr/local/share/tdxd/3dxware-ui). Needs 7z (p7zip-full / p7zip-plugins).
+OUTDIR defaults to ~/.local/share/3dxlinux/3dxware-ui (or, as root,
+/usr/local/share/3dxlinux/3dxware-ui). Needs 7z (p7zip-full / p7zip-plugins).
 With the default OUTDIR the programs' window icons (the 3Dconnexion logo, the
 LCD Manager's) also go into the hicolor icon theme as tdxd-3dxware and
 tdxd-lcdmanager, and tdx-settings.desktop is pointed at the logo, so the
@@ -866,7 +866,7 @@ def app_profiles(by_name):
             continue
         app = label((root.findtext("CfgProperties/Name") or "").strip()) or fname
         text = ("# %s: 3DxWare's key settings for %s, imported from your 3DxWare installer\n"
-                "# (%s) by tdx-extract-3dxware-ui. Your own profiles in /etc/tdxd.d win.\n"
+                "# (%s) by tdx-extract-3dxware-ui. Your own profiles in /etc/3dxlinux.d win.\n"
                 "match = %s\n" % (pname, strings.get((root.findtext("CfgProperties/Name") or "").strip(), app),
                                   fname, ", ".join(match)))
         text += "\n".join(lines) + "\n"
@@ -890,9 +890,9 @@ def main():
     if not default_out:
         out = sys.argv[2]
     elif os.geteuid() == 0:
-        out = "/usr/local/share/tdxd/3dxware-ui"
+        out = "/usr/local/share/3dxlinux/3dxware-ui"
     else:
-        out = os.path.expanduser("~/.local/share/tdxd/3dxware-ui")
+        out = os.path.expanduser("~/.local/share/3dxlinux/3dxware-ui")
     with tempfile.TemporaryDirectory(prefix="tdx-ui-") as t:
         print("unpacking", os.path.basename(installer))
         by_name = unpack_msi(installer, "3DxWinCore64.msi", t)
@@ -971,7 +971,7 @@ def main():
             print("FreeCAD keys: %d workbenches, %d commands, %d menus"
                   % (len(fc["banks"]), len(fc["actions"]), len(fc["menus"])))
         # every application's key settings, as tdxd profiles (tdxd reads them
-        # after /etc/tdxd.d; see profile.h)
+        # after /etc/3dxlinux.d; see profile.h)
         prof = app_profiles(by_name)
         pdir = os.path.join(out, "profiles")
         os.makedirs(pdir, exist_ok=True)

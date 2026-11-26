@@ -37,15 +37,22 @@ void tdx_config_defaults(struct tdx_config *c)
 	for (int i = 0; i < TDX_MAX_LABELS; i++)
 		snprintf(c->lcd_label[i], sizeof c->lcd_label[i], "Key %d", i + 1);
 	c->lcd_slide_step = 80; /* px per 25 ms step: a 1280 px slide takes 0.4 s */
-	snprintf(c->profile_dir, sizeof c->profile_dir, "/etc/tdxd.d");
-	snprintf(c->control_socket, sizeof c->control_socket, "/run/tdxd.sock");
-	snprintf(c->lcd_cfg, sizeof c->lcd_cfg, "/run/tdxd/LCDCfg.xml");
+	/* named tdxd before 0.3.5: the old folder while it hasn't been moved */
+	snprintf(c->profile_dir, sizeof c->profile_dir, "%s",
+		 tdx_compat_path("/etc/3dxlinux.d", "/etc/tdxd.d"));
+	snprintf(c->control_socket, sizeof c->control_socket, "/run/3dxlinux.sock");
+	snprintf(c->lcd_cfg, sizeof c->lcd_cfg, "/run/3dxlinux/LCDCfg.xml");
 }
 
 static const char *const action_names[TDX_ACT_COUNT] = {
 	"none", "speed_up", "speed_down", "dominant", "rotation", "panzoom", "calibrate", "lcd_next",
 	"settings", "disabled", "commontools", "numpad", "radial",
 };
+
+const char *tdx_compat_path(const char *path, const char *old)
+{
+	return access(path, F_OK) && !access(old, F_OK) ? old : path;
+}
 
 const char *tdx_action_name(int action)
 {
@@ -203,7 +210,7 @@ int tdx_config_load_profile(struct tdx_config *c, const char *path) { return con
 int tdx_config_load_user_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 2); }
 int tdx_config_load_own_profile(struct tdx_config *c, const char *path) { return config_load(c, path, 4); }
 
-/* modes: 0 the base (/etc), 1 a profile (/etc/tdxd.d), and the user's files:
+/* modes: 0 the base (/etc), 1 a profile (/etc/3dxlinux.d), and the user's files:
  * 2 an imported 3DxWare profile (keys only), 3 their own settings over the
  * base, 4 their own profile */
 static int user_uid = -1;
@@ -334,7 +341,7 @@ static int config_load(struct tdx_config *c, const char *path, int profile)
 			continue;
 		}
 		if (profile >= 2 && user_denied(k)) {
-			fprintf(stderr, "%s:%d: '%s' only in /etc/tdxd.conf; ignored\n", path, ln, k);
+			fprintf(stderr, "%s:%d: '%s' only in /etc/3dxlinux.conf; ignored\n", path, ln, k);
 			continue;
 		}
 		if (profile >= 2 && !strcmp(k, "lcd_image") && *v && !user_image_ok(v)) {

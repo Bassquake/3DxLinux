@@ -3,22 +3,22 @@
 # tdx-freecad-addon - put tdxd's FreeCAD add-on loader into your FreeCAD add-on
 # folders (or take it out again), so the SpacePilot's keys follow FreeCAD's
 # active workbench. The add-on itself is installed with tdxd
-# (/usr/share/tdxd/freecad); only a small loader goes into each FreeCAD folder.
+# (/usr/share/3dxlinux/freecad); only a small loader goes into each FreeCAD folder.
 #
 #   tdx-freecad-addon [install]   for every FreeCAD found in your home
 #   tdx-freecad-addon remove
 #
 # FreeCAD from Flathub (org.freecad.FreeCAD) is covered too: it sees the host's
 # /usr as /run/host/usr, and install lets it reach tdxd's socket
-# (flatpak override --user --filesystem=/run/tdxd.sock; remove takes that back).
+# (flatpak override --user --filesystem=/run/3dxlinux.sock; remove takes that back).
 # A Snap can't see /usr, so it isn't covered.
 set -u
 NAME=TdxdSpaceMouse
 FLATPAK_ID=org.freecad.FreeCAD
-SOCK=/run/tdxd.sock
+SOCK=/run/3dxlinux.sock
 here=$(dirname "$(readlink -f "$0")")
 src=""
-for d in "$here/../share/tdxd/freecad" /usr/share/tdxd/freecad /usr/local/share/tdxd/freecad "$here/freecad"; do
+for d in "$here/../share/3dxlinux/freecad" /usr/share/3dxlinux/freecad /usr/local/share/3dxlinux/freecad "$here/freecad"; do
 	[ -f "$d/$NAME/InitGui.py" ] && { src="$d/$NAME"; break; }
 done
 base=${XDG_DATA_HOME:-$HOME/.local/share}/FreeCAD

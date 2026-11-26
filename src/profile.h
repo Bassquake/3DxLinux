@@ -2,14 +2,14 @@
  * Per-application profiles (the Linux counterpart of 3DxWare's per-application
  * configurations, e.g. Blender.xml / SolidWorks.xml in the installer).
  *
- * A profile is <profile_dir>/<name>.conf: any tdxd.conf options (except the
- * daemon-wide ones) layered on top of /etc/tdxd.conf, plus
+ * A profile is <profile_dir>/<name>.conf: any 3dxlinux.conf options (except the
+ * daemon-wide ones) layered on top of /etc/3dxlinux.conf, plus
  *   match = blender, blender-*        process names (case-insensitive globs)
  * which defaults to <name>. The active application comes from tdx-focus /
  * "tdxctl focus APP", or else from the spacenavd client that connected last.
  *
  * Profiles come from several folders, the first match wins: profile_dir
- * (/etc/tdxd.d, yours), then the ones imported from 3DxWare's application
+ * (/etc/3dxlinux.d, yours), then the ones imported from 3DxWare's application
  * configurations (tdx-extract-3dxware-ui: .../3dxware-ui/profiles), system
  * wide and in the desktop user's own folder. A name already taken by an
  * earlier folder is skipped there.
@@ -26,7 +26,7 @@ struct tdx_profile {
 	char path[512];
 	char match[256];   /* from "match =", or the name */
 	int user;          /* 1: imported into a user's folder (tdx_config_load_user_profile);
-			    * 2: the user's own (~/.config/tdxd/profiles, ..._own_profile) */
+			    * 2: the user's own (~/.config/3dxlinux/profiles, ..._own_profile) */
 };
 
 struct tdx_profiles {

@@ -1,6 +1,6 @@
-# Example per-application profile. Copy to /etc/tdxd.d/blender.conf (any name
+# Example per-application profile. Copy to /etc/3dxlinux.d/blender.conf (any name
 # ending in .conf) and run `tdxctl reload`. Everything here is layered on top of
-# /etc/tdxd.conf while a matching application has the focus.
+# /etc/3dxlinux.conf while a matching application has the focus.
 
 # Process names this profile applies to (case-insensitive, * and ? allowed).
 # Without a match line the file name (here "blender") is used.

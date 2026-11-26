@@ -13,7 +13,7 @@ time under the feed's title, moving on every "Display duration" seconds.
 
 Configure... (LCD Manager) edits the list of feeds (URL + optional short name),
 the display duration and "Display feed icon", like the original's dialogs.
-Settings: ~/.config/tdxd/rss.json.
+Settings: ~/.config/3dxlinux/rss.json.
 """
 
 import html
@@ -26,8 +26,8 @@ import time
 import urllib.request
 import xml.etree.ElementTree as ET
 
-_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/tdxd/python
-sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
+_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/3dxlinux/python
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
 import lcdapplet as la  # noqa: E402
 
 UA = "Mozilla/5.0 (compatible; tdxd RSS Feeds applet for Linux)"

@@ -7,7 +7,7 @@ is ticked in the CadMouse's Buttons window (mouse_osd = yes): the focused
 application's icon, then the function of the middle button, and of the back
 and forward buttons, as their icons in the Buttons window - they change with
 your settings and with the application's profile. Drag it anywhere (its place
-is kept in ~/.config/tdxd/osd.json); a click opens the Buttons window.
+is kept in ~/.config/3dxlinux/osd.json); a click opens the Buttons window.
 
 Like the NumPad it never takes the keyboard focus (Wayland: a gtk-layer-shell
 surface). The tray starts it at login and the Buttons window when you tick the
@@ -368,10 +368,13 @@ def start_detached(sock=None):
 
 def main():
     ap = argparse.ArgumentParser(description="3DxWare's On-Screen Display for a CadMouse")
-    ap.add_argument("-c", "--config", default="/etc/tdxd.conf", help="base configuration file")
-    ap.add_argument("-s", "--socket", default="/run/tdxd.sock", help="tdxd control socket")
+    ap.add_argument("-c", "--config", default=None,
+                    help="base configuration file (default /etc/3dxlinux.conf)")
+    ap.add_argument("-s", "--socket", default="/run/3dxlinux.sock", help="tdxd control socket")
     ap.add_argument("-V", "--version", action="version", version="tdx-osd " + APP_VERSION)
     args = ap.parse_args()
+    if args.config is None:
+        args.config = ts.default_config()
     if running():
         return 0
     try:

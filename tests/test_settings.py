@@ -61,16 +61,16 @@ def conf_file_tests(d):
 
 
 def gui_tests(d, tdxd):
-    base = os.path.join(d, "tdxd.conf")
-    pdir = os.path.join(d, "tdxd.d")
+    base = os.path.join(d, "3dxlinux.conf")
+    pdir = os.path.join(d, "3dxlinux.d")
     os.makedirs(pdir)
-    with open(os.path.join(ROOT, "packaging", "tdxd.conf")) as f:
+    with open(os.path.join(ROOT, "packaging", "3dxlinux.conf")) as f:
         text = f.read()
     # keep the test daemon off the system sockets
     text = text.replace("spnav  = yes", "spnav  = no")
-    text = text.replace("control_socket = /run/tdxd.sock",
+    text = text.replace("control_socket = /run/3dxlinux.sock",
                         "control_socket = " + os.path.join(d, "ctl.sock"))
-    text = text.replace("profile_dir = /etc/tdxd.d", "profile_dir = " + pdir)
+    text = text.replace("profile_dir = /etc/3dxlinux.d", "profile_dir = " + pdir)
     with open(base, "w") as f:
         f.write(text)
 
@@ -188,14 +188,14 @@ def gui_tests(d, tdxd):
            "18 images from 3DxLCD10SPPRO.exe", "7 images from zz3DxLCD50RSSReader.exe",
            "10 images from zz3DxLCD60Picture.exe", "75 LCD Manager images from LCDMon.exe",
            "14 taskbar icons in /home/u/.local/share/icons",
-           "wrote /home/u/.local/share/tdxd/3dxware-ui"]
-    check(ts.import_summary(out) == "485 images into /home/u/.local/share/tdxd/3dxware-ui",
+           "wrote /home/u/.local/share/3dxlinux/3dxware-ui"]
+    check(ts.import_summary(out) == "485 images into /home/u/.local/share/3dxlinux/3dxware-ui",
           "import summary: %s" % ts.import_summary(out))
     out2 = out[:-1] + ["66 application profiles (651 keys) in /x/profiles"] + out[-1:]
     check(ts.import_summary(out2) == "485 images and 66 application key settings into "
-          "/home/u/.local/share/tdxd/3dxware-ui", "import summary: %s" % ts.import_summary(out2))
+          "/home/u/.local/share/3dxlinux/3dxware-ui", "import summary: %s" % ts.import_summary(out2))
 
-    # ---- changes apply right away, also for a root-owned /etc/tdxd.conf
+    # ---- changes apply right away, also for a root-owned /etc/3dxlinux.conf
     # (pkexec faked): saved in the background, then on close after a cancel
     from gi.repository import GLib
     app.store.select(None)
@@ -247,12 +247,12 @@ def gui_tests(d, tdxd):
           app.store.base.get("key_V3DK_1") == "KEY_LEFTCTRL+KEY_N" and
           app.store.base.get("lcd_label_1") == "New" and
           app.store.base.get("action_V3DK_MENU") == "settings", "Buttons Restore Defaults")
-    # the panel's defaults are the shipped config's (packaging/tdxd.conf)
-    ship = ts.ConfFile(ts.shipped_default("tdxd.conf"))  # an installed copy comes first
+    # the panel's defaults are the shipped config's (packaging/3dxlinux.conf)
+    ship = ts.ConfFile(ts.shipped_default("3dxlinux.conf"))  # an installed copy comes first
     check(all(chord_norm(ship.get("key_" + k)) == chord_norm(v) for k, v in ts.DEFAULT_KEYS.items()) and
           all(ship.get("action_" + k) == v for k, v in ts.DEFAULT_ACTIONS.items()) and
           all(ship.get("lcd_label_%d" % (i + 1)) == v for i, v in enumerate(ts.DEFAULT_LABELS)),
-          "Restore Defaults matches packaging/tdxd.conf")
+          "Restore Defaults matches packaging/3dxlinux.conf")
 
     # ---- About: start the tray icon and the LCD Manager with the desktop
     log = os.path.join(d, "systemctl.log")
@@ -353,7 +353,7 @@ def gui_tests(d, tdxd):
           main.main_buttons[0].get_sensitive(), "CadMouse: icons, its own Speed, Buttons")
     check(ts.MOUSE_DPI_STEPS[int(main.mouse_speed.get_value())] == 1400, "Speed: 1400 dpi default")
     main.mouse_speed.set_value(ts.MOUSE_DPI_STEPS.index(7200))
-    check(app.store.base.get("mouse_dpi") == "7200", "CadMouse Speed -> mouse_dpi in tdxd.conf")
+    check(app.store.base.get("mouse_dpi") == "7200", "CadMouse Speed -> mouse_dpi in 3dxlinux.conf")
     app.store.select("blender")  # a profile being edited: the mouse settings stay daemon-wide
     main.mouse_speed.set_value(ts.MOUSE_DPI_STEPS.index(400))
     check(app.store.base.get("mouse_dpi") == "400" and not app.store.profile.has("mouse_dpi"),
@@ -760,8 +760,8 @@ def gui_tests(d, tdxd):
     bad = os.path.join(d, "bad.zip")
     with zipfile.ZipFile(bad, "w") as z:
         z.writestr("../evil.conf", "x")
-        z.writestr("tdxd.d/../../evil.conf", "x")
-        z.writestr("tdxd.d/.hidden.conf", "x")
+        z.writestr("3dxlinux.d/../../evil.conf", "x")
+        z.writestr("3dxlinux.d/.hidden.conf", "x")
     try:
         ts.read_settings_archive(bad)
         check(False, "a zip without settings is refused")
@@ -771,17 +771,17 @@ def gui_tests(d, tdxd):
         f.write("match = freecad*\n")  # changed by hand
     check(ts.reset_settings(app.store) == [], "reset ran")
     app.store.base.reload()
-    ship = ts.ConfFile(ts.shipped_default("tdxd.conf"))  # an installed copy comes first
+    ship = ts.ConfFile(ts.shipped_default("3dxlinux.conf"))  # an installed copy comes first
     check(app.store.base.get("sensitivity") == ship.get("sensitivity") and
-          app.store.base.text() == ship.text(), "reset: the default tdxd.conf")
+          app.store.base.text() == ship.text(), "reset: the default 3dxlinux.conf")
     check(not os.path.exists(os.path.join(pdir, "mine.conf")) and
           ts.ConfFile(os.path.join(pdir, "freecad.conf")).get("key_V3DK_TOP") ==
           ts.ConfFile(os.path.join(ROOT, "packaging", "profiles", "freecad.conf")).get("key_V3DK_TOP"),
           "reset: own profiles removed, FreeCAD's back to its default")
     # the password helper removes only profiles (refusals only: the tests may run as root)
     helper = os.path.join(ROOT, "gui", "tdx-settings-helper")
-    for args in (["remove", "/etc/tdxd.conf"], ["remove", "/etc/passwd"],
-                 ["remove", "/etc/tdxd.d/../passwd.conf"]):
+    for args in (["remove", "/etc/3dxlinux.conf"], ["remove", "/etc/passwd"],
+                 ["remove", "/etc/3dxlinux.d/../passwd.conf"]):
         r = subprocess.run(["sh", helper] + args, capture_output=True, text=True)
         check(r.returncode != 0, "helper refuses %s" % " ".join(args))
 
@@ -935,25 +935,25 @@ def numpad_tests(d):
 
 
 def own_settings_tests(d):
-    """Your own settings (no password): /etc/tdxd.conf and /etc/tdxd.d are
-    only read; changes go to ~/.config/tdxd."""
+    """Your own settings (no password): /etc/3dxlinux.conf and /etc/3dxlinux.d are
+    only read; changes go to ~/.config/3dxlinux."""
     etc = os.path.join(d, "own-etc")
-    pdir = os.path.join(etc, "tdxd.d")
+    pdir = os.path.join(etc, "3dxlinux.d")
     os.makedirs(pdir)
-    base = os.path.join(etc, "tdxd.conf")
+    base = os.path.join(etc, "3dxlinux.conf")
     with open(base, "w") as f:
         f.write("sensitivity = 1.5\nkey_V3DK_1 = KEY_F1\nprofile_dir = %s\n" % pdir)
     with open(os.path.join(pdir, "blender.conf"), "w") as f:
         f.write("match = blender\nkey_V3DK_FIT = KEY_HOME\n")
     before = {p: open(p).read() for p in (base, os.path.join(pdir, "blender.conf"))}
-    mine = os.path.join(d, "own-home", "tdxd")
+    mine = os.path.join(d, "own-home", "3dxlinux")
     st = ts.Store(base, None, mine)
     check(st.profile_dir == pdir and st.get("sensitivity") == "1.5" and
           st.profile_names() == ["blender"], "own settings: /etc read through yours")
     st.set("sensitivity", "2.5")
     st.base.remove("key_V3DK_1")
     check(st.get("sensitivity") == "2.5" and st.base.get("key_V3DK_1") == "none" and
-          st.base.path == os.path.join(mine, "tdxd.conf") and ts.write_file(st.base) is None,
+          st.base.path == os.path.join(mine, "3dxlinux.conf") and ts.write_file(st.base) is None,
           "own settings: changes are yours (a key /etc binds: none)")
     st.select("blender")
     check(st.profile.path == os.path.join(mine, "profiles", "blender.conf") and
@@ -974,7 +974,7 @@ def own_settings_tests(d):
     c.lines = b.splitlines()
     check(c.get("sensitivity") == "2.5" and "KEY_END" in profs["blender"] and "gimp" in profs,
           "own settings: Export has what tdxd uses")
-    check(ts.reset_settings(st) == [] and not os.path.exists(os.path.join(mine, "tdxd.conf")) and
+    check(ts.reset_settings(st) == [] and not os.path.exists(os.path.join(mine, "3dxlinux.conf")) and
           not os.listdir(os.path.join(mine, "profiles")) and
           all(open(p).read() == t for p, t in before.items()),
           "own settings: Reset removes yours, /etc stays")
@@ -1037,6 +1037,50 @@ def about_tests():
           ts.about_devices({}) == [], "About: the devices as 3DxWare lists them")
 
 
+def rename_tests(d):
+    """The paths were tdxd's before 0.3.5: your files move once, the paths in
+    them too, and settings exported then still import."""
+    cfg, data = os.path.join(d, "mv-cfg"), os.path.join(d, "mv-data")
+    os.makedirs(os.path.join(cfg, "tdxd", "profiles"))
+    os.makedirs(os.path.join(data, "tdxd", "radial-icons"))
+    icon = os.path.join(data, "tdxd", "radial-icons", "mine.png")
+    open(icon, "w").close()
+    with open(os.path.join(cfg, "tdxd", "tdxd.conf"), "w") as f:
+        f.write("sensitivity = 2\nradial_r1_image = %s\n" % icon)
+    with open(os.path.join(cfg, "tdxd", "profiles", "gimp.conf"), "w") as f:
+        f.write("match = gimp\n")
+    env = {"XDG_CONFIG_HOME": cfg, "XDG_DATA_HOME": data}
+    old = {k: os.environ.get(k) for k in env}
+    os.environ.update(env)
+    try:
+        moved = ts.migrate_user_files()
+        new_conf = os.path.join(cfg, "3dxlinux", "3dxlinux.conf")
+        c = ts.ConfFile(new_conf)
+        check(moved and not os.path.exists(os.path.join(cfg, "tdxd")) and
+              os.path.isfile(os.path.join(cfg, "3dxlinux", "profiles", "gimp.conf")) and
+              c.get("sensitivity") == "2" and
+              c.get("radial_r1_image") == os.path.join(data, "3dxlinux", "radial-icons", "mine.png")
+              and os.path.isfile(c.get("radial_r1_image")),
+              "rename: your files moved to ~/.config/3dxlinux, ~/.local/share/3dxlinux, paths too")
+        check(ts.migrate_user_files() is False, "rename: only once")
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    import zipfile
+    zp = os.path.join(d, "old-export.zip")
+    with zipfile.ZipFile(zp, "w") as z:
+        z.writestr("tdxd.conf", "sensitivity = 3\n")
+        z.writestr("tdxd.d/blender.conf", "match = blender\n")
+    base, profs = ts.read_settings_archive(zp)
+    check(base == "sensitivity = 3\n" and list(profs) == ["blender"],
+          "rename: settings exported before 0.3.5 still import")
+    check(ts.compat_path(os.path.join(d, "none-new"), zp) == zp and
+          ts.compat_path(zp, os.path.join(d, "x")) == zp, "rename: the old path while only it exists")
+
+
 def icon_tests(d):
     """A radial menu's icon: Select your icon, and where it is shown."""
     check(ts.icon_file(None) is None and ts.icon_file(os.path.join(d, "none.png")) is None and
@@ -1079,6 +1123,7 @@ def main():
         own_settings_tests(d)
         osd_tests(d)
         about_tests()
+        rename_tests(d)
     print("%d/%d checks passed" % (checks - fails, checks))
     return 1 if fails else 0
 

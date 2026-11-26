@@ -11,7 +11,7 @@ transitions: None, Fade, Wipe, Circle Wipe, Scatter, or a random one each time.
   OK            pause / resume (play / pause overlay)
 
 Settings as in the original (HKCU\\...\\3DxLCDPicture\\Settings: DefaultFolder,
-IncludeSubfolder, Interval, Transition), in ~/.config/tdxd/pictures.json. The
+IncludeSubfolder, Interval, Transition), in ~/.config/3dxlinux/pictures.json. The
 default folder is the 3Dconnexion sample pictures extracted from the installer,
 else ~/Pictures.
 """
@@ -22,8 +22,8 @@ import random
 import sys
 import time
 
-_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/tdxd/python
-sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
+_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/3dxlinux/python
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
 import lcdapplet as la  # noqa: E402
 import cairo  # noqa: E402
 

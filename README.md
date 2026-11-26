@@ -3,7 +3,7 @@
 3DxLinux is a user-space Linux driver for 3Dconnexion devices. It focuses on the
 **SpacePilot Pro** (046d:c629), including its 320×240 colour LCD. Its driver
 program is `tdxd`; the commands, services and settings files keep that name
-(`tdxctl`, `tdxd.service`, `/etc/tdxd.conf`).
+(`tdxctl`, `tdxd.service`, `/etc/3dxlinux.conf`).
 
 It was rebuilt by reverse engineering the Windows package
 `3DxWare64_v10-9-14_b745.exe` (see [docs/PROTOCOL.md](docs/PROTOCOL.md)).
@@ -15,7 +15,7 @@ components speak, using standard Linux interfaces:
 | Windows component (3DxWare) | Linux replacement in 3DxLinux |
 |---|---|
 | `3dxhid.sys` HID filter: report parsing, axis remap | `hidraw` reader + `report.c` / `process.c` |
-| `3DxService.exe` + `Base.xml` device database | `devices_gen.c` (generated from `Base.xml`) + `/etc/tdxd.conf` |
+| `3DxService.exe` + `Base.xml` device database | `devices_gen.c` (generated from `Base.xml`) + `/etc/3dxlinux.conf` |
 | Input injection to apps | `uinput` virtual device and a spacenavd-compatible socket (`libspnav` apps) |
 | Logitech `LCDMon` / `EDMBTDD.dll` / `LGPBTDD.sys` | `lcd.c` over usbfs: bulk frames and vendor brightness request |
 | `HIDDev.dll` LED on/off | HID output report `{0x04, on}` |
@@ -38,7 +38,7 @@ devices are paired to it and the battery level of a paired CadMouse, and
 device chooser. The CadMouse itself keeps working as an ordinary mouse.
 Its Speed (DPI), Polling Rate and Smart Scrolling are sent to the mouse, as
 3DxWare does (`mouse_dpi`, `mouse_polling_rate`, `mouse_smart_scrolling` in
-`/etc/tdxd.conf`). Pointer acceleration and the wheel's lines per notch are your
+`/etc/3dxlinux.conf`). Pointer acceleration and the wheel's lines per notch are your
 desktop's mouse settings (3DxWare changes Windows' own): on KDE Plasma (Wayland)
 the CadMouse's Advanced Settings sets them for the CadMouse through KWin, as
 System Settings does; elsewhere they are greyed out. Its Buttons (radial-menu, wheel, middle, forward and
@@ -111,8 +111,8 @@ system, click **Install** and enter your password. That's all: the package
 pulls in Python 3 and GTK 3, loads `uinput`, sets up the udev rule, starts
 `tdxd`, and starts the LCD Manager in your session. It replaces `spacenavd` if
 that is installed. Uninstall it from the same software app: that removes
-everything 3DxLinux added, including your settings (`/etc/tdxd.conf`, the profiles
-in `/etc/tdxd.d`, each user's `~/.config/tdxd`) and the imported 3DxWare look.
+everything 3DxLinux added, including your settings (`/etc/3dxlinux.conf`, the profiles
+in `/etc/3dxlinux.d`, each user's `~/.config/3dxlinux`) and the imported 3DxWare look.
 Upgrading keeps your settings.
 
 | File | For |
@@ -145,7 +145,7 @@ sudo systemctl enable --now tdxd
 
 `tdxd` provides the spacenavd socket (`/run/spnav.sock`), so don't run
 `spacenavd` at the same time (the service unit declares `Conflicts=`).
-Edit `/etc/tdxd.conf` and apply the changes with `systemctl reload tdxd`.
+Edit `/etc/3dxlinux.conf` and apply the changes with `systemctl reload tdxd`.
 
 ### Prebuilt package (no compiler on the test machine)
 
@@ -167,7 +167,7 @@ sudo tdxd -v -v
 
 Running the daemon in the foreground shows each detected device, every button
 press (with `-v -v`), and any LCD / LED errors. `sudo ./install.sh --remove`
-uninstalls everything except `/etc/tdxd.conf`.
+uninstalls everything except `/etc/3dxlinux.conf`.
 
 ### First hardware test checklist
 
@@ -219,15 +219,15 @@ Settings**, **Buttons**, **LCD Manager** and **About** ("More ›"). It edits th
 same files as the table below and keeps their comments. As in 3DxWare, every
 change takes effect right away: the panel saves it and runs `tdxctl reload`.
 Your settings are your own, as 3DxWare's are, and need no password: the panel
-saves them in `~/.config/tdxd/tdxd.conf` (over `/etc/tdxd.conf`, the
-system-wide defaults) and your profiles in `~/.config/tdxd/profiles/` (changing
-one of `/etc/tdxd.d`'s saves your own copy). tdxd reads them while you are the
+saves them in `~/.config/3dxlinux/3dxlinux.conf` (over `/etc/3dxlinux.conf`, the
+system-wide defaults) and your profiles in `~/.config/3dxlinux/profiles/` (changing
+one of `/etc/3dxlinux.d`'s saves your own copy). tdxd reads them while you are the
 user at the screen. They are read only if they are plain files of yours, and
 the options that are paths or tdxd's own plumbing (`uinput`, `spnav*`,
 `control_socket`, `profile_dir`, `lcd_cfg`, `lcd_bmp_dir`, `verbose`) count
-only in `/etc/tdxd.conf`; an `lcd_image` must be a file of yours. **Reset all
+only in `/etc/3dxlinux.conf`; an `lcd_image` must be a file of yours. **Reset all
 settings** removes your own files, so the system-wide defaults show again.
-(Run as root, or with an `/etc/tdxd.conf` you can write, the panel edits `/etc`
+(Run as root, or with an `/etc/3dxlinux.conf` you can write, the panel edits `/etc`
 directly.)
 The window title names the profile being edited; click it to switch between the
 defaults and the per-application profiles, or to create one for the focused
@@ -236,8 +236,8 @@ found" page instead, until one is connected.
 
 **More ›** opens 3DxWare's menu:
 
-- **Import settings / Export settings:** a `.zip` with `/etc/tdxd.conf` and your
-  profiles in `/etc/tdxd.d`. Importing replaces the base settings and the
+- **Import settings / Export settings:** a `.zip` with `/etc/3dxlinux.conf` and your
+  profiles in `/etc/3dxlinux.d`. Importing replaces the base settings and the
   profiles of the same names; other profiles stay.
 - **Reset all settings:** the base settings back to their defaults, the FreeCAD
   profile back to its shipped one, your other profiles removed. The profiles
@@ -286,8 +286,8 @@ installer. It imports for your user (no password), then restarts the panel and
 the LCD Manager so both show it. From a terminal:
 
 ```bash
-sudo tdx-extract-3dxware-ui 3DxWare64_v10-9-14_b745.exe     # -> /usr/local/share/tdxd/3dxware-ui
-tools/extract_3dxware_ui.py 3DxWare64_v10-9-14_b745.exe     # or per user -> ~/.local/share/tdxd/3dxware-ui
+sudo tdx-extract-3dxware-ui 3DxWare64_v10-9-14_b745.exe     # -> /usr/local/share/3dxlinux/3dxware-ui
+tools/extract_3dxware_ui.py 3DxWare64_v10-9-14_b745.exe     # or per user -> ~/.local/share/3dxlinux/3dxware-ui
 ```
 
 The extractor only reads files (7z unpacks installer → MSI → CAB; the MSI
@@ -316,7 +316,7 @@ window to PNG (`--no-assets` forces the built-in drawings).
 
 ## Settings (compared with 3DxWare on Windows)
 
-Everything is set in `/etc/tdxd.conf` (or with `tdx-settings`); apply changes
+Everything is set in `/etc/3dxlinux.conf` (or with `tdx-settings`); apply changes
 with `tdxctl reload` or `systemctl reload tdxd`.
 
 | 3DxWare setting | 3DxLinux |
@@ -330,7 +330,7 @@ with `tdxctl reload` or `systemctl reload tdxd`.
 | Buttons: keystrokes | `key_<V3DK id> = KEY [+ KEY …]` (or `none`) |
 | Buttons: Increase/Decrease Speed, Dominant/Rotation/Pan Zoom On/Off, Calibrate | `action_<V3DK id> = speed_up \| speed_down \| dominant \| rotation \| panzoom \| calibrate` (handled by `tdxd`, not sent to the application; the shipped config binds +, −, DOM, LOCK and PAN ZOOM like 3DxWare) |
 | LCD Manager (Logitech LCDMon: applets, switching, brightness) | `tdx-lcdmgr` + `tdx-lcdmanager`, see [docs/LCD_MANAGER.md](docs/LCD_MANAGER.md); without it `tdxd`'s key page: `lcd_brightness`, `lcd_label_N`, `lcd_image` |
-| **Per-application settings** | `/etc/tdxd.d/<name>.conf` profiles |
+| **Per-application settings** | `/etc/3dxlinux.d/<name>.conf` profiles |
 
 ### Calibrate
 
@@ -348,13 +348,13 @@ connects with `calibrate_on_start = yes`.
 
 ### Per-application profiles
 
-A profile is a file in `/etc/tdxd.d/` ending in `.conf`. It holds any
-`tdxd.conf` options and is layered on top of the base file while a matching
+A profile is a file in `/etc/3dxlinux.d/` ending in `.conf`. It holds any
+`3dxlinux.conf` options and is layered on top of the base file while a matching
 application has the focus. Daemon-wide options (sockets, uinput, spnav, `lcd`)
 can't be set in a profile. Start from the shipped example:
 
 ```bash
-sudo cp /etc/tdxd.d/blender.conf.example /etc/tdxd.d/blender.conf && tdxctl reload
+sudo cp /etc/3dxlinux.d/blender.conf.example /etc/3dxlinux.d/blender.conf && tdxctl reload
 ```
 
 `match = blender, blender-*` lists the process names (case-insensitive, globs
@@ -399,10 +399,10 @@ defaults:
 
 A program matches by its process name, taken from 3DxWare's `.exe` name.
 
-Your own profiles in `/etc/tdxd.d` come first: a profile there that matches the
+Your own profiles in `/etc/3dxlinux.d` come first: a profile there that matches the
 same program, or has the same name, wins. `tdxd` reads the profiles from
-`/usr/local/share/tdxd/3dxware-ui/profiles` (imported as root) and from
-`~/.local/share/tdxd/3dxware-ui/profiles` of the desktop user (the one running
+`/usr/local/share/3dxlinux/3dxware-ui/profiles` (imported as root) and from
+`~/.local/share/3dxlinux/3dxware-ui/profiles` of the desktop user (the one running
 `tdx-focus` or the settings panel). From a user's folder it takes only keys, key
 names and actions.
 
@@ -429,7 +429,7 @@ shipped with 3DxLinux: the key sets come from your own installer.
 
 FreeCAD from Flathub works too: `tdx-freecad-addon install` also puts the loader
 in `~/.var/app/org.freecad.FreeCAD/data/FreeCAD/…/Mod` and lets the sandbox
-reach `tdxd`'s socket (`flatpak override --user --filesystem=/run/tdxd.sock
+reach `tdxd`'s socket (`flatpak override --user --filesystem=/run/3dxlinux.sock
 org.freecad.FreeCAD`; `remove` takes that back). FreeCAD as a Snap isn't
 supported.
 
@@ -453,7 +453,7 @@ protocol and the API: [docs/LCD_MANAGER.md](docs/LCD_MANAGER.md). Try it with
 Enterprise (640×150) or Giotto (1280×416). Use `-d VID:PID` to pick one.
 
 ```bash
-tdx-lcd preview page.ppm /etc/tdxd.conf   # render the key page offline
+tdx-lcd preview page.ppm /etc/3dxlinux.conf   # render the key page offline
 ```
 
 ```bash

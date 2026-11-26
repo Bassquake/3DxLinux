@@ -11,8 +11,8 @@ speed) and the text of every button - and draws it on three pages:
   2. the view keys (T/B, F/BK, R/L, ISO1/ISO2, Roll +/-)
   3. SHIFT ESC CTRL ALT MENU, speed -/+, Pan/Zoom, Dominant, Rotation, FIT
 
-LEFT / RIGHT switch pages. tdxd writes the file to /run/tdxd/LCDCfg.xml
-(lcd_cfg in tdxd.conf). The artwork comes from the original applet when it has
+LEFT / RIGHT switch pages. tdxd writes the file to /run/3dxlinux/LCDCfg.xml
+(lcd_cfg in 3dxlinux.conf). The artwork comes from the original applet when it has
 been extracted from the 3DxWare installer (tdx-extract-3dxware-ui).
 """
 
@@ -22,8 +22,8 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/tdxd/python
-sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "tdxd", "python")]
+_here = os.path.dirname(os.path.realpath(__file__))  # source tree: gui/; installed: lib/3dxlinux/python
+sys.path[0:0] = [_here, os.path.join(_here, "..", "lib", "3dxlinux", "python")]
 import lcdapplet as la  # noqa: E402
 import cairo  # noqa: E402
 
@@ -62,7 +62,12 @@ FALLBACK_KEYS = {"V3DK_1": "1", "V3DK_6": "6", "V3DK_2": "2", "V3DK_7": "7", "V3
 
 
 def lcdcfg_path():
-    return os.environ.get("TDX_LCDCFG", "/run/tdxd/LCDCfg.xml")
+    p = os.environ.get("TDX_LCDCFG")
+    if p:
+        return p
+    p = "/run/3dxlinux/LCDCfg.xml"  # /run/tdxd/ from a tdxd before 0.3.5
+    return "/run/tdxd/LCDCfg.xml" if not os.path.exists(p) and \
+        os.path.exists("/run/tdxd/LCDCfg.xml") else p
 
 
 ICON_SIZES = ("32x32", "48x48", "64x64", "128x128", "256x256", "scalable", "24x24", "16x16")

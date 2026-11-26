@@ -175,7 +175,8 @@ int main(int argc, char **argv)
 			return usage();
 		struct tdx_config cfg;
 		tdx_config_defaults(&cfg);
-		tdx_config_load(&cfg, ai + 1 < argc ? argv[ai + 1] : "/etc/tdxd.conf");
+		tdx_config_load(&cfg, ai + 1 < argc ? argv[ai + 1] :
+				tdx_compat_path("/etc/3dxlinux.conf", "/etc/tdxd.conf"));
 		if (kind == TDX_LCD_ENT640 || kind == TDX_LCD_GIO1280)
 			tdx_render_ent_page(&fb, &cfg, def->name, 0, kind == TDX_LCD_GIO1280 ? tdx_config_lcd_pages(&cfg) : 1);
 		else
