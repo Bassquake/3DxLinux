@@ -2,8 +2,10 @@
 
 3DxLinux is a user-space Linux driver for 3Dconnexion devices. It focuses on the
 **SpacePilot Pro** (046d:c629), including its 320×240 colour LCD. Its driver
-program is `tdxd`; the commands, services and settings files keep that name
-(`tdxctl`, `tdxd.service`, `/etc/3dxlinux.conf`).
+program is `tdxd`, and its commands and services keep that name (`tdxctl`,
+`tdxd.service`, the `tdxd` package). Its files are named after 3DxLinux
+(`/etc/3dxlinux.conf`, `/etc/3dxlinux.d`, `/run/3dxlinux.sock`,
+`~/.config/3dxlinux`).
 
 It was rebuilt by reverse engineering the Windows package
 `3DxWare64_v10-9-14_b745.exe` (see [docs/PROTOCOL.md](docs/PROTOCOL.md)).
@@ -236,9 +238,9 @@ found" page instead, until one is connected.
 
 **More ›** opens 3DxWare's menu:
 
-- **Import settings / Export settings:** a `.zip` with `/etc/3dxlinux.conf` and your
-  profiles in `/etc/3dxlinux.d`. Importing replaces the base settings and the
-  profiles of the same names; other profiles stay.
+- **Import settings / Export settings:** a `.zip` with your settings
+  (`3dxlinux.conf`) and your profiles (`3dxlinux.d/`). Importing replaces the
+  base settings and the profiles of the same names; other profiles stay.
 - **Reset all settings:** the base settings back to their defaults, the FreeCAD
   profile back to its shipped one, your other profiles removed. The profiles
   imported from 3DxWare stay.
@@ -259,8 +261,10 @@ Right-click it for a menu:
 - **Start with the Desktop** (a tick box): untick it and the tray icon and the
   LCD Manager no longer start when you log in. The same tick box is in the
   settings panel's About window, where ticking it also starts them again.
-- **Quit** closes the tray icon and the LCD Manager until you next log in, or
-  until you open the settings panel, which brings them back (unless Start with the
+- **Quit** closes everything 3DxLinux shows on the screen: the tray icon, the
+  LCD Manager, the On-Screen Display, the Virtual NumPad, a radial menu and
+  3Dconnexion Settings. They stay closed until you next log in, or until you
+  open the settings panel, which brings them back (unless Start with the
   Desktop is off).
 
 `tdxd` itself, the driver, keeps running either way, so the 3D mouse keeps
@@ -310,8 +314,8 @@ plain shapes, as in these screenshots:
 | ![lcd](docs/screenshots/tdx-settings-lcd.png) | ![about](docs/screenshots/tdx-settings-about.png) |
 
 It needs Python 3 with PyGObject: `sudo apt install python3-gi python3-gi-cairo
-gir1.2-gtk-3.0` (Fedora: `python3-gobject gtk3`). The Buttons window currently
-shows the SpacePilot Pro layout. `tdx-settings --snapshot DIR` renders every
+gir1.2-gtk-3.0` (Fedora: `python3-gobject gtk3`). For 3D mice the Buttons
+window shows the SpacePilot Pro layout; the CadMouse has its own Buttons window. `tdx-settings --snapshot DIR` renders every
 window to PNG (`--no-assets` forces the built-in drawings).
 
 ## Settings (compared with 3DxWare on Windows)
@@ -438,8 +442,9 @@ supported.
 ### LCD Manager and applets
 
 `tdx-lcdmgr` is a Linux port of Logitech's LCD Manager (LCDMon), which 3DxWare
-uses to run applets (Function Keys, RSS Feeds, Picture Viewer) on the
-SpacePilot PRO LCD. Run it as your user (`systemctl --user enable --now
+uses to run applets on the SpacePilot PRO LCD. 3DxLinux's ports of 3DxWare's
+applets are `3dxlinux-lcd-functionkeys` (Function Keys), `3dxlinux-lcd-rss`
+(RSS Feeds) and `3dxlinux-lcd-pictures` (Picture Viewer). Run it as your user (`systemctl --user enable --now
 tdx-lcdmgr`); it takes the LCD over from `tdxd`, serves applets written against
 the lglcd-compatible `libtdxlcd` (C) or `tdxlcd.py`, and handles the LCD's own
 navigation keys (LCD key, UP/DOWN/OK/CANCEL). The **LCD Manager** button in
@@ -499,6 +504,7 @@ tdx-lcd bmp sp4LCD.bmp                    # Giotto: legacy 0x13 path (24 bpp BMP
 | SpacePilot Pro on real hardware | **Verified** (2026-11-16, see [docs/HARDWARE_TESTS.md](docs/HARDWARE_TESTS.md)): motion, buttons, the uinput and spacenavd outputs, LCD frames, ping, brightness (3 levels), LED, the daemon's key page with SHIFT paging, and **Blender 3.0.1** navigation and view buttons through libspnav |
 | SpaceMouse Enterprise and Giotto | Not verified on hardware (no device available) |
 | LCD Manager (`tdx-lcdmgr`, `libtdxlcd`, `tdx-lcdmanager`) and the applets (Function Keys, RSS Feeds, Picture Viewer) | **Verified** on the SpacePilot Pro (2026-11-17): handover to and from `tdxd`, all eight LCD keys, the program list in the Windows look, the three applets and their Configure dialogs, autostart, Identify, brightness; end to end in `make test-lcdmgr` and `make test-lcdapplets` |
+| Universal Receiver and CadMouse Compact Wireless | **Verified** on Kubuntu 26.04, KDE Plasma Wayland (2026-11): the device chooser, battery level, Speed, Smart Scrolling, the buttons and their picker, per-application buttons, acceleration and wheel lines, pairing, the radial menus, Virtual NumPad and On-Screen Display |
 | `tdx-settings` panel and `action_*` button actions | **Verified** on the SpacePilot Pro (2026-11-17): speed ±, Dominant/Rotation/Pan Zoom toggles, and the panel's Speed, LEDs, Calibrate, button binding, LCD brightness and labels. Also unit-tested (`make test-gui`) |
 
 `docs/PROTOCOL.md` lists the open items.
