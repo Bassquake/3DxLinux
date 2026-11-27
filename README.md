@@ -17,7 +17,7 @@ I ported the windows version of the 3Dconnexion driver for Linux as the one on t
 
 ![main](docs/screenshots/3dxlinux-taskbar-select.png)
 
-- Now we need to import the graphics from the original windows driver from 3dconnexion website. So go [here](https://3dconnexion.com/uk/archived-drivers/?selected_product=spacepilot-pro&selected_os=windows-11) and download the Windows 10/11 10.9.14. The latest 10.9.15 will likely work fine too.
+- Now we need to import the graphics from the original windows driver from 3dconnexion website because I can't package copyrighted images into my own releases. So go [here](https://3dconnexion.com/uk/archived-drivers/?selected_product=spacepilot-pro&selected_os=windows-11) and download the Windows 10/11 10.9.14. The latest 10.9.15 will likely work fine too.
 - In 3dconnexion settings, click More.
 
 ![main](docs/screenshots/3dxlinux-settings-select.png)
