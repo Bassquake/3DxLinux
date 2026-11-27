@@ -1,5 +1,44 @@
 # 3DxLinux — 3Dconnexion driver for Linux (x86_64, arm64, …)
 
+## Getting Started
+I ported the windows version of the 3Dconnexion driver for Linux as the one on their website was very old and lacking a lot of the features. My one pretty much matches all the same functionality including the LCD screen fully working in showing function keys etc on the SpacePilot Pro!!
+
+![main](docs/screenshots/3dxlinux-spacemouse.png) ![advanced](docs/screenshots/3dxlinux-cadmouse.png)
+
+- Simply download your particular Linux build package.
+   - .deb for Ubuntu, Debian, Kubuntu, Mint.
+   - .rpm for Fedora, openSUSE
+   - .tar.gz for any linux distribution (./install.sh).
+- Double click the package to open (for me it opens it in Discover in Kubuntu) or how you usually install packages according to your distro.
+
+![main](docs/screenshots/3dxlinux-discover.png)
+
+- Once installed you'll see an icon in the taskbar on the right. Right click and "Open 3Dconnexion Settings".
+
+![main](docs/screenshots/3dxlinux-taskbar-select.png)
+
+- Now we need to import the graphics from the original windows driver from 3dconnexion website. So go [here](https://3dconnexion.com/uk/archived-drivers/?selected_product=spacepilot-pro&selected_os=windows-11) and download the Windows 10/11 10.9.14. The latest 10.9.15 will likely work fine too.
+- In 3dconnexion settings, click More.
+
+![main](docs/screenshots/3dxlinux-settings-select.png)
+
+- Click "Import 3DxWare look..."
+
+![main](docs/screenshots/3dxlinux-import.png)
+
+- Now select the windows driver you downloaded from 3dconnexion.
+
+![main](docs/screenshots/3dxlinux-select-win-driver.png)
+
+- Graphics and icons have now been imported. You should see the familiar 3dconnexion logo in taskbar and in the app.
+
+![main](docs/screenshots/3dxlinux-iconschangednow.png)
+
+You are now done! Play around and test the buttons and functions and let me know of any issues.
+
+Ive tested using Kubuntu, SpacePilot Pro and CadMouse Compact Wireless.
+
+## Technical Stuff (Only read if interested)
 3DxLinux is a user-space Linux driver for 3Dconnexion devices. It focuses on the
 **SpacePilot Pro** (046d:c629), including its 320×240 colour LCD. Everything
 is named after 3DxLinux: the package `3dxlinux`, the driver `3dxlinuxd`
