@@ -1,4 +1,4 @@
-# 3DxLinux — 3Dconnexion driver for Linux (x86_64, arm64, …)
+# 3DxLinux - A 3Dconnexion driver for Linux (x86_64, arm64, …)
 
 ## Getting Started
 I ported the windows version of the 3Dconnexion driver for Linux as the one on their website was very old and lacking a lot of the features. My one pretty much matches all the same functionality including the LCD screen fully working in showing function keys etc on the SpacePilot Pro!!
